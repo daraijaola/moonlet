@@ -1,52 +1,69 @@
 import Link from "next/link";
 import { MoonletMark, Wordmark } from "./logo";
+import { MoonletBody } from "./moonlet";
 
 const links = [
   { href: "#how", label: "How it works" },
-  { href: "/sky", label: "Watch the sky" },
-  { href: "https://www.orbio.so", label: "Orbio ↗", external: true },
+  { href: "#bag", label: "Your bag" },
+  { href: "/sky", label: "The sky" },
+  { href: "https://www.orbio.so", label: "Orbio", external: true },
 ];
 
 export function Nav() {
   return (
-    <header className="relative z-40 bg-midnight text-cream">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-0 bg-[url('/mark-pattern.svg')] bg-[length:72px_72px] opacity-70 [mask-image:linear-gradient(to_right,transparent,black_30%,black_70%,transparent)]"
-      />
-      <div className="relative mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:h-[72px] sm:px-6">
-        <Link href="/" className="group inline-flex items-center gap-2.5">
-          <MoonletMark
-            size={34}
-            badge="var(--cream)"
-            face="var(--midnight)"
-            tip="var(--gold)"
-            className="transition-transform duration-500 group-hover:-rotate-6"
-          />
-          <Wordmark className="text-[1.45rem] text-cream" />
-        </Link>
+    <header className="relative z-40">
+      <div className="relative bg-midnight text-cream">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-[url('/mark-pattern.svg')] bg-[length:64px_64px] opacity-90"
+        />
+        <div className="relative mx-auto flex h-16 max-w-[1180px] items-center justify-between px-4 sm:px-6">
+          <Link href="/" className="group inline-flex items-center gap-2">
+            <MoonletMark
+              size={36}
+              badge="var(--cream)"
+              face="var(--midnight)"
+              tip="var(--gold)"
+              className="transition-transform duration-500 group-hover:-rotate-6"
+            />
+            <Wordmark className="text-[1.6rem] text-cream" />
+          </Link>
 
-        <nav className="hidden items-center gap-7 font-mono text-[13px] uppercase tracking-[0.12em] text-cream/70 md:flex">
-          {links.map((l) => (
-            <Link
-              key={l.href}
-              href={l.href}
-              target={l.external ? "_blank" : undefined}
-              rel={l.external ? "noreferrer" : undefined}
-              className="transition-colors hover:text-cream"
-            >
-              {l.label}
-            </Link>
-          ))}
-        </nav>
+          <nav className="hidden items-center gap-7 font-display text-[1.25rem] tracking-[0.04em] text-cream md:flex">
+            {links.map((l) => (
+              <Link
+                key={l.href}
+                href={l.href}
+                target={l.external ? "_blank" : undefined}
+                rel={l.external ? "noreferrer" : undefined}
+                className="transition-colors hover:text-gold"
+              >
+                {l.label}
+              </Link>
+            ))}
+          </nav>
 
+          <Link
+            href="/app"
+            className="btn-hard inline-flex items-center rounded-md border-2 border-ink bg-gold px-4 py-1.5 font-mono text-[13.5px] font-medium text-midnight sm:px-5"
+          >
+            Launch a moonlet
+          </Link>
+        </div>
+      </div>
+
+      <div className="relative bg-gold text-midnight">
         <Link
-          href="/app"
-          className="group inline-flex items-center gap-2 rounded-full bg-gold px-4 py-2 text-[14px] font-semibold text-midnight transition-all hover:bg-gold-soft sm:px-5 sm:py-2.5"
+          href="https://www.orbio.so/build"
+          target="_blank"
+          rel="noreferrer"
+          className="mx-auto block max-w-[1180px] truncate px-4 py-2.5 pr-20 text-center font-mono text-[13px] font-medium hover:underline sm:pr-4"
         >
-          Launch a moonlet
-          <span className="hidden transition-transform duration-300 group-hover:translate-x-0.5 sm:inline">→</span>
+          Built for Orbio Build Week · self-funding agents on Robinhood Chain →
         </Link>
+        <div className="pointer-events-none absolute bottom-0 right-2 h-[28px] w-[64px] overflow-hidden sm:right-6">
+          <MoonletBody width={64} className="-translate-y-[9px]" />
+        </div>
       </div>
     </header>
   );
