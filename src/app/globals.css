@@ -1,7 +1,8 @@
 @import "tailwindcss";
 
 :root {
-  --cream: #f4efe3;
+  --cream: #f7f4ee;
+  --white: #ffffff;
   --cream-deep: #e9e1cf;
   --paper: #fdf9f0;
   --ink: #15161d;
@@ -20,6 +21,7 @@
 
 @theme inline {
   --color-cream: var(--cream);
+  --color-white: var(--white);
   --color-cream-deep: var(--cream-deep);
   --color-paper: var(--paper);
   --color-ink: var(--ink);
@@ -80,7 +82,7 @@ html {
 }
 
 body {
-  background: var(--cream);
+  background: var(--white);
   color: var(--ink);
   font-family: var(--font-sans), system-ui, sans-serif;
   font-feature-settings: "ss01", "cv11";

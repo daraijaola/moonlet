@@ -1,23 +1,26 @@
-import Link from "next/link";
 
 type MarkProps = {
   size?: number;
   className?: string;
-  /** Face color inside the badge. */
-  face?: string;
-  /** Badge color. */
-  badge?: string;
-  /** Antenna tip color. */
+  moon?: string;
+  feature?: string;
+  antenna?: string;
   tip?: string;
   title?: string;
 };
 
+/**
+ * The moonlet face, drawn to match the mascot: sleepy lidded eyes, a couple of
+ * craters, and a short antenna with a glowing tip. No outer badge ring, so it
+ * reads as the character itself. Favicon uses its own badged variant.
+ */
 export function MoonletMark({
-  size = 32,
+  size = 36,
   className,
-  face = "var(--cream)",
-  badge = "var(--ink)",
-  tip = "var(--ember)",
+  moon = "var(--cream)",
+  feature = "var(--midnight)",
+  antenna = "var(--cream)",
+  tip = "var(--gold)",
   title = "moonlet",
 }: MarkProps) {
   return (
@@ -28,52 +31,44 @@ export function MoonletMark({
       role="img"
       aria-label={title}
       className={className}
+      style={{ overflow: "visible" }}
     >
-      <circle cx="32" cy="32" r="32" fill={badge} />
-      <g stroke={face} strokeWidth="2.6" strokeLinecap="round" fill="none">
-        <path d="M39.5 16.5 L44.5 9.5" />
+      {/* antenna */}
+      <path d="M44 20 C 47 14, 51 11, 54 8" stroke={antenna} strokeWidth="3.4" strokeLinecap="round" fill="none" />
+      <circle cx="55" cy="6.5" r="4" fill={tip} stroke={feature} strokeWidth="1.4" />
+
+      {/* moon body */}
+      <circle cx="32" cy="36" r="24" fill={moon} stroke={feature} strokeWidth="3" />
+
+      {/* craters */}
+      <g fill="none" stroke={feature} strokeWidth="2" strokeLinecap="round" opacity="0.5">
+        <path d="M18 26 q3 -3 6 0" />
+        <path d="M44 44 q2.5 -2.5 5 0" />
       </g>
-      <circle cx="45.5" cy="8" r="3" fill={tip} className="logo-tip" />
-      <circle cx="32" cy="36" r="20" fill={face} />
-      <g fill={badge}>
-        <circle cx="21" cy="28" r="2.2" opacity="0.55" />
-        <circle cx="42" cy="47" r="1.7" opacity="0.55" />
-        <circle cx="19.5" cy="44" r="1.3" opacity="0.55" />
+      <circle cx="20" cy="42" r="2.4" fill={feature} opacity="0.35" />
+
+      {/* sleepy eyes: circle with a heavy top lid */}
+      <g>
+        <circle cx="24" cy="37" r="6.5" fill="#fff" stroke={feature} strokeWidth="2.6" />
+        <path d="M17.5 37 a6.5 6.5 0 0 1 13 0 Z" fill={feature} />
+        <circle cx="24" cy="39.5" r="2.1" fill={feature} />
       </g>
       <g>
-        <circle cx="25" cy="36" r="5" fill={face} stroke={badge} strokeWidth="2" />
-        <circle cx="39" cy="36" r="5" fill={face} stroke={badge} strokeWidth="2" />
-        <path d="M20 36 a5 5 0 0 1 10 0 Z" fill={badge} />
-        <path d="M34 36 a5 5 0 0 1 10 0 Z" fill={badge} />
-        <circle cx="25.5" cy="38" r="1.6" fill={badge} />
-        <circle cx="39.5" cy="38" r="1.6" fill={badge} />
+        <circle cx="41" cy="37" r="6.5" fill="#fff" stroke={feature} strokeWidth="2.6" />
+        <path d="M34.5 37 a6.5 6.5 0 0 1 13 0 Z" fill={feature} />
+        <circle cx="41" cy="39.5" r="2.1" fill={feature} />
       </g>
-      <path
-        d="M29.5 44.5 q2.5 2.2 5 0"
-        stroke={badge}
-        strokeWidth="2"
-        strokeLinecap="round"
-        fill="none"
-      />
+
+      {/* smile */}
+      <path d="M28 47 q4.5 3.5 9 0" stroke={feature} strokeWidth="2.6" strokeLinecap="round" fill="none" />
     </svg>
   );
 }
 
 export function Wordmark({ className }: { className?: string }) {
   return (
-    <span
-      className={`font-sans font-bold tracking-[-0.045em] leading-none ${className ?? ""}`}
-    >
+    <span className={`font-sans font-bold tracking-[-0.05em] leading-none ${className ?? ""}`}>
       moonlet
     </span>
-  );
-}
-
-export function Logo({ size = 30 }: { size?: number }) {
-  return (
-    <Link href="/" className="inline-flex items-center gap-2.5 group">
-      <MoonletMark size={size} className="transition-transform duration-500 group-hover:-rotate-6" />
-      <Wordmark className="text-[1.35rem]" />
-    </Link>
   );
 }

@@ -20,9 +20,10 @@ export function Nav() {
         <div className="relative mx-auto flex h-16 max-w-[1180px] items-center justify-between px-4 sm:px-6">
           <Link href="/" className="group inline-flex items-center gap-2">
             <MoonletMark
-              size={36}
-              badge="var(--cream)"
-              face="var(--midnight)"
+              size={38}
+              moon="var(--cream)"
+              feature="var(--midnight)"
+              antenna="var(--gold)"
               tip="var(--gold)"
               className="transition-transform duration-500 group-hover:-rotate-6"
             />

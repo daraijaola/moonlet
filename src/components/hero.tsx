@@ -3,7 +3,7 @@ import { JobInput } from "./job-input";
 
 export function Hero() {
   return (
-    <section className="relative overflow-hidden bg-cream">
+    <section className="relative overflow-hidden bg-white">
       <div className="mx-auto grid max-w-[1180px] gap-4 px-4 pt-16 pb-16 sm:px-6 sm:pt-20 lg:grid-cols-[1.15fr_0.85fr] lg:items-end lg:gap-10 lg:pt-24 lg:pb-24">
         <div>
           <h1 className="font-display text-[4.4rem] leading-[0.9] tracking-[0.005em] text-ink sm:text-[6rem] lg:text-[7.2rem]">
