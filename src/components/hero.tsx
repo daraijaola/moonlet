@@ -1,64 +1,77 @@
+import Image from "next/image";
 import Link from "next/link";
 import { Reveal } from "./reveal";
-import { MoonletCard } from "./moonlet-card";
+import { JobInput } from "./job-input";
+
+const proofs = [
+  "Approve Orbio once. No key ever touches a human.",
+  "Spends only what your bag earns. Sell it, it goes quiet.",
+  "Every completed run anchored on Robinhood Chain.",
+];
 
 export function Hero() {
   return (
     <section className="grain relative overflow-hidden">
-      <div className="mx-auto grid max-w-6xl gap-14 px-4 pt-14 pb-16 sm:px-6 sm:pt-20 lg:grid-cols-[1.05fr_0.95fr] lg:items-center lg:gap-10 lg:pt-24 lg:pb-24">
-        <div className="relative z-10 max-w-xl">
-          <Reveal>
-            <p className="inline-flex items-center gap-2 rounded-full border border-ink/15 bg-paper/70 px-3 py-1 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-soft">
-              <span className="h-1.5 w-1.5 rounded-full bg-ember animate-blink" />
-              for $ORBIO holders · Orbio Build Week
-            </p>
-          </Reveal>
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-[12%] -top-[22%] hidden aspect-square w-[46vw] max-w-[720px] rounded-full bg-cream-deep/70 md:block"
+      />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute -right-[6%] -top-[10%] hidden aspect-square w-[34vw] max-w-[540px] rounded-full border border-ink/[0.06] md:block"
+      />
+      <Image
+        src="/mascot/moonlet-hang.png"
+        alt=""
+        width={420}
+        height={420}
+        priority
+        className="pointer-events-none absolute -top-2 right-[4%] z-20 w-[128px] origin-top animate-sway select-none sm:right-[8%] sm:w-[170px] lg:right-[10%] lg:w-[210px]"
+      />
 
-          <Reveal delay={0.08}>
-            <h1 className="mt-6 font-serif text-[2.9rem] leading-[0.98] tracking-[-0.02em] text-ink sm:text-[3.9rem] lg:text-[4.6rem]">
-              Your bag runs
-              <br />
-              an agent.
-            </h1>
-          </Reveal>
+      <div className="relative mx-auto max-w-6xl px-4 pt-20 pb-20 sm:px-6 sm:pt-28 sm:pb-28 lg:pt-32 lg:pb-32">
+        <Reveal>
+          <p className="font-mono text-[12px] uppercase tracking-[0.16em] text-ink-soft">
+            <span className="mr-2 inline-block h-1.5 w-1.5 -translate-y-px rounded-full bg-gold animate-blink" />
+            Self-funding agents for $ORBIO holders
+          </p>
+        </Reveal>
 
-          <Reveal delay={0.16}>
-            <p className="mt-6 max-w-md text-[1.05rem] leading-relaxed text-ink-soft sm:text-lg">
-              Connect your wallet, type one sentence, and a moonlet works around
-              the clock, paid only by the credits your $ORBIO earns. No key ever
-              touches a human.
-            </p>
-          </Reveal>
+        <Reveal delay={0.08}>
+          <h1 className="mt-6 max-w-4xl font-serif text-[3.2rem] leading-[0.94] tracking-[-0.025em] text-ink sm:text-[4.6rem] lg:text-[5.8rem]">
+            Your bag <em className="font-light italic text-ink/85">runs</em>
+            <br className="hidden sm:block" /> an agent.
+          </h1>
+        </Reveal>
 
-          <Reveal delay={0.24}>
-            <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
-              <Link
-                href="/app"
-                className="group inline-flex items-center justify-center gap-2 rounded-full bg-ink px-6 py-3.5 text-[15px] font-medium text-cream transition-all hover:bg-ink/90 hover:shadow-[0_10px_30px_-12px_rgba(23,20,15,0.6)]"
-              >
-                Launch a moonlet
-                <span className="transition-transform duration-300 group-hover:translate-x-1">→</span>
-              </Link>
-              <Link
-                href="/sky"
-                className="inline-flex items-center justify-center gap-2 rounded-full border border-ink/20 bg-paper/60 px-6 py-3.5 text-[15px] font-medium text-ink transition-colors hover:border-ink/40"
-              >
-                Watch the sky
-              </Link>
-            </div>
-          </Reveal>
+        <Reveal delay={0.16}>
+          <p className="mt-7 max-w-xl font-mono text-[14px] leading-relaxed text-ink-soft sm:text-[15px]">
+            Connect your wallet, type one sentence, and thirty seconds later a
+            moonlet is working around the clock, paid only by the credits your
+            $ORBIO earns.
+          </p>
+        </Reveal>
 
-          <Reveal delay={0.32}>
-            <p className="mt-6 font-mono text-[12px] text-ink-soft">
-              ~30 seconds from sentence to orbit · every run anchored on Robinhood Chain
-            </p>
-          </Reveal>
-        </div>
-
-        <Reveal delay={0.2} className="relative z-10 mt-16 lg:mt-0">
-          <div className="animate-drift">
-            <MoonletCard />
+        <Reveal delay={0.24} className="mt-9">
+          <JobInput />
+          <div className="mt-3 flex items-center gap-4 font-mono text-[12px] text-ink-soft">
+            <span>~30s to orbit</span>
+            <span className="text-ink-faint">·</span>
+            <Link href="/sky" className="underline decoration-ink/25 underline-offset-4 transition-colors hover:text-ink">
+              or watch the sky first
+            </Link>
           </div>
+        </Reveal>
+
+        <Reveal delay={0.36}>
+          <ul className="mt-14 grid gap-3 border-t border-ink/10 pt-6 font-mono text-[12.5px] text-ink-soft sm:grid-cols-3 sm:gap-6">
+            {proofs.map((p, i) => (
+              <li key={p} className="flex gap-3">
+                <span className="tabular-nums text-ink-faint">0{i + 1}</span>
+                <span>{p}</span>
+              </li>
+            ))}
+          </ul>
         </Reveal>
       </div>
     </section>
