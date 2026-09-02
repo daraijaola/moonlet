@@ -1,5 +1,5 @@
+import Image from "next/image";
 import { JobInput } from "./job-input";
-import { MoonletBody, MoonletHands } from "./moonlet";
 
 export function Hero() {
   return (
@@ -19,17 +19,17 @@ export function Hero() {
         </div>
 
         <div className="relative mx-auto mt-28 w-full max-w-[28rem] lg:mx-0 lg:ml-auto lg:mt-0">
-          <MoonletBody
-            width={230}
-            className="pointer-events-none absolute right-2 bottom-[calc(100%-4px)] z-0 select-none sm:right-6"
+          <Image
+            src="/mascot/moonlet-rest.png"
+            alt="A moonlet resting on the input box"
+            width={520}
+            height={357}
+            priority
+            className="animate-drift pointer-events-none absolute -top-[128px] left-1/2 z-20 w-[300px] max-w-none -translate-x-1/2 select-none sm:-top-[150px] sm:w-[350px]"
           />
           <div className="relative z-10">
             <JobInput />
           </div>
-          <MoonletHands
-            width={230}
-            className="pointer-events-none absolute right-2 top-[-8px] z-20 select-none sm:right-6"
-          />
         </div>
       </div>
     </section>

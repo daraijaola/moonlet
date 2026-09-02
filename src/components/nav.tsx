@@ -1,6 +1,6 @@
 import Link from "next/link";
+import Image from "next/image";
 import { MoonletMark, Wordmark } from "./logo";
-import { MoonletBody } from "./moonlet";
 
 const links = [
   { href: "#how", label: "How it works" },
@@ -61,9 +61,13 @@ export function Nav() {
         >
           Built for Orbio Build Week · self-funding agents on Robinhood Chain →
         </Link>
-        <div className="pointer-events-none absolute bottom-0 right-2 h-[28px] w-[64px] overflow-hidden sm:right-6">
-          <MoonletBody width={64} className="-translate-y-[9px]" />
-        </div>
+        <Image
+          src="/mascot/moonlet-rest.png"
+          alt=""
+          width={150}
+          height={103}
+          className="pointer-events-none absolute -top-[30px] right-3 z-10 w-[86px] max-w-none select-none sm:right-8"
+        />
       </div>
     </header>
   );
