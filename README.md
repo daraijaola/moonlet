@@ -17,6 +17,18 @@ pnpm install
 pnpm dev
 ```
 
-## Scope
+## Routes
 
-This repo currently holds the landing page at `/`. The `/app`, `/s/[id]`, `/sky`, and `/api` routes are owned by a separate workstream.
+| Route | What |
+|---|---|
+| `/` | Landing |
+| `/sign-in` | Wallet connect → approve Orbio (two steps, no email) |
+| `/app` | Dashboard: your moonlets, fuel gauge, run feed, controls |
+| `/app/new` | Launch flow: job → delivery → honest math → live key claim |
+| `/s/[id]` | Public moonlet page, no login |
+| `/sky` | Every live moonlet, orbital view + list |
+| `/api/sky/stats` | Sky header stats |
+
+## Status
+
+UI is complete against mock data. `src/lib/mock.ts` is the only source of numbers and is clearly marked; `src/lib/auth.tsx` stubs wallet connect and the Orbio OAuth approval. Wiring the real backend (Orbio MCP OAuth, OpenRouter spend reads, scheduler, Robinhood Chain anchoring) touches those two files plus `/api`.
