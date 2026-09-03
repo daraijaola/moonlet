@@ -49,7 +49,8 @@ function NewInner() {
   const cadence =
     runsPerDay >= 24 ? "hourly" : runsPerDay >= 4 ? `every ${Math.floor(24 / runsPerDay)}h` : runsPerDay >= 1 ? `${runsPerDay}× daily` : "weekly";
 
-  const canNext = step === 1 ? job.trim().length > 8 : true;
+  const handleOk = (v: string) => v === "" || /^@?[A-Za-z0-9_]{3,32}$/.test(v.trim()) || /^-?\d{6,}$/.test(v.trim());
+  const canNext = step === 1 ? job.trim().length > 8 : step === 2 ? handleOk(telegram) && handleOk(x) : true;
 
   const launch = async () => {
     setLaunching(true);
@@ -156,8 +157,9 @@ function NewInner() {
                   value={telegram}
                   onChange={(e) => setTelegram(e.target.value)}
                   placeholder="@handle or chat id"
-                  className="mt-2 w-full rounded-md border border-ink/20 bg-paper px-3 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-ink"
+                  className={`mt-2 w-full rounded-md border bg-paper px-3 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-ink ${handleOk(telegram) ? "border-ink/20" : "border-red-700"}`}
                 />
+                {!handleOk(telegram) && <p className="mt-1 font-mono text-[11px] text-red-700">Use @handle (3–32 chars) or a numeric chat id.</p>}
               </li>
               <li className="rounded-lg border border-ink/10 p-3.5">
                 <p className="text-[14px] font-semibold text-ink">X</p>
@@ -165,8 +167,9 @@ function NewInner() {
                   value={x}
                   onChange={(e) => setX(e.target.value)}
                   placeholder="@handle to post from"
-                  className="mt-2 w-full rounded-md border border-ink/20 bg-paper px-3 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-ink"
+                  className={`mt-2 w-full rounded-md border bg-paper px-3 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-ink ${handleOk(x) ? "border-ink/20" : "border-red-700"}`}
                 />
+                {!handleOk(x) && <p className="mt-1 font-mono text-[11px] text-red-700">Use an @handle, 3–32 letters, numbers, or underscores.</p>}
               </li>
             </ul>
           </>
