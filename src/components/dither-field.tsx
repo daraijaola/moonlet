@@ -18,7 +18,7 @@ export function DitherField({ className }: { className?: string }) {
     const on = (e: MediaQueryListEvent) => setReduced(e.matches);
     m.addEventListener("change", on);
     const c = document.createElement("canvas");
-    const gl = c.getContext("webgl2") ?? c.getContext("webgl");
+    const gl = c.getContext("webgl2");
     setReady(gl ? "webgl" : "css");
     return () => m.removeEventListener("change", on);
   }, []);
