@@ -19,6 +19,9 @@ export const TOOL_IDS = [
 ] as const;
 export type ToolId = (typeof TOOL_IDS)[number];
 
+export const MODEL_CHOICES = ["auto", "google/gemini-3.8-flash", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5"] as const;
+export type ModelChoice = (typeof MODEL_CHOICES)[number];
+
 export const Cadence = z.enum(["15m", "1h", "4h", "6h", "12h", "24h", "7d"]);
 export type Cadence = z.infer<typeof Cadence>;
 
@@ -58,6 +61,10 @@ export const JobSpec = z.object({
     .min(0.001)
     .max(5)
     .describe("Hard ceiling per run in USD. The runner enforces it with maxCost."),
+  model: z
+    .enum(MODEL_CHOICES)
+    .default("auto")
+    .describe("auto picks by bag size. Otherwise a fixed OpenRouter model id."),
 });
 export type JobSpec = z.infer<typeof JobSpec>;
 

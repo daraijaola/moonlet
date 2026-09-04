@@ -6,6 +6,7 @@ import { useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { shortAddr } from "@/lib/api";
 import { MoonletMark, Wordmark } from "./logo";
+import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
 
 const TABS = [
   { href: "/app", label: "Moonlets" },
@@ -83,6 +84,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-6">{children}</main>
+      <PoweredBy />
     </div>
+  );
+}
+
+export function PoweredBy() {
+  return (
+    <footer className="border-t border-ink/10">
+      <div className="mx-auto flex max-w-[1280px] flex-wrap items-center justify-between gap-3 px-4 py-4 font-mono text-[11px] text-ink-faint sm:px-6">
+        <span>moonlet · built for Orbio Build Week</span>
+        <span className="flex items-center gap-4">
+          <a href="https://www.orbio.so" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:text-ink"><OrbioMark size={13} /> credits by Orbio</a>
+          <a href="https://openrouter.ai" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:text-ink"><OpenRouterMark size={13} /> models via OpenRouter</a>
+          <a href="https://robinhoodchain.blockscout.com" target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 hover:text-ink"><RobinhoodMark size={13} /> anchored on Robinhood Chain</a>
+        </span>
+      </div>
+    </footer>
   );
 }

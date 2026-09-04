@@ -15,11 +15,12 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
 
-type Saved = { address: string | null };
+type Saved = { address: string | null; signed: boolean };
 type AuthState = Saved & { ready: boolean; orbioApproved: boolean; orbioChecked: boolean };
 
 type Auth = AuthState & {
-  connect: (manual?: string) => Promise<string>;
+  signed: boolean;
+  connect: (manual?: string, wallet?: WalletId) => Promise<string>;
   approveOrbio: (redirectTo?: string) => Promise<void>;
   refreshOrbio: () => Promise<boolean>;
   disconnect: () => void;
@@ -33,9 +34,9 @@ let cache: { raw: string | null; state: Saved } | null = null;
 function read(): Saved {
   const raw = localStorage.getItem(KEY);
   if (cache && cache.raw === raw) return cache.state;
-  let saved: Saved = { address: null };
+  let saved: Saved = { address: null, signed: false };
   try {
-    saved = raw ? { address: null, ...(JSON.parse(raw) as Partial<Saved>) } : saved;
+    saved = raw ? { address: null, signed: false, ...(JSON.parse(raw) as Partial<Saved>) } : saved;
   } catch {}
   cache = { raw, state: saved };
   return saved;
@@ -53,10 +54,32 @@ function subscribe(l: () => void) {
     window.removeEventListener("storage", l);
   };
 }
-const SERVER: Saved = { address: null };
+const SERVER: Saved = { address: null, signed: false };
 
-type Eip1193 = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown> };
+type Eip1193 = { request: (a: { method: string; params?: unknown[] }) => Promise<unknown>; isMetaMask?: boolean; isRabby?: boolean; isRobinhood?: boolean; providers?: Eip1193[] };
 const injected = () => (typeof window !== "undefined" ? (window as unknown as { ethereum?: Eip1193 }).ethereum : undefined);
+
+export type WalletId = "metamask" | "rabby" | "robinhood" | "injected";
+/** Which injected wallets are present. Multi-provider windows expose `providers[]`. */
+export function detectWallets(): WalletId[] {
+  const eth = injected();
+  if (!eth) return [];
+  const all = eth.providers?.length ? eth.providers : [eth];
+  const ids = new Set<WalletId>();
+  for (const p of all) {
+    if (p.isRabby) ids.add("rabby");
+    else if (p.isRobinhood) ids.add("robinhood");
+    else if (p.isMetaMask) ids.add("metamask");
+    else ids.add("injected");
+  }
+  return [...ids];
+}
+function providerFor(id: WalletId): Eip1193 | undefined {
+  const eth = injected();
+  if (!eth) return undefined;
+  const all = eth.providers?.length ? eth.providers : [eth];
+  return all.find((p) => (id === "rabby" ? p.isRabby : id === "robinhood" ? p.isRobinhood : id === "metamask" ? p.isMetaMask && !p.isRabby : true)) ?? eth;
+}
 
 const Ctx = createContext<Auth | null>(null);
 
@@ -84,15 +107,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(t);
   }, [hydrated, saved.address, orbio.for, refreshOrbio]);
 
-  const connect = useCallback(async (manual?: string) => {
+  const connect = useCallback(async (manual?: string, wallet?: WalletId) => {
     let address = manual?.trim().toLowerCase() ?? "";
-    const eth = injected();
+    const eth = wallet ? providerFor(wallet) : injected();
     if (!address && eth) {
       const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
       address = accounts[0]?.toLowerCase() ?? "";
     }
     if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error("No wallet found. Paste your Robinhood Chain address instead.");
-    write({ address });
+    let signed = false;
+    if (!manual && eth) {
+      const { nonce, message } = (await (await fetch("/api/auth/nonce", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address }) })).json()) as { nonce: string; message: string };
+      const signature = (await eth.request({ method: "personal_sign", params: [message, address] })) as string;
+      const v = await fetch("/api/auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address, message, signature, nonce }) });
+      if (!v.ok) throw new Error("Signature rejected. Try again.");
+      signed = true;
+    }
+    write({ address, signed });
     return address;
   }, []);
 
@@ -104,6 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const disconnect = useCallback(() => {
+    void fetch("/api/auth/logout", { method: "POST" });
     write(null);
     setOrbio({ approved: false, checked: false, for: null });
   }, []);
@@ -112,6 +144,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     () => ({
       ready: hydrated && (!saved.address || (orbio.checked && orbio.for === saved.address)),
       address: saved.address,
+      signed: saved.signed,
       orbioApproved: orbio.approved,
       orbioChecked: orbio.checked,
       connect,
@@ -120,7 +153,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       disconnect,
       hasInjected: !!injected(),
     }),
-    [hydrated, saved.address, orbio, connect, approveOrbio, refreshOrbio, disconnect],
+    [hydrated, saved.address, saved.signed, orbio, connect, approveOrbio, refreshOrbio, disconnect],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

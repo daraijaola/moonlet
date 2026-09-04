@@ -1,4 +1,4 @@
-import type { TemplateId, ToolId, Cadence } from "@/moonlet/spec";
+import type { TemplateId, ToolId, Cadence, ModelChoice } from "@/moonlet/spec";
 
 export const TEMPLATE_LABEL: Record<TemplateId, string> = {
   "market-watch": "Market Watch",
@@ -38,4 +38,11 @@ export const CADENCE_LABEL: Record<Cadence, string> = {
   "12h": "twice daily",
   "24h": "daily",
   "7d": "weekly",
+};
+
+export const MODEL_LABEL: Record<ModelChoice, { name: string; vendor: "auto" | "google" | "openai" | "anthropic"; hint: string }> = {
+  auto: { name: "Auto", vendor: "auto", hint: "picks by bag size: Flash for small bags, Sonnet for large" },
+  "google/gemini-3.8-flash": { name: "Gemini 3.8 Flash", vendor: "google", hint: "~$0.01 / run · fastest, cheapest" },
+  "openai/gpt-5.6-terra": { name: "GPT-5.6 Terra", vendor: "openai", hint: "~$0.03 / run · solid middle" },
+  "anthropic/claude-sonnet-5": { name: "Claude Sonnet 5", vendor: "anthropic", hint: "~$0.08 / run · best for code and nuance" },
 };

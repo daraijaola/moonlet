@@ -10,8 +10,8 @@ import * as store from "@/moonlet/store";
  * owner to orbio.so/mcp/authorize.
  */
 export async function POST(req: Request) {
-  const owner = ownerFrom(req);
-  if (!owner) return bad("x-owner required", 401);
+  const owner = ownerFrom(req, { write: true });
+  if (!owner) return bad("sign in with your wallet first", 401);
   const { redirectTo = "/app" } = (await req.json().catch(() => ({}))) as { redirectTo?: string };
 
   const appUrl = process.env.APP_URL ?? new URL(req.url).origin;

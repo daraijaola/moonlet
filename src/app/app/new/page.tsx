@@ -6,9 +6,10 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, fmtBag, fmtUsd, type OrbioStatus } from "@/lib/api";
 import { plan, HOLDER_FLOOR } from "@/moonlet/budget";
-import { TEMPLATE_DEFAULTS, TOOL_IDS, type Cadence, type JobSpec, type TemplateId, type ToolId } from "@/moonlet/spec";
+import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
 import { FuelGauge } from "@/components/fuel-gauge";
-import { CADENCE_LABEL, TEMPLATE_BLURB, TEMPLATE_EXAMPLE, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
+import { CADENCE_LABEL, MODEL_LABEL, TEMPLATE_BLURB, TEMPLATE_EXAMPLE, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
+import { OpenRouterMark, VENDOR_MARK } from "@/components/marks";
 
 const ORDER: TemplateId[] = ["market-watch", "repo-mechanic", "digest", "custom"];
 const CADENCES: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
@@ -221,7 +222,7 @@ function NewInner() {
             <div className="mt-5 rounded-lg border border-ink/10 p-4">
               <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-soft">{spec.name} · {TEMPLATE_LABEL[spec.template]} · {CADENCE_LABEL[spec.cadence]}</p>
               <p className="mt-1.5 text-[14px] text-ink">“{spec.objective}”</p>
-              <p className="mt-2 font-mono text-[12px] text-ink-soft">tools: {spec.tools.map((t) => TOOL_LABEL[t]).join(", ")}</p>
+              <p className="mt-2 font-mono text-[12px] text-ink-soft">model: {MODEL_LABEL[spec.model ?? "auto"].name} · tools: {spec.tools.map((t) => TOOL_LABEL[t]).join(", ")}</p>
               <p className="mt-1 font-mono text-[12px] text-ink-soft">→ public page{telegram && ` · Telegram ${telegram}`}{x && ` · X ${x}`}</p>
             </div>
           </>
@@ -310,6 +311,25 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
               return (
                 <button key={t} type="button" onClick={() => toggleTool(t)} disabled={t === "deliver"} className={`rounded-md border px-2.5 py-1 font-mono text-[12px] transition-colors ${on ? "border-ink bg-ink text-cream" : "border-ink/15 text-ink-soft hover:border-ink/40"} disabled:opacity-70`}>
                   {TOOL_LABEL[t]}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="sm:col-span-2">
+          <span className={`${label} inline-flex items-center gap-1.5`}>Model <OpenRouterMark size={12} className="text-ink-faint" /> <span className="normal-case tracking-normal text-ink-faint">via OpenRouter, billed to the moonlet&apos;s key</span></span>
+          <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
+            {MODEL_CHOICES.map((id) => {
+              const m = MODEL_LABEL[id];
+              const Mark = VENDOR_MARK[m.vendor];
+              const on = (spec.model ?? "auto") === id;
+              return (
+                <button key={id} type="button" onClick={() => set("model", id as ModelChoice)} className={`flex items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${on ? "border-ink bg-paper" : "border-ink/10 hover:border-ink/30"}`}>
+                  <Mark size={18} className={on ? "text-ink" : "text-ink-soft"} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13.5px] font-semibold text-ink">{m.name}</span>
+                    <span className="block truncate font-mono text-[11px] text-ink-soft">{m.hint}</span>
+                  </span>
                 </button>
               );
             })}
