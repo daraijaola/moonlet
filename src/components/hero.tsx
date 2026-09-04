@@ -15,6 +15,13 @@ export function Hero() {
 
   return (
     <section className="relative overflow-hidden">
+      <motion.div
+        aria-hidden
+        initial={reduced ? false : { opacity: 0, x: 40 }}
+        animate={{ opacity: 1, x: 0 }}
+        transition={{ duration: 1.4, ease: EASE }}
+        className="hero-grid pointer-events-none absolute inset-y-0 right-0 w-[68%]"
+      />
       <div className="mx-auto grid max-w-[1180px] gap-14 px-5 pt-28 pb-24 sm:px-6 sm:pt-36 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:gap-10 lg:pb-32">
         <div className="max-w-[36rem]">
           <motion.p {...up(0)} className="font-mono text-[11.5px] uppercase tracking-[0.14em] text-ink-soft">
@@ -47,7 +54,7 @@ export function Hero() {
         >
           <Instrument />
           <p className="mt-5 text-center font-mono text-[11.5px] text-ink-faint">
-            Tide, a real moonlet. Drag the bag: the math is the one the app uses.
+            Tide, a real moonlet. Every number is from its first run.
           </p>
         </motion.div>
       </div>

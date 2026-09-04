@@ -168,6 +168,20 @@ body {
 .btn-press:hover { background-color: #23252f; }
 .btn-press:active { transform: scale(0.97); }
 
+/* Hairline graph paper that begins at the right edge and dissolves toward the copy. */
+.hero-grid {
+  background-image:
+    linear-gradient(to right, rgba(28, 26, 23, 0.085) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(28, 26, 23, 0.085) 1px, transparent 1px);
+  background-size: 56px 56px;
+  background-position: right top;
+  mask-image:
+    linear-gradient(to left, black 35%, rgba(0, 0, 0, 0.55) 60%, transparent 100%),
+    linear-gradient(to bottom, transparent 0, black 12%, black 78%, transparent 100%);
+  mask-composite: intersect;
+  -webkit-mask-composite: source-in;
+}
+
 .bag-slider {
   -webkit-appearance: none;
   appearance: none;

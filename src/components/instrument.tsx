@@ -1,12 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion, useMotionValue, useReducedMotion, useSpring, useTransform } from "motion/react";
-import { HOLDER_FLOOR, plan } from "@/moonlet/budget";
+import { plan } from "@/moonlet/budget";
 import type { JobSpec } from "@/moonlet/spec";
 import { CADENCE_LABEL } from "./labels";
 import { MoonletRig, type Mood } from "./moonlet-rig";
-import { Rolling } from "./rolling";
 
 const SPRING = { type: "spring", stiffness: 300, damping: 30, mass: 0.8 } as const;
 const SOFT = { type: "spring", stiffness: 180, damping: 26, mass: 0.9 } as const;
@@ -46,19 +45,14 @@ const STAGES: { id: Stage; label: string }[] = [
 
 const usd = (n: number, d = 3) => `$${n.toFixed(d)}`;
 const bagFmt = (n: number) => Math.round(n).toLocaleString("en-US");
-/* Log slider so the interesting range (0 to 5,000) gets most of the travel. */
-const MAX_BAG = 50_000;
-const toBag = (t: number) => Math.round(Math.pow(t, 2.2) * MAX_BAG);
-const fromBag = (b: number) => Math.pow(b / MAX_BAG, 1 / 2.2);
 
 export function Instrument() {
   const reduced = useReducedMotion();
   const [stage, setStage] = useState<Stage>("brief");
-  const [bag, setBag] = useState(1240);
   const [touched, setTouched] = useState(false);
-  const p = useMemo(() => plan(TIDE, bag), [bag]);
-  const quiet = p.quiet;
-  const mood: Mood = quiet ? "dozing" : stage === "run" ? "working" : "awake";
+  const bag = 1240;
+  const p = plan(TIDE, bag);
+  const mood: Mood = stage === "run" ? "working" : "awake";
 
   /* Auto-advance until the visitor takes over. */
   useEffect(() => {
@@ -85,7 +79,6 @@ export function Instrument() {
   };
   const shadow = useTransform(ry, (v) => `${-v * 1.5}px 24px 60px -20px rgba(21,22,29,0.28), 0 2px 6px rgba(21,22,29,0.06), 0 0 0 1px rgba(21,22,29,0.06)`);
 
-  const runsPerDay = p.quiet ? 0 : Math.round(86_400_000 / ({ "15m": 9e5, "1h": 36e5, "4h": 144e5, "6h": 216e5, "12h": 432e5, "24h": 864e5, "7d": 6048e5 } as const)[p.cadence]);
 
   return (
     <div className="relative mx-auto w-full max-w-[420px] [perspective:1600px]">
@@ -97,15 +90,15 @@ export function Instrument() {
         className="relative rounded-[28px] border border-ink/[0.07] bg-[#FFFDF8] text-ink"
       >
         {/* character shelf */}
-        <div className="relative flex h-[210px] items-end justify-center overflow-visible px-6">
+        <div className="relative flex h-[220px] items-end justify-center overflow-visible px-6">
           <motion.div
             aria-hidden
             className="absolute inset-x-6 bottom-0 h-px bg-ink/[0.08]"
-            animate={{ opacity: quiet ? 0.4 : 1 }}
+            animate={{ opacity: 1 }}
           />
-          <MoonletRig mood={mood} size={200} className="relative -mb-[14px]" />
+          <MoonletRig mood={mood} size={230} className="relative -mb-[10px]" />
           <div className="absolute left-6 top-5 font-mono text-[11px] uppercase tracking-[0.14em] text-ink-soft">
-            {TIDE.name} · <span className={quiet ? "text-ink-faint" : "text-moss"}>{quiet ? "quiet" : stage === "run" ? "working" : "idle"}</span>
+            {TIDE.name} · <span className="text-moss">{stage === "run" ? "working" : "idle"}</span>
           </div>
           <div className="absolute right-6 top-5 font-mono text-[11px] tracking-[0.02em] text-ink-faint">{RUN.at}</div>
         </div>
@@ -117,7 +110,7 @@ export function Instrument() {
               key={stage}
               layout
               initial={reduced ? false : { opacity: 0, y: 14, filter: "blur(2px)" }}
-              animate={{ opacity: quiet ? 0.45 : 1, y: 0, filter: "blur(0px)" }}
+              animate={{ opacity: 1, y: 0, filter: "blur(0px)" }}
               exit={reduced ? undefined : { opacity: 0, y: -10, filter: "blur(2px)" }}
               transition={SPRING}
               className="min-h-[188px]"
@@ -143,7 +136,7 @@ export function Instrument() {
                     ["Tools", "market · chain · search · deliver"],
                     ["Model", "auto · Gemini 3.8 Flash for this bag"],
                     ["Cadence", CADENCE_LABEL[p.cadence]],
-                    ["Cap per run", quiet ? "—" : usd(p.perRunCapUsd)],
+                    ["Cap per run", usd(p.perRunCapUsd)],
                   ].map(([k, v]) => (
                     <div key={k} className={k === "Objective" || k === "Sources" || k === "Tools" || k === "Model" ? "col-span-2" : ""}>
                       <dt className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-faint">{k}</dt>
@@ -223,57 +216,12 @@ export function Instrument() {
           </div>
         </div>
 
-        {/* the bag */}
-        <div className="mt-5 border-t border-ink/[0.07] px-6 pb-6 pt-5">
-          <div className="flex items-end justify-between">
-            <div>
-              <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-faint">Your bag</p>
-              <p className="mt-1 text-[26px] font-medium leading-none tracking-[-0.02em] text-ink">
-                <Rolling value={bagFmt(bag)} /> <span className="text-[14px] font-normal text-ink-soft">$ORBIO</span>
-              </p>
-            </div>
-            <div className="text-right">
-              <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-faint">Earns</p>
-              <p className="mt-1 font-mono text-[15px] leading-none text-ink">
-                <Rolling value={usd(p.earnPerDayUsd, 3)} className={quiet ? "text-ink-faint" : "text-gold"} />
-                <span className="text-ink-faint"> / day</span>
-              </p>
-            </div>
-          </div>
-
-          <input
-            type="range"
-            min={0}
-            max={1000}
-            step={1}
-            value={Math.round(fromBag(bag) * 1000)}
-            onChange={(e) => {
-              setTouched(true);
-              setBag(toBag(Number(e.target.value) / 1000));
-            }}
-            aria-label="How much $ORBIO you hold"
-            className="bag-slider mt-4 w-full"
-            style={{ ["--fill" as string]: `${fromBag(bag) * 100}%` }}
-          />
-
-          <div className="mt-3 flex items-center justify-between font-mono text-[12px]">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.span
-                key={quiet ? "q" : `${p.cadence}-${p.perRunCapUsd}`}
-                initial={reduced ? false : { opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={reduced ? undefined : { opacity: 0, y: -6 }}
-                transition={SPRING}
-                className={quiet ? "text-ink-faint" : "text-ink-soft"}
-              >
-                {quiet ? `under the ${HOLDER_FLOOR.toLocaleString()} floor · it sleeps` : `runs ${CADENCE_LABEL[p.cadence]} · ${runsPerDay}×/day · cap ${usd(p.perRunCapUsd)}`}
-              </motion.span>
-            </AnimatePresence>
-            <span className={`flex items-center gap-1.5 ${quiet ? "text-ink-faint" : "text-moss"}`}>
-              <span className={`h-1.5 w-1.5 rounded-full ${quiet ? "bg-ink-faint" : "bg-moss"}`} />
-              {quiet ? "quiet" : "alive"}
-            </span>
-          </div>
+        <div className="mt-5 flex items-center justify-between border-t border-ink/[0.07] px-6 pb-5 pt-4 font-mono text-[12px]">
+          <span className="text-ink-soft">1,240 $ORBIO · earns <span className="text-gold">$0.039</span> / day</span>
+          <span className="flex items-center gap-1.5 text-moss">
+            <span className="h-1.5 w-1.5 rounded-full bg-moss" />
+            alive
+          </span>
         </div>
       </motion.div>
     </div>
