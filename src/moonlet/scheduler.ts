@@ -93,10 +93,50 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
+  await anchorPending(deps).catch(() => undefined);
   return results;
 }
 
-export async function runOne(id: string, deps: SchedulerDeps = {}): Promise<{ status: string; error?: string; runId?: string }> {
+function pickAnchor(deps: SchedulerDeps) {
+  return deps.anchor === undefined ? makeAnchorer() : deps.anchor;
+}
+
+/** Write a finished run's hash onto Robinhood Chain. Idempotent if the row already has a tx. */
+export async function attachAnchor(
+  run: { id: string; moonletId: string; at: number; outputHash: string | null; costUsd: number },
+  deps: SchedulerDeps = {},
+): Promise<{ anchored: boolean; txHash?: string; error?: string }> {
+  if (!run.outputHash) return { anchored: false, error: "no output hash" };
+  const existing = await store.getRun(run.id);
+  if (existing?.txHash) return { anchored: true, txHash: existing.txHash };
+  const anchor = pickAnchor(deps);
+  if (!anchor) return { anchored: false, error: "ANCHOR_PRIVATE_KEY not set" };
+  try {
+    const { txHash } = await anchor({
+      moonletId: run.moonletId,
+      runId: run.id,
+      outputHash: run.outputHash as Hex,
+      costUsd: run.costUsd,
+      at: run.at,
+    });
+    await store.setRunTx(run.id, txHash);
+    return { anchored: true, txHash };
+  } catch (e) {
+    return { anchored: false, error: (e as Error)?.message ?? String(e) };
+  }
+}
+
+/** Re-send any done run that still has no txHash. Cron calls this every tick. */
+export async function anchorPending(deps: SchedulerDeps = {}, limit = 20) {
+  const pending = await store.listUnanchored(limit);
+  const out: Array<{ runId: string; anchored: boolean; txHash?: string; error?: string }> = [];
+  for (const r of pending) {
+    out.push({ runId: r.id, ...(await attachAnchor(r, deps)) });
+  }
+  return out;
+}
+
+export async function runOne(id: string, deps: SchedulerDeps = {}): Promise<{ status: string; error?: string; runId?: string; txHash?: string; outputHash?: string }> {
   const now = deps.now ?? Date.now;
   try {
     return await runOneInner(id, deps);
@@ -109,11 +149,10 @@ export async function runOne(id: string, deps: SchedulerDeps = {}): Promise<{ st
   }
 }
 
-async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ status: string; error?: string; runId?: string }> {
+async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ status: string; error?: string; runId?: string; txHash?: string; outputHash?: string }> {
   const now = deps.now ?? Date.now;
   const m = await store.getMoonlet(id);
   if (!m) return { status: "missing" };
-  const anchor = deps.anchor === undefined ? makeAnchorer() : deps.anchor;
   const getOrbio = deps.orbioFor ?? ((o: string) => orbioFor(o, deps.fetch));
   const getBag = deps.bagOf ?? ((o: string) => bagOf(o, deps.fetch));
   const run = deps.run ?? runMoonlet;
@@ -162,13 +201,10 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     spentTotalUsd: m.spentTotalUsd + result.costUsd,
   });
 
-  if (result.status === "done" && result.outputHash && anchor) {
-    try {
-      const { txHash } = await anchor({ moonletId: m.id, runId, outputHash: result.outputHash as Hex, costUsd: result.costUsd, at: now() });
-      await store.setRunTx(runId, txHash);
-    } catch {
-      // Anchoring is best-effort per run; the hash is stored regardless and can be re-anchored.
-    }
+  let txHash: string | undefined;
+  if (result.status === "done" && result.outputHash) {
+    const a = await attachAnchor({ id: runId, moonletId: m.id, at: now(), outputHash: result.outputHash, costUsd: result.costUsd }, deps);
+    txHash = a.txHash;
   }
 
   if (result.status === "done" && result.output && !result.output.nothingHappened && deps.deliver && m.delivery.telegram) {
@@ -180,7 +216,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     await store.clearOwnerOrbio(m.owner);
   }
 
-  return { status: result.status, error: result.error, runId };
+  return { status: result.status, error: result.error, runId, txHash, outputHash: result.outputHash };
 }
 
 async function recordRun(
