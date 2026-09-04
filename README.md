@@ -49,7 +49,7 @@ cp .env.example .env.local   # fill SECRET_KEY, COMPILE_API_KEY; for local dev s
 pnpm install && pnpm dev
 ```
 
-Cron: `vercel.json` hits `/api/cron/tick` every minute. Locally, `curl localhost:3000/api/cron/tick`.
+Cron: `vercel.json` hits `/api/cron/tick` every minute. Each tick runs due moonlets, then retries any finished run that still has no `txHash`. Locally, `curl localhost:3000/api/cron/tick`. Set `ANCHOR_PRIVATE_KEY` (Robinhood Chain ETH) or hashes sit in the queue.
 
 ## Tests
 

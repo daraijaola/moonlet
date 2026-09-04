@@ -1,4 +1,4 @@
-import { createPublicClient, createWalletClient, defineChain, encodeAbiParameters, http, keccak256, stringToHex, type Hex } from "viem";
+import { createPublicClient, createWalletClient, decodeAbiParameters, defineChain, encodeAbiParameters, http, keccak256, stringToHex, type Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { RH_RPC } from "./tools";
 
@@ -25,11 +25,27 @@ export const ANCHOR_TO = `0x${keccak256(stringToHex("moonlet.anchor.v1")).slice(
 
 export type AnchorPayload = { moonletId: string; runId: string; outputHash: Hex; costUsd: number; at: number };
 
+const ANCHOR_ABI = [
+  { type: "string" },
+  { type: "string" },
+  { type: "bytes32" },
+  { type: "uint64" },
+  { type: "uint64" },
+] as const;
+
 export function encodeAnchor(p: AnchorPayload): Hex {
-  return encodeAbiParameters(
-    [{ type: "string" }, { type: "string" }, { type: "bytes32" }, { type: "uint64" }, { type: "uint64" }],
-    [p.moonletId, p.runId, p.outputHash, BigInt(Math.round(p.costUsd * 1_000_000)), BigInt(Math.floor(p.at / 1000))],
-  );
+  return encodeAbiParameters(ANCHOR_ABI, [
+    p.moonletId,
+    p.runId,
+    p.outputHash,
+    BigInt(Math.round(p.costUsd * 1_000_000)),
+    BigInt(Math.floor(p.at / 1000)),
+  ]);
+}
+
+export function decodeAnchor(data: Hex): AnchorPayload {
+  const [moonletId, runId, outputHash, costMicro, at] = decodeAbiParameters(ANCHOR_ABI, data);
+  return { moonletId, runId, outputHash, costUsd: Number(costMicro) / 1_000_000, at: Number(at) * 1000 };
 }
 
 export type Anchorer = (p: AnchorPayload) => Promise<{ txHash: Hex }>;

@@ -302,13 +302,12 @@ export async function insertRun(r: RunRow) {
 }
 
 export async function setRunTx(id: string, txHash: string) {
-  await db().execute({ sql: `UPDATE runs SET tx_hash=? WHERE id=?`, args: [txHash, id] });
+  const r = await db().execute({ sql: `UPDATE runs SET tx_hash=? WHERE id=? AND tx_hash IS NULL`, args: [txHash, id] });
+  return r.rowsAffected === 1;
 }
 
-export async function listRuns(moonletId: string, limit = 50): Promise<RunRow[]> {
-  await migrate();
-  const r = await db().execute({ sql: `SELECT * FROM runs WHERE moonlet_id=? ORDER BY at DESC LIMIT ?`, args: [moonletId, limit] });
-  return r.rows.map((row) => ({
+function rowToRun(row: Record<string, unknown>): RunRow {
+  return {
     id: row.id as string,
     moonletId: row.moonlet_id as string,
     at: Number(row.at),
@@ -327,7 +326,33 @@ export async function listRuns(moonletId: string, limit = 50): Promise<RunRow[]>
     txHash: (row.tx_hash as string) ?? null,
     keyEvents: JSON.parse(row.key_events as string),
     error: (row.error as string) ?? null,
-  }));
+  };
+}
+
+export async function getRun(id: string) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM runs WHERE id=?`, args: [id] });
+  return r.rows[0] ? rowToRun(r.rows[0] as Record<string, unknown>) : null;
+}
+
+/** Finished runs that have a hash but no chain receipt yet. */
+export async function deleteRun(id: string) {
+  await db().execute({ sql: `DELETE FROM runs WHERE id=?`, args: [id] });
+}
+
+export async function listUnanchored(limit = 20): Promise<RunRow[]> {
+  await migrate();
+  const r = await db().execute({
+    sql: `SELECT * FROM runs WHERE status='done' AND output_hash IS NOT NULL AND tx_hash IS NULL ORDER BY at ASC LIMIT ?`,
+    args: [limit],
+  });
+  return r.rows.map((row) => rowToRun(row as Record<string, unknown>));
+}
+
+export async function listRuns(moonletId: string, limit = 50): Promise<RunRow[]> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM runs WHERE moonlet_id=? ORDER BY at DESC LIMIT ?`, args: [moonletId, limit] });
+  return r.rows.map((row) => rowToRun(row as Record<string, unknown>));
 }
 
 export async function skyStats() {
