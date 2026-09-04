@@ -48,7 +48,7 @@ function SignInInner() {
       <section className="flex items-center justify-center px-6 py-16">
         <div className="w-full max-w-[22rem]">
           <div className="flex justify-center">
-            <MoonletMark size={56} />
+            <MoonletMark size={56} face="var(--cream)" />
           </div>
           <h1 className="mt-5 text-center text-[1.55rem] font-semibold tracking-[-0.02em] text-ink">
             Sign in to moonlet

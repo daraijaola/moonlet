@@ -33,7 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!ready || !allowed) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-cream">
-        <MoonletMark size={40} className="animate-drift" />
+        <MoonletMark size={40} face="var(--cream)" className="animate-drift" />
       </div>
     );
   }
@@ -44,7 +44,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between px-4 sm:px-6">
           <div className="flex items-center gap-6">
             <Link href="/app" className="inline-flex items-center gap-2">
-              <MoonletMark size={30} />
+              <MoonletMark size={30} face="var(--cream)" />
               <Wordmark className="text-[1.25rem] text-ink" />
             </Link>
             <nav className="hidden items-center gap-1 sm:flex">

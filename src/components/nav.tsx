@@ -29,7 +29,7 @@ export function Nav() {
       >
         <div className="mx-auto flex h-16 max-w-[1180px] items-center justify-between px-5 sm:px-6">
           <Link href="/" className="group inline-flex items-center gap-2.5">
-            <MoonletMark size={30} badge="var(--night-soft)" ring="rgba(247,244,238,0.22)" className="transition-transform duration-500 group-hover:-rotate-6" />
+            <MoonletMark size={30} ink="var(--cream)" face="var(--night)" className="transition-transform duration-500 group-hover:-rotate-6" />
             <Wordmark className="text-[1.25rem] text-cream" />
           </Link>
 

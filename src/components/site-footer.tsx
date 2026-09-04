@@ -71,7 +71,7 @@ export function SiteFooter() {
         <div className="mx-auto grid max-w-[1180px] gap-10 px-5 py-16 sm:grid-cols-2 sm:px-6 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div className="sm:col-span-2 lg:col-span-1">
             <Link href="/" className="inline-flex items-center gap-2.5">
-              <MoonletMark size={30} badge="var(--night-soft)" ring="rgba(247,244,238,0.22)" />
+              <MoonletMark size={30} ink="var(--cream)" face="var(--night)" />
               <Wordmark className="text-[1.25rem] text-cream" />
             </Link>
             <p className="mt-4 max-w-[22rem] text-[13.5px] leading-[1.6] text-cream/50">
