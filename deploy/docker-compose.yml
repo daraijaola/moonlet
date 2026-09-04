@@ -8,7 +8,7 @@ services:
       DATABASE_URL: file:/app/.data/moonlet.db
     volumes:
       - data:/app/.data
-    expose: ["3000"]
+    ports: ["127.0.0.1:3000:3000"]
 
   # Vercel-style minute cron, without Vercel: hits /api/cron/tick with the secret.
   tick:
@@ -24,17 +24,5 @@ services:
           sleep 60
         done
 
-  caddy:
-    image: caddy:2-alpine
-    restart: unless-stopped
-    ports: ["80:80", "443:443"]
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - caddy_data:/data
-      - caddy_config:/config
-    depends_on: [web]
-
 volumes:
   data:
-  caddy_data:
-  caddy_config:
