@@ -1,5 +1,7 @@
 import { createClient, type Client } from "@libsql/client";
 import { randomBytes } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type { KeyEvent, KeyState } from "./runner";
 import type { JobSpec } from "./spec";
 
@@ -66,8 +68,10 @@ let ready: Promise<void> | null = null;
 
 export function db() {
   if (!client) {
+    const url = process.env.DATABASE_URL ?? "file:./.data/moonlet.db";
+    if (url.startsWith("file:")) mkdirSync(dirname(url.slice(5)), { recursive: true });
     client = createClient({
-      url: process.env.DATABASE_URL ?? "file:./.data/moonlet.db",
+      url,
       authToken: process.env.DATABASE_AUTH_TOKEN,
     });
   }

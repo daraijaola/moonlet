@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createHash, randomBytes } from "node:crypto";
 import { ORBIO } from "@/moonlet/orbio";
-import { bad, ownerFrom } from "@/moonlet/http";
+import { bad, ownerFrom, publicOrigin } from "@/moonlet/http";
 import * as store from "@/moonlet/store";
 
 /**
@@ -14,7 +14,7 @@ export async function POST(req: Request) {
   if (!owner) return bad("sign in with your wallet first", 401);
   const { redirectTo = "/app" } = (await req.json().catch(() => ({}))) as { redirectTo?: string };
 
-  const appUrl = process.env.APP_URL ?? new URL(req.url).origin;
+  const appUrl = publicOrigin(req).origin;
   const redirectUri = `${appUrl}/api/orbio/callback`;
 
   let clientId = process.env.ORBIO_CLIENT_ID;

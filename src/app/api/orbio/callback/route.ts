@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { ORBIO } from "@/moonlet/orbio";
+import { publicOrigin } from "@/moonlet/http";
 import * as store from "@/moonlet/store";
 
 export async function GET(req: Request) {
@@ -7,7 +8,7 @@ export async function GET(req: Request) {
   const code = u.searchParams.get("code");
   const state = u.searchParams.get("state");
   const err = u.searchParams.get("error");
-  const appUrl = process.env.APP_URL ?? u.origin;
+  const appUrl = publicOrigin(req).origin;
   if (err) return NextResponse.redirect(`${appUrl}/sign-in?orbio=denied`);
   if (!code || !state) return NextResponse.redirect(`${appUrl}/sign-in?orbio=invalid`);
 

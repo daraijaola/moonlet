@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Bebas_Neue, Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 
@@ -41,7 +42,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       {process.env.NEXT_PUBLIC_TEST_WALLET === "1" && (
         <head>
           {/* test-only: emulated injected wallet, never set in production */}
-          <script src="/__wallet_stub.js" />
+          <Script src="/__wallet_stub.js" strategy="beforeInteractive" />
         </head>
       )}
       <body className="min-h-full flex flex-col">
