@@ -12,7 +12,7 @@ import { MetaMaskMark, OpenRouterMark, OrbioMark, RabbyMark, RobinhoodMark, Wall
 import { detectWallets, type WalletId } from "@/lib/auth";
 
 function SignInInner() {
-  const { ready, address, orbioApproved, orbioChecked, connect, approveOrbio } = useAuth();
+  const { ready, address, signed, signError, orbioApproved, orbioChecked, connect, sign, approveOrbio, hasInjected } = useAuth();
   const [wallets, setWallets] = useState<WalletId[]>([]);
   useEffect(() => {
     const t = setTimeout(() => setWallets(detectWallets()), 0);
@@ -63,8 +63,31 @@ function SignInInner() {
               n={1}
               state={step > 1 ? "done" : "active"}
               title={address ? `Connected ${shortAddr(address)}` : "Connect the wallet that holds $ORBIO"}
-              hint="Robinhood Chain · needs 1,000+ $ORBIO to earn"
+              hint={address && !signed ? (signError ? "Connected without a signature. Approving Orbio in step 2 unlocks you too." : "Address only. Approve Orbio in step 2 to unlock launching.") : "Robinhood Chain · needs 1,000+ $ORBIO to earn"}
             >
+              {address && !signed && signError && (
+                <div className="mt-3 rounded-md border border-gold/60 bg-gold/10 px-3 py-2 font-mono text-[11.5px] text-ink">
+                  {signError}
+                  {hasInjected && (
+                    <button
+                      disabled={busy !== null}
+                      onClick={async () => {
+                        setBusy("wallet");
+                        setErr(null);
+                        try {
+                          await sign();
+                        } catch (e) {
+                          setErr((e as Error).message);
+                        }
+                        setBusy(null);
+                      }}
+                      className="ml-2 underline decoration-ink/30 hover:decoration-ink disabled:opacity-50"
+                    >
+                      {busy === "wallet" ? "check your wallet…" : "sign again"}
+                    </button>
+                  )}
+                </div>
+              )}
               {!address && (
                 <>
                   <div className="mt-3 grid gap-2">
@@ -103,6 +126,9 @@ function SignInInner() {
                     or paste your 0x address
                     <span className="h-px flex-1 bg-ink/10" />
                   </div>
+                  <p className="mt-2 text-[11.5px] leading-[1.5] text-ink-faint sm:hidden">
+                    On a phone, wallet buttons only work inside your wallet app’s browser. Pasting your address works anywhere; approving Orbio then unlocks the account.
+                  </p>
                   <form
                     className="mt-2 flex gap-2"
                     onSubmit={async (e) => {

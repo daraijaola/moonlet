@@ -8,7 +8,7 @@ import { githubOAuthConfigured } from "@/moonlet/connections/github";
 /** What this wallet has connected, and what the platform supports. */
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
   const list = await store.listConnections(owner);
   return NextResponse.json({
     connections: list,
@@ -18,7 +18,7 @@ export async function GET(req: Request) {
 
 export async function DELETE(req: Request) {
   const owner = ownerFrom(req, { write: true });
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
   const { kind } = (await req.json().catch(() => ({}))) as { kind?: store.ConnectionKind };
   if (!kind || !["telegram", "github", "x"].includes(kind)) return bad("kind required");
   await store.deleteConnection(owner, kind);

@@ -49,17 +49,11 @@ function DashboardInner() {
       </>
     );
 
-  const readOnly = status ? !status.canWrite : false;
   const selectedId = params.get("m") ?? moonlets[0].id;
   const selected = moonlets.find((m) => m.id === selectedId) ?? moonlets[0];
 
   return (
     <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
-      {readOnly && (
-        <p className="rounded-md border border-gold/60 bg-gold/10 px-3 py-2 font-mono text-[12px] text-ink lg:col-span-2">
-          Viewing as a pasted address. Connect the wallet and sign to launch or control moonlets.
-        </p>
-      )}
       <aside className="lg:sticky lg:top-20 lg:self-start">
         <h2 className="mb-2 px-1 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Your moonlets · {moonlets.length}</h2>
         <ul className="space-y-1.5">

@@ -20,7 +20,11 @@ type AuthState = Saved & { ready: boolean; orbioApproved: boolean; orbioChecked:
 
 type Auth = AuthState & {
   signed: boolean;
+  /** Set when the last wallet connect stored the address but the sign-in signature failed. */
+  signError: string | null;
   connect: (manual?: string, wallet?: WalletId) => Promise<string>;
+  /** Re-run the SIWE signature for the stored address (needs an injected wallet). */
+  sign: (wallet?: WalletId) => Promise<void>;
   approveOrbio: (redirectTo?: string) => Promise<void>;
   refreshOrbio: () => Promise<boolean>;
   disconnect: () => void;
@@ -94,6 +98,46 @@ async function walletConnectProvider(): Promise<Eip1193> {
   return wcProvider;
 }
 
+const ROBINHOOD_CHAIN = {
+  chainId: "0x1237",
+  chainName: "Robinhood Chain",
+  nativeCurrency: { name: "Ether", symbol: "ETH", decimals: 18 },
+  rpcUrls: ["https://rpc.mainnet.chain.robinhood.com"],
+  blockExplorerUrls: ["https://robinhoodchain.blockscout.com"],
+};
+
+/** Best effort: put the wallet on Robinhood Chain (adding it if unknown). Never fatal. */
+async function ensureRobinhoodChain(eth: Eip1193) {
+  try {
+    const current = (await eth.request({ method: "eth_chainId" })) as string;
+    if (current?.toLowerCase() === ROBINHOOD_CHAIN.chainId) return;
+    await eth.request({ method: "wallet_switchEthereumChain", params: [{ chainId: ROBINHOOD_CHAIN.chainId }] });
+  } catch (e) {
+    if ((e as { code?: number }).code !== 4902) return;
+    await eth.request({ method: "wallet_addEthereumChain", params: [ROBINHOOD_CHAIN] }).catch(() => undefined);
+  }
+}
+
+function walletName(id?: WalletId) {
+  return id === "metamask" ? "MetaMask" : id === "rabby" ? "Rabby" : id === "robinhood" ? "Robinhood Wallet" : id === "walletconnect" ? "WalletConnect" : "a browser wallet";
+}
+
+/** Sign the SIWE message and exchange it for a session cookie. Throws with a readable reason. */
+async function siwe(eth: Eip1193, address: string) {
+  const nr = await fetch("/api/auth/nonce", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address }) });
+  const body = (await nr.json()) as { nonce?: string; message?: string; error?: string };
+  if (!nr.ok || !body.nonce || !body.message) throw new Error(body.error ?? "Could not start sign-in.");
+  let signature: string;
+  try {
+    signature = (await eth.request({ method: "personal_sign", params: [body.message, address] })) as string;
+  } catch (e) {
+    const code = (e as { code?: number }).code;
+    throw new Error(code === 4001 ? "You declined the signature in your wallet." : `Your wallet could not sign: ${(e as Error).message}`);
+  }
+  const v = await fetch("/api/auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address, message: body.message, signature, nonce: body.nonce }) });
+  if (!v.ok) throw new Error(((await v.json().catch(() => ({}))) as { error?: string }).error ?? "Signature was not accepted.");
+}
+
 function providerFor(id: WalletId): Eip1193 | undefined {
   const eth = injected();
   if (!eth) return undefined;
@@ -106,6 +150,7 @@ const Ctx = createContext<Auth | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const saved = useSyncExternalStore(subscribe, read, () => SERVER);
   const [orbio, setOrbio] = useState<{ approved: boolean; checked: boolean; for: string | null }>({ approved: false, checked: false, for: null });
+  const [signError, setSignError] = useState<string | null>(null);
   const hydrated = useSyncExternalStore(() => () => {}, () => true, () => false);
 
   const refreshOrbio = useCallback(async () => {
@@ -130,26 +175,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const connect = useCallback(async (manual?: string, wallet?: WalletId) => {
     let address = manual?.trim().toLowerCase() ?? "";
     const eth = wallet === "walletconnect" ? await walletConnectProvider() : wallet ? providerFor(wallet) : injected();
+    if (!address && !eth) {
+      throw new Error(`${walletName(wallet)} isn't available in this browser. On a phone, open this page inside your wallet app's browser, or paste your address below.`);
+    }
     if (!address && eth) {
+      await ensureRobinhoodChain(eth);
       const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
       address = accounts[0]?.toLowerCase() ?? "";
     }
-    if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error("No wallet found. Paste your Robinhood Chain address instead.");
+    if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error("No account was shared. Unlock your wallet and try again, or paste your address.");
     let signed = false;
+    setSignError(null);
     if (!manual && eth) {
       try {
-        const nr = await fetch("/api/auth/nonce", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address }) });
-        const body = (await nr.json()) as { nonce?: string; message?: string; error?: string };
-        if (!nr.ok || !body.nonce || !body.message) throw new Error(body.error ?? "Could not start sign-in.");
-        const signature = (await eth.request({ method: "personal_sign", params: [body.message, address] })) as string;
-        const v = await fetch("/api/auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address, message: body.message, signature, nonce: body.nonce }) });
-        if (v.ok) signed = true;
-      } catch {
-        // Address is enough to enter. SIWE is hardening, not a lock.
+        await siwe(eth, address);
+        signed = true;
+      } catch (e) {
+        // The address is enough to look around; signing (or approving Orbio) unlocks actions.
+        setSignError((e as Error).message);
       }
     }
     write({ address, signed });
     return address;
+  }, []);
+
+  const sign = useCallback(async (wallet?: WalletId) => {
+    const address = read().address;
+    if (!address) throw new Error("connect a wallet first");
+    const eth = wallet === "walletconnect" ? await walletConnectProvider() : wallet ? providerFor(wallet) : injected();
+    if (!eth) throw new Error("No browser wallet found. Open this page inside your wallet app, or approve Orbio to unlock instead.");
+    await ensureRobinhoodChain(eth);
+    const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+    const active = accounts[0]?.toLowerCase();
+    if (active !== address) throw new Error(`Your wallet is on ${active?.slice(0, 6)}…; switch to ${address.slice(0, 6)}… or disconnect and connect again.`);
+    setSignError(null);
+    await siwe(eth, address);
+    write({ address, signed: true });
   }, []);
 
   const approveOrbio = useCallback(async (redirectTo = "/app") => {
@@ -162,6 +223,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const disconnect = useCallback(() => {
     void fetch("/api/auth/logout", { method: "POST" });
     write(null);
+    setSignError(null);
     setOrbio({ approved: false, checked: false, for: null });
   }, []);
 
@@ -170,15 +232,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ready: hydrated && (!saved.address || (orbio.checked && orbio.for === saved.address)),
       address: saved.address,
       signed: saved.signed,
+      signError,
       orbioApproved: orbio.approved,
       orbioChecked: orbio.checked,
       connect,
+      sign,
       approveOrbio,
       refreshOrbio,
       disconnect,
       hasInjected: !!injected(),
     }),
-    [hydrated, saved.address, saved.signed, orbio, connect, approveOrbio, refreshOrbio, disconnect],
+    [hydrated, saved.address, saved.signed, signError, orbio, connect, sign, approveOrbio, refreshOrbio, disconnect],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

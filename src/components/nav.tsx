@@ -35,7 +35,7 @@ export function Nav() {
             ))}
           </nav>
           <div className="flex items-center gap-3">
-            <Link href="/sign-in" className="hidden text-[14px] text-ink-soft transition-colors hover:text-ink sm:inline">
+            <Link href="/sign-in" className="text-[14px] text-ink-soft transition-colors hover:text-ink">
               Sign in
             </Link>
             <Link href="/app" className="btn-press rounded-full bg-ink px-4 py-2 text-[13.5px] font-medium text-cream">
