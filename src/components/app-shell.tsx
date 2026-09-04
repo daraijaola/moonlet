@@ -10,6 +10,7 @@ import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
 
 const TABS = [
   { href: "/app", label: "Moonlets" },
+  { href: "/app/connections", label: "Connections" },
   { href: "/sky", label: "The sky" },
 ];
 
@@ -49,7 +50,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
             <nav className="hidden items-center gap-1 sm:flex">
               {TABS.map((t) => {
-                const active = t.href === "/app" ? pathname.startsWith("/app") : pathname.startsWith(t.href);
+                const active = t.href === "/app" ? pathname.startsWith("/app") && !pathname.startsWith("/app/connections") : pathname.startsWith(t.href);
                 return (
                   <Link
                     key={t.href}

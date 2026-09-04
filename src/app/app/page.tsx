@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { api, fmtBag, fmtUsd, timeAgo, timeUntil, type ApiMoonlet, type ApiRun, type OrbioStatus } from "@/lib/api";
+import { api, fmtBag, fmtUsd, timeAgo, timeUntil, type ApiMoonlet, type ApiRun, type OrbioStatus, type Proposal } from "@/lib/api";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
 import { TEMPLATE_LABEL } from "@/components/labels";
@@ -41,7 +41,13 @@ function DashboardInner() {
   if (!moonlets) {
     return <p className="py-20 text-center font-mono text-[13px] text-ink-soft">Loading your orbit…</p>;
   }
-  if (moonlets.length === 0) return <EmptyState status={status} />;
+  if (moonlets.length === 0)
+    return (
+      <>
+        <Queue owner={address!} />
+        <EmptyState status={status} />
+      </>
+    );
 
   const readOnly = status ? !status.canWrite : false;
   const selectedId = params.get("m") ?? moonlets[0].id;
@@ -85,8 +91,57 @@ function DashboardInner() {
         <OrbioCard status={status} owner={address!} />
       </aside>
 
-      <Detail key={selected.id} m={selected} owner={address!} onChange={load} />
+      <div className="min-w-0">
+        <Queue owner={address!} />
+        <Detail key={selected.id} m={selected} owner={address!} onChange={load} />
+      </div>
     </div>
+  );
+}
+
+/** Drafts waiting for the owner's approval, across all their moonlets. */
+function Queue({ owner }: { owner: string }) {
+  const [items, setItems] = useState<Proposal[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+  const load = useCallback(async () => setItems((await api.proposals(owner, "pending")).proposals), [owner]);
+  useEffect(() => {
+    const first = setTimeout(load, 0);
+    const t = setInterval(load, 10_000);
+    return () => {
+      clearTimeout(first);
+      clearInterval(t);
+    };
+  }, [load]);
+  if (!items.length) return null;
+  const KIND = { tweet: "Post on X", pull_request: "Pull request", issue_comment: "Comment" } as const;
+  return (
+    <section className="mb-6 rounded-lg border border-gold bg-gold/10 p-4">
+      <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink">Waiting for your OK · {items.length}</h2>
+      <ul className="mt-3 space-y-2">
+        {items.map((p) => (
+          <li key={p.id} className="rounded-md border border-ink/10 bg-white p-3.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[13.5px] font-semibold text-ink">
+                  <span className="mr-2 rounded-full bg-ink/5 px-1.5 py-0.5 font-mono text-[10px] text-ink-soft">{KIND[p.kind]}</span>
+                  {p.title}
+                </p>
+                <pre className="mt-1.5 whitespace-pre-wrap font-sans text-[13px] leading-[1.55] text-ink-soft">{p.body.slice(0, 800)}</pre>
+              </div>
+              <time className="shrink-0 font-mono text-[11px] text-ink-faint">{timeAgo(p.createdAt)}</time>
+            </div>
+            <div className="mt-3 flex gap-2">
+              <button disabled={!!busy} onClick={async () => { setBusy(p.id); await api.decide(owner, p.id, "approve").catch(() => undefined); await load(); setBusy(null); }} className="btn-hard rounded-md border-2 border-ink bg-gold px-3 py-1 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50">
+                {busy === p.id ? "Doing it…" : "✓ Approve"}
+              </button>
+              <button disabled={!!busy} onClick={async () => { setBusy(p.id); await api.decide(owner, p.id, "reject").catch(() => undefined); await load(); setBusy(null); }} className="rounded-md border border-ink/15 bg-white px-3 py-1 font-mono text-[12.5px] text-ink-soft hover:border-ink/40 hover:text-ink disabled:opacity-50">
+                ✗ Reject
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -212,6 +267,7 @@ function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange
             <h1 className="text-[1.6rem] font-semibold tracking-[-0.02em] text-ink">{m.name}</h1>
             <span className="rounded-full border border-ink/15 px-2 py-0.5 font-mono text-[11px] text-ink-soft">{TEMPLATE_LABEL[m.spec.template]}</span>
             {m.status === "running" && <span className="rounded-full bg-gold/20 px-2 py-0.5 font-mono text-[11px] text-ink">running now</span>}
+            {m.autopilot && <span className="rounded-full bg-ink text-cream px-2 py-0.5 font-mono text-[11px]" title="Acts without asking">autopilot</span>}
             {quiet && <span className="rounded-full bg-ink/5 px-2 py-0.5 font-mono text-[11px] text-ink-soft">{m.status}</span>}
           </div>
           <p className="mt-1.5 max-w-[46rem] text-[14px] leading-[1.55] text-ink-soft">“{m.spec.objective}”</p>
@@ -246,6 +302,9 @@ function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange
         </Ctl>
         <Link href={`/app/new?edit=${m.id}`} className="rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[12.5px] text-ink hover:border-ink/40">Edit job</Link>
         <Ctl disabled={!!busy} onClick={() => act("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")}>Rotate key</Ctl>
+        <Ctl disabled={!!busy} onClick={() => act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: !m.autopilot }), m.autopilot ? "Autopilot off. Drafts wait for your OK." : "Autopilot on. It acts without asking.")}>
+          {m.autopilot ? "Autopilot: on" : "Autopilot: off"}
+        </Ctl>
         {!confirmDelete ? (
           <Ctl danger onClick={() => setConfirmDelete(true)}>Delete</Ctl>
         ) : (

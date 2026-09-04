@@ -29,6 +29,7 @@ function NewInner() {
   const [compiled, setCompiled] = useState<boolean | null>(null);
   const [telegram, setTelegram] = useState("");
   const [x, setX] = useState("");
+  const [autopilot, setAutopilot] = useState(false);
   const [status, setStatus] = useState<OrbioStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -48,6 +49,7 @@ function NewInner() {
       setName(moonlet.name);
       setTelegram(moonlet.delivery.telegram ?? "");
       setX(moonlet.delivery.x ?? "");
+      setAutopilot(!!moonlet.autopilot);
       setCompiled(true);
       setStep(1);
     }).catch(() => setErr("Couldn't load that moonlet."));
@@ -80,11 +82,11 @@ function NewInner() {
     try {
       const delivery = { telegram: telegram.trim() || undefined, x: x.trim() || undefined };
       if (editId) {
-        await api.patch(address, editId, { action: "edit", spec, delivery });
+        await api.patch(address, editId, { action: "edit", spec, delivery, autopilot });
         router.push(`/app?m=${editId}`);
         return;
       }
-      const r = await api.launch(address, { spec, delivery, runNow: true });
+      const r = await api.launch(address, { spec, delivery, autopilot, runNow: true });
       router.push(`/app?m=${r.moonlet.id}`);
     } catch (e) {
       setErr((e as Error).message);
@@ -176,6 +178,13 @@ function NewInner() {
                 <input value={x} onChange={(e) => setX(e.target.value)} placeholder="@handle" className={`mt-2 w-full rounded-md border bg-paper px-3 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-ink ${handleOk(x) ? "border-ink/20" : "border-red-700"}`} />
               </li>
             </ul>
+            <label className="mt-4 flex items-start gap-3 rounded-lg border border-ink/10 bg-paper p-3.5">
+              <input type="checkbox" checked={autopilot} onChange={(e) => setAutopilot(e.target.checked)} className="mt-0.5 h-4 w-4 accent-ink" />
+              <span>
+                <span className="block text-[14px] font-semibold text-ink">Autopilot</span>
+                <span className="block text-[12.5px] leading-[1.5] text-ink-soft">Off (default): posts, PRs and comments are drafted and wait for your OK on the dashboard or in Telegram. On: it acts without asking. Connect accounts under <Link href="/app/connections" className="underline">Connections</Link>.</span>
+              </span>
+            </label>
           </>
         )}
 
