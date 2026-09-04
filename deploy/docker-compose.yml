@@ -1,0 +1,28 @@
+services:
+  web:
+    build:
+      context: ..
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: file:/app/.data/moonlet.db
+    volumes:
+      - data:/app/.data
+    ports: ["127.0.0.1:3000:3000"]
+
+  # Vercel-style minute cron, without Vercel: hits /api/cron/tick with the secret.
+  tick:
+    image: curlimages/curl:8.10.1
+    restart: unless-stopped
+    env_file: .env
+    depends_on: [web]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        while true; do
+          curl -fsS -m 55 -H "Authorization: Bearer $$CRON_SECRET" http://web:3000/api/cron/tick >/dev/null || echo "tick failed $(date)"
+          sleep 60
+        done
+
+volumes:
+  data:
