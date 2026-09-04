@@ -7,7 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { shortAddr } from "@/lib/api";
 import { MoonletMark } from "@/components/logo";
-import { MetaMaskMark, OpenRouterMark, OrbioMark, RabbyMark, RobinhoodMark } from "@/components/marks";
+import { MetaMaskMark, OpenRouterMark, OrbioMark, RabbyMark, RobinhoodMark, WalletConnectMark } from "@/components/marks";
 import { detectWallets, type WalletId } from "@/lib/auth";
 
 function SignInInner() {
@@ -65,10 +65,10 @@ function SignInInner() {
               {!address && (
                 <>
                   <div className="mt-3 grid gap-2">
-                    {(["metamask", "rabby", "robinhood"] as WalletId[]).map((w) => {
-                      const present = wallets.includes(w) || (w === "metamask" && wallets.includes("injected"));
-                      const Mark = w === "metamask" ? MetaMaskMark : w === "rabby" ? RabbyMark : RobinhoodMark;
-                      const name = w === "metamask" ? "MetaMask" : w === "rabby" ? "Rabby" : "Robinhood Wallet";
+                    {(["metamask", "rabby", "robinhood", "walletconnect"] as WalletId[]).map((w) => {
+                      const present = w === "walletconnect" ? !!process.env.NEXT_PUBLIC_WC_PROJECT_ID : wallets.includes(w) || (w === "metamask" && wallets.includes("injected"));
+                      const Mark = w === "metamask" ? MetaMaskMark : w === "rabby" ? RabbyMark : w === "walletconnect" ? WalletConnectMark : RobinhoodMark;
+                      const name = w === "metamask" ? "MetaMask" : w === "rabby" ? "Rabby" : w === "walletconnect" ? "WalletConnect" : "Robinhood Wallet";
                       return (
                         <button
                           key={w}
@@ -88,7 +88,7 @@ function SignInInner() {
                         >
                           <Mark size={18} />
                           <span className="flex-1">{name}</span>
-                          <span className="text-[11px] text-ink-faint">{present ? (busy === "wallet" ? "waiting…" : "detected") : "not found"}</span>
+                          <span className="text-[11px] text-ink-faint">{present ? (busy === "wallet" ? "waiting…" : w === "walletconnect" ? "QR / mobile" : "detected") : w === "walletconnect" ? "not configured" : "not found"}</span>
                         </button>
                       );
                     })}
