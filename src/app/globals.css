@@ -168,65 +168,19 @@ body {
 .btn-press:hover { background-color: #23252f; }
 .btn-press:active { transform: scale(0.97); }
 
-/* Hairline graph paper that begins at the right edge and dissolves toward the copy. */
-.hero-grid {
-  background-image:
-    linear-gradient(to right, rgba(28, 26, 23, 0.085) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(28, 26, 23, 0.085) 1px, transparent 1px);
-  background-size: 56px 56px;
-  background-position: right top;
+/* Dither field: full at the right edge, gone by the copy; softened top and bottom. */
+.dither-field {
+  opacity: 0.5;
+  mix-blend-mode: multiply;
   mask-image:
-    linear-gradient(to left, black 35%, rgba(0, 0, 0, 0.55) 60%, transparent 100%),
-    linear-gradient(to bottom, transparent 0, black 12%, black 78%, transparent 100%);
+    linear-gradient(to left, black 0%, black 30%, rgba(0, 0, 0, 0.6) 55%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, black 18%, black 80%, transparent 100%);
   mask-composite: intersect;
   -webkit-mask-composite: source-in;
 }
-
-.bag-slider {
-  -webkit-appearance: none;
-  appearance: none;
-  height: 28px;
-  background: transparent;
-  cursor: grab;
+/* No-WebGL fallback: a static Bayer-style dot field. */
+.dither-css {
+  background-color: transparent;
+  background-image: radial-gradient(rgba(138, 122, 85, 0.9) 0.7px, transparent 1px);
+  background-size: 6px 6px;
 }
-.bag-slider:active { cursor: grabbing; }
-.bag-slider::-webkit-slider-runnable-track {
-  height: 6px;
-  border-radius: 999px;
-  background: linear-gradient(to right, var(--gold) 0 var(--fill), rgba(21, 22, 29, 0.08) var(--fill) 100%);
-}
-.bag-slider::-moz-range-track {
-  height: 6px;
-  border-radius: 999px;
-  background: rgba(21, 22, 29, 0.08);
-}
-.bag-slider::-moz-range-progress {
-  height: 6px;
-  border-radius: 999px;
-  background: var(--gold);
-}
-.bag-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 26px;
-  height: 26px;
-  margin-top: -10px;
-  border-radius: 999px;
-  background: #fff;
-  border: 1px solid rgba(21, 22, 29, 0.1);
-  box-shadow: 0 1px 2px rgba(21, 22, 29, 0.14), 0 6px 16px -6px rgba(21, 22, 29, 0.3);
-  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1);
-}
-.bag-slider::-moz-range-thumb {
-  width: 26px;
-  height: 26px;
-  border-radius: 999px;
-  background: #fff;
-  border: 1px solid rgba(21, 22, 29, 0.1);
-  box-shadow: 0 1px 2px rgba(21, 22, 29, 0.14), 0 6px 16px -6px rgba(21, 22, 29, 0.3);
-}
-@media (hover: hover) and (pointer: fine) {
-  .bag-slider:hover::-webkit-slider-thumb { transform: scale(1.08); }
-}
-.bag-slider:active::-webkit-slider-thumb { transform: scale(1.14); }
-.bag-slider:focus-visible { outline: none; }
-.bag-slider:focus-visible::-webkit-slider-thumb { box-shadow: 0 0 0 3px rgba(233, 182, 76, 0.45), 0 1px 2px rgba(21, 22, 29, 0.14); }
