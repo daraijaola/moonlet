@@ -2,12 +2,36 @@ import { createHash, randomBytes } from "node:crypto";
 import * as store from "../store";
 
 /**
- * X (Twitter), via OAuth 2.0 PKCE on the holder's own account. Needs an X
- * developer app: X_CLIENT_ID (+ X_CLIENT_SECRET for confidential apps).
- * Posting always goes through a proposal unless the moonlet is on autopilot.
+ * X (Twitter). Two modes:
+ *
+ *  - "hand" (default, free): the holder tells us their @handle. Drafts wait as
+ *    proposals; approving one opens X's own compose window with the text
+ *    pre-filled and they post it from their account. No developer app, no
+ *    per-post fee. Autopilot is not possible in this mode.
+ *  - OAuth 2.0 PKCE on the holder's account, when X_CLIENT_ID is set (X's API
+ *    is pay-per-use since Feb 2026, billed to the developer account).
  */
 
-export type XConn = { accessToken: string; refreshToken?: string; expiresAt?: number; username: string; userId: string };
+export type XConn =
+  | { mode: "hand"; username: string }
+  | { mode?: "oauth"; accessToken: string; refreshToken?: string; expiresAt?: number; username: string; userId: string };
+
+export function intentUrl(text: string) {
+  return `https://x.com/intent/post?text=${encodeURIComponent(text.slice(0, 280))}`;
+}
+
+/** Free path: remember the handle so drafts can be routed to the compose window. */
+export async function connectByHandle(owner: string, handle: string) {
+  const username = handle.trim().replace(/^@/, "").replace(/^https?:\/\/(x|twitter)\.com\//i, "").split(/[/?]/)[0];
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(username)) throw new Error("That doesn't look like an X handle.");
+  await store.setConnection(owner, "x", `@${username}`, { mode: "hand", username } satisfies XConn);
+  return { username };
+}
+
+export async function xMode(owner: string): Promise<"hand" | "oauth" | null> {
+  const c = await store.getConnection<XConn>(owner, "x");
+  return c ? (c.data.mode === "hand" ? "hand" : "oauth") : null;
+}
 
 const AUTH = "https://twitter.com/i/oauth2/authorize";
 const TOKEN = "https://api.twitter.com/2/oauth2/token";
@@ -48,12 +72,14 @@ export async function finishOAuth(code: string, state: string, fetchImpl: typeof
   const me = await fetchImpl(`${API}/users/me`, { headers: { authorization: `Bearer ${t.access_token}` } });
   const u = ((await me.json()) as { data?: { id: string; username: string } }).data;
   if (!u) throw new Error("X: couldn't read the account");
-  const conn: XConn = { accessToken: t.access_token, refreshToken: t.refresh_token, expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined, username: u.username, userId: u.id };
+  const conn: XConn = { mode: "oauth", accessToken: t.access_token, refreshToken: t.refresh_token, expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined, username: u.username, userId: u.id };
   await store.setConnection(saved.address, "x", `@${u.username}`, conn);
   return { owner: saved.address, redirectTo: saved.redirectTo, username: u.username };
 }
 
-async function freshToken(owner: string, conn: XConn, fetchImpl: typeof fetch): Promise<string> {
+type OAuthConn = Extract<XConn, { accessToken: string }>;
+
+async function freshToken(owner: string, conn: OAuthConn, fetchImpl: typeof fetch): Promise<string> {
   if (!conn.expiresAt || conn.expiresAt - Date.now() > 60_000 || !conn.refreshToken) return conn.accessToken;
   const res = await fetchImpl(TOKEN, {
     method: "POST",
@@ -62,7 +88,7 @@ async function freshToken(owner: string, conn: XConn, fetchImpl: typeof fetch): 
   });
   if (!res.ok) throw new Error(`X refresh failed: ${res.status}`);
   const t = (await res.json()) as { access_token: string; refresh_token?: string; expires_in?: number };
-  const next: XConn = { ...conn, accessToken: t.access_token, refreshToken: t.refresh_token ?? conn.refreshToken, expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined };
+  const next: OAuthConn = { ...conn, accessToken: t.access_token, refreshToken: t.refresh_token ?? conn.refreshToken, expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined };
   await store.setConnection(owner, "x", `@${conn.username}`, next);
   return next.accessToken;
 }
@@ -70,6 +96,7 @@ async function freshToken(owner: string, conn: XConn, fetchImpl: typeof fetch): 
 export async function postTweet(owner: string, text: string, fetchImpl: typeof fetch = fetch) {
   const conn = await store.getConnection<XConn>(owner, "x");
   if (!conn) throw new Error("X not connected");
+  if (conn.data.mode === "hand") return { id: null, url: intentUrl(text), handPost: true as const };
   const token = await freshToken(owner, conn.data, fetchImpl);
   const res = await fetchImpl(`${API}/tweets`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 280) }) });
   const j = (await res.json()) as { data?: { id: string }; detail?: string; title?: string };

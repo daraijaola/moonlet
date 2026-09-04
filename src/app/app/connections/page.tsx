@@ -203,25 +203,60 @@ function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: strin
 }
 
 function XCard({ owner, conn, available, onChange, setErr }: CardProps & { owner: string; available: boolean; setErr: (s: string | null) => void }) {
+  const [handle, setHandle] = useState("");
+  const [busy, setBusy] = useState(false);
   return (
-    <Shell mark={<XMark size={21} />} name="X" blurb="Sign in with your X account. A moonlet can draft posts; each one waits for your approval unless you turn on autopilot. No price talk, no hype, by design." unlocks="post_tweet" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "x"); await onChange(); }}>
-      {!conn && (available ? (
-        <button
-          onClick={async () => {
-            try {
-              const { url } = await api.xConnect(owner);
-              window.location.assign(url);
-            } catch (e) {
-              setErr((e as Error).message);
-            }
-          }}
-          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink"
-        >
-          <XMark size={14} /> Connect X
-        </button>
-      ) : (
-        <span className="font-mono text-[11.5px] text-ink-faint">Not configured on this deployment (X_CLIENT_ID).</span>
-      ))}
+    <Shell
+      mark={<XMark size={21} />}
+      name="X"
+      blurb="Tell us your handle. A moonlet drafts posts; when you approve one, X's compose window opens with the text ready and you post it from your own account. Free, nothing to install, no price talk or hype by design."
+      unlocks="post_tweet (you press Post)"
+      conn={conn}
+      onDisconnect={async () => { await api.disconnect(owner, "x"); await onChange(); }}
+    >
+      {!conn && (
+        <div className="space-y-3">
+          <form
+            className="flex flex-wrap items-center gap-2"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setErr(null);
+              try {
+                await api.xConnectHandle(owner, handle);
+                setHandle("");
+                await onChange();
+              } catch (e2) {
+                setErr((e2 as Error).message);
+              }
+              setBusy(false);
+            }}
+          >
+            <div className="flex min-w-0 flex-1 items-center rounded-md border border-ink/15 bg-paper px-3 font-mono text-[12.5px] text-ink focus-within:border-ink">
+              <span className="text-ink-faint">@</span>
+              <input value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="yourhandle" spellCheck={false} autoCapitalize="none" className="min-w-0 flex-1 bg-transparent py-2 pl-0.5 outline-none" />
+            </div>
+            <button type="submit" disabled={busy || handle.trim().replace(/^@/, "").length === 0} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink disabled:opacity-40">
+              <XMark size={14} /> {busy ? "Saving…" : "Connect X"}
+            </button>
+          </form>
+          {available && (
+            <button
+              onClick={async () => {
+                try {
+                  const { url } = await api.xConnect(owner);
+                  window.location.assign(url);
+                } catch (e) {
+                  setErr((e as Error).message);
+                }
+              }}
+              className="font-mono text-[11.5px] text-ink-faint underline decoration-ink/20 hover:text-ink"
+            >
+              or sign in with X so moonlets can post for you (autopilot)
+            </button>
+          )}
+        </div>
+      )}
     </Shell>
   );
 }
