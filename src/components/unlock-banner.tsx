@@ -14,7 +14,8 @@ export function UnlockBanner() {
   const pathname = usePathname();
   const [busy, setBusy] = useState<"sign" | "orbio" | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  if (!address || signed || !orbioChecked || orbioApproved || process.env.NEXT_PUBLIC_DEV_ORBIO === "1") return null;
+  // The dashboard itself walks new owners through Orbio; the banner is for every other surface.
+  if (pathname === "/app" || !address || signed || !orbioChecked || orbioApproved || process.env.NEXT_PUBLIC_DEV_ORBIO === "1") return null;
 
   return (
     <div className="mb-5 rounded-lg border border-gold bg-gold/10 p-3.5 sm:p-4">
