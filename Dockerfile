@@ -1,5 +1,5 @@
 FROM node:22-alpine AS base
-RUN corepack enable && apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat && corepack enable && corepack prepare pnpm@11.15.1 --activate
 WORKDIR /app
 
 FROM base AS deps
@@ -13,7 +13,7 @@ ENV NEXT_TELEMETRY_DISABLED=1
 RUN pnpm build
 
 FROM node:22-alpine AS run
-RUN corepack enable && apk add --no-cache libc6-compat
+RUN apk add --no-cache libc6-compat && corepack enable && corepack prepare pnpm@11.15.1 --activate
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000
 COPY --from=deps /app/node_modules ./node_modules
