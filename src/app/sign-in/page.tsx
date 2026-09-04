@@ -7,6 +7,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { shortAddr } from "@/lib/api";
 import { MoonletMark } from "@/components/logo";
+import { DitherField } from "@/components/dither-field";
 import { MetaMaskMark, OpenRouterMark, OrbioMark, RabbyMark, RobinhoodMark, WalletConnectMark } from "@/components/marks";
 import { detectWallets, type WalletId } from "@/lib/auth";
 
@@ -185,12 +186,11 @@ function SignInInner() {
       </section>
 
       <aside className="relative hidden overflow-hidden border-l border-ink/10 bg-paper lg:block">
-        <div className="grain absolute inset-0" />
-        <div className="absolute inset-0 bg-[url('/mark-pattern.svg')] bg-[length:64px_64px] opacity-[0.08]" />
+        <DitherField className="inset-0" from="right" />
         <div className="relative flex h-full flex-col justify-between p-12">
           <div className="max-w-[26rem]">
             <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">The loop</p>
-            <p className="mt-3 font-display text-[2.6rem] leading-[0.95] text-ink">
+            <p className="mt-3 text-[2.2rem] font-medium leading-[1.05] tracking-[-0.03em] text-ink">
               Trading fees → credits → your moonlet works → proof on chain → repeat.
             </p>
             <p className="mt-4 text-[13.5px] leading-[1.6] text-ink-soft">
