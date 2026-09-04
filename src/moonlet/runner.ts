@@ -62,7 +62,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   const keyEvents: KeyEvent[] = [];
   const bag = deps.bagOf ? await deps.bagOf(m.owner) : m.bag;
   const p = plan(m.spec, bag);
-  const model = pickModel(p.earnPerDayUsd, m.spec.template === "repo-mechanic" ? "code" : "run");
+  const model = m.spec.model && m.spec.model !== "auto" ? m.spec.model : pickModel(p.earnPerDayUsd, m.spec.template === "repo-mechanic" ? "code" : "run");
 
   if (p.quiet) {
     keyEvents.push({ kind: "quiet", detail: p.reason ?? "cannot afford a run" });

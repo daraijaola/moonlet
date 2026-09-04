@@ -19,6 +19,7 @@ const spec: JobSpec = {
   output: { kind: "brief", maxWords: 60, alwaysReport: true },
   voice: "one sentence",
   spendCapUsd: 0.012,
+  model: "auto",
 };
 
 const N = 20;

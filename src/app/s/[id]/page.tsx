@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { PublicHeader } from "@/components/public-header";
+import { PoweredBy } from "@/components/app-shell";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
 import { CADENCE_LABEL, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
@@ -99,6 +100,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
           This page is public. The moonlet manages its own key through the Orbio MCP and never touches the owner&apos;s tokens.
         </footer>
       </main>
+      <PoweredBy />
     </div>
   );
 }

@@ -68,7 +68,7 @@ export function buildCompilerInstructions() {
 Rules:
 - Keep the objective in the user's words where possible. Don't inflate it.
 - Choose the slowest cadence that still does the job. "Every morning" is 24h. "Watch for" or "ping me if" is 1h or 4h, not 15m, unless they say realtime.
-- Pick only the tools the job needs. deliver is always included.
+- Pick only the tools the job needs. deliver is always included. Anything about a token, pool, price, liquidity, volume, holders, whales, or transfers on Robinhood Chain needs token_market and chain_read, not web_search. Only reach for web_search when the answer lives on the open web (news, docs, socials).
 - Extract concrete sources: tickers, contract addresses (0x…), URLs, repo slugs (owner/name), channel names. If none are given, leave sources empty rather than inventing them.
 - output.alwaysReport is false for alerts ("ping me if", "tell me when") and true for briefs and digests.
 - spendCapUsd: 0.01 for light briefs on cheap models, 0.03 for research, 0.2 for code work. Never above what the template's cost suggests by more than 3x.

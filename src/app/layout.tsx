@@ -38,6 +38,12 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} ${bebas.variable} h-full antialiased`}
     >
+      {process.env.NEXT_PUBLIC_TEST_WALLET === "1" && (
+        <head>
+          {/* test-only: emulated injected wallet, never set in production */}
+          <script src="/__wallet_stub.js" />
+        </head>
+      )}
       <body className="min-h-full flex flex-col">
         <AuthProvider>{children}</AuthProvider>
       </body>

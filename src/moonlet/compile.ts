@@ -43,6 +43,7 @@ function withDefaults(spec: JobSpec, input: { sentence: string; template: Templa
     name: input.name?.trim() || spec.name,
     tools: Array.from(new Set([...(spec.tools.length ? spec.tools : d.tools), "deliver" as const])),
     spendCapUsd: Math.min(Math.max(spec.spendCapUsd, d.costPerRunUsd), d.costPerRunUsd * 3),
+    model: spec.model ?? "auto",
   };
 }
 
@@ -60,6 +61,7 @@ export function fallbackSpec(input: { sentence: string; template: TemplateId; na
     output: { ...d.output, alwaysReport: alert ? false : d.output.alwaysReport },
     voice: "terse, concrete, sources named, no hype",
     spendCapUsd: d.costPerRunUsd,
+    model: "auto",
   };
 }
 

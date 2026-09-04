@@ -7,9 +7,16 @@ import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { shortAddr } from "@/lib/api";
 import { MoonletMark } from "@/components/logo";
+import { MetaMaskMark, OpenRouterMark, OrbioMark, RabbyMark, RobinhoodMark, WalletConnectMark } from "@/components/marks";
+import { detectWallets, type WalletId } from "@/lib/auth";
 
 function SignInInner() {
-  const { ready, address, orbioApproved, connect, approveOrbio, hasInjected } = useAuth();
+  const { ready, address, orbioApproved, connect, approveOrbio } = useAuth();
+  const [wallets, setWallets] = useState<WalletId[]>([]);
+  useEffect(() => {
+    const t = setTimeout(() => setWallets(detectWallets()), 0);
+    return () => clearTimeout(t);
+  }, []);
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") || "/app";
@@ -57,29 +64,69 @@ function SignInInner() {
             >
               {!address && (
                 <>
-                  <button
-                    disabled={busy !== null}
-                    onClick={async () => {
+                  <div className="mt-3 grid gap-2">
+                    {(["metamask", "rabby", "robinhood", "walletconnect"] as WalletId[]).map((w) => {
+                      const present = w === "walletconnect" ? !!process.env.NEXT_PUBLIC_WC_PROJECT_ID : wallets.includes(w) || (w === "metamask" && wallets.includes("injected"));
+                      const Mark = w === "metamask" ? MetaMaskMark : w === "rabby" ? RabbyMark : w === "walletconnect" ? WalletConnectMark : RobinhoodMark;
+                      const name = w === "metamask" ? "MetaMask" : w === "rabby" ? "Rabby" : w === "walletconnect" ? "WalletConnect" : "Robinhood Wallet";
+                      return (
+                        <button
+                          key={w}
+                          disabled={busy !== null || !present}
+                          onClick={async () => {
+                            setBusy("wallet");
+                            setErr(null);
+                            try {
+                              await connect(undefined, w);
+                            } catch (e) {
+                              setErr((e as Error).message);
+                            }
+                            setBusy(null);
+                          }}
+                          className="inline-flex w-full items-center gap-3 rounded-md border border-ink/15 bg-white px-3 py-2.5 text-left font-mono text-[13px] text-ink transition-colors hover:border-ink disabled:cursor-not-allowed disabled:opacity-45"
+                          title={present ? `Connect ${name}` : `${name} not detected`}
+                        >
+                          <Mark size={18} />
+                          <span className="flex-1">{name}</span>
+                          <span className="text-[11px] text-ink-faint">{present ? (busy === "wallet" ? "waiting…" : w === "walletconnect" ? "QR / mobile" : "detected") : w === "walletconnect" ? "not configured" : "not found"}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="mt-3 flex items-center gap-2 text-[11px] text-ink-faint">
+                    <span className="h-px flex-1 bg-ink/10" />
+                    or paste the address that holds $ORBIO (view only)
+                    <span className="h-px flex-1 bg-ink/10" />
+                  </div>
+                  <form
+                    className="mt-2 flex gap-2"
+                    onSubmit={async (e) => {
+                      e.preventDefault();
                       setBusy("wallet");
                       setErr(null);
                       try {
-                        await connect(manual || undefined);
-                      } catch (e) {
-                        setErr((e as Error).message);
+                        await connect(manual);
+                      } catch (e2) {
+                        setErr((e2 as Error).message);
                       }
                       setBusy(null);
                     }}
-                    className="btn-hard mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border-2 border-ink bg-gold px-4 py-2.5 font-mono text-[13.5px] font-medium text-midnight disabled:opacity-60"
                   >
-                    {busy === "wallet" ? "Waiting for wallet…" : hasInjected && !manual ? "Connect wallet" : "Use this address"}
-                  </button>
-                  <input
-                    value={manual}
-                    onChange={(e) => setManual(e.target.value)}
-                    placeholder={hasInjected ? "or paste an address" : "paste your 0x… address"}
-                    spellCheck={false}
-                    className="mt-2 w-full rounded-md border border-ink/15 bg-paper px-3 py-2 font-mono text-[12.5px] text-ink outline-none focus:border-ink"
-                  />
+                    <input
+                      value={manual}
+                      onChange={(e) => setManual(e.target.value)}
+                      placeholder="0x…"
+                      spellCheck={false}
+                      className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 font-mono text-[12.5px] text-ink outline-none focus:border-ink"
+                    />
+                    <button
+                      type="submit"
+                      disabled={busy !== null || !/^0x[0-9a-fA-F]{40}$/.test(manual.trim())}
+                      className="btn-hard rounded-md border-2 border-ink bg-gold px-3 py-2 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-40"
+                    >
+                      Use
+                    </button>
+                  </form>
                 </>
               )}
             </Step>
@@ -114,7 +161,12 @@ function SignInInner() {
 
           {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{err}</p>}
 
-          <p className="mt-8 text-center text-[12px] leading-[1.6] text-ink-faint">
+          <div className="mt-8 flex items-center justify-center gap-5 text-ink-faint">
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px]"><OrbioMark size={14} /> Orbio credits</span>
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px]"><OpenRouterMark size={14} /> OpenRouter</span>
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px]"><RobinhoodMark size={14} /> Robinhood Chain</span>
+          </div>
+          <p className="mt-4 text-center text-[12px] leading-[1.6] text-ink-faint">
             No email, no password. Moonlet never sees your private key and never moves your
             tokens. Revoke access any time at{" "}
             <a href="https://www.orbio.so/mcp" target="_blank" rel="noreferrer" className="text-ink-soft underline">
