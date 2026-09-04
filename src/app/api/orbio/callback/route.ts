@@ -14,6 +14,8 @@ export async function GET(req: Request) {
 
   const saved = await store.takeOauthState(state);
   if (!saved) return NextResponse.redirect(`${appUrl}/sign-in?orbio=expired`);
+  const redirectUri = saved.redirectUri || `${appUrl}/api/orbio/callback`;
+  const back = saved.redirectUri ? new URL(saved.redirectUri).origin : appUrl;
 
   const res = await fetch(ORBIO.token, {
     method: "POST",
@@ -21,12 +23,16 @@ export async function GET(req: Request) {
     body: new URLSearchParams({
       grant_type: "authorization_code",
       code,
-      redirect_uri: `${appUrl}/api/orbio/callback`,
+      redirect_uri: redirectUri,
       client_id: saved.clientId,
       code_verifier: saved.verifier,
     }),
   });
-  if (!res.ok) return NextResponse.redirect(`${appUrl}/sign-in?orbio=token_failed`);
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    console.error("orbio token exchange failed", res.status, detail.slice(0, 300));
+    return NextResponse.redirect(`${back}/sign-in?orbio=token_failed`);
+  }
   const t = (await res.json()) as { access_token: string; refresh_token?: string; expires_in?: number };
   await store.setOwnerOrbio(saved.address, {
     clientId: saved.clientId,
@@ -35,5 +41,5 @@ export async function GET(req: Request) {
     expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined,
   });
   const to = saved.redirectTo.startsWith("/") ? saved.redirectTo : "/app";
-  return NextResponse.redirect(`${appUrl}${to}${to.includes("?") ? "&" : "?"}orbio=ok`);
+  return NextResponse.redirect(`${back}${to}${to.includes("?") ? "&" : "?"}orbio=ok`);
 }

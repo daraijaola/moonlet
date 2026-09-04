@@ -109,6 +109,9 @@ export function migrate() {
         `CREATE TABLE IF NOT EXISTS oauth_states (
           state TEXT PRIMARY KEY, address TEXT NOT NULL, verifier TEXT NOT NULL, client_id TEXT NOT NULL, redirect_to TEXT NOT NULL, created_at INTEGER NOT NULL
         )`,
+        `CREATE TABLE IF NOT EXISTS oauth_clients (
+          redirect_uri TEXT PRIMARY KEY, client_id TEXT NOT NULL, created_at INTEGER NOT NULL
+        )`,
       ],
       "write",
     );
@@ -160,12 +163,22 @@ export async function clearOwnerOrbio(address: string) {
 
 // ---- oauth state -----------------------------------------------------------
 
-export async function saveOauthState(s: { state: string; address: string; verifier: string; clientId: string; redirectTo: string }) {
+export async function saveOauthState(s: { state: string; address: string; verifier: string; clientId: string; redirectTo: string; redirectUri: string }) {
   await migrate();
   await db().execute({
     sql: `INSERT INTO oauth_states(state,address,verifier,client_id,redirect_to,created_at) VALUES(?,?,?,?,?,?)`,
-    args: [s.state, s.address.toLowerCase(), s.verifier, s.clientId, s.redirectTo, Date.now()],
+    args: [s.state, s.address.toLowerCase(), s.verifier, s.clientId, JSON.stringify({ to: s.redirectTo, uri: s.redirectUri }), Date.now()],
   });
+}
+
+/** One Orbio OAuth client per redirect_uri, registered once and reused. */
+export async function getOauthClient(redirectUri: string) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT client_id FROM oauth_clients WHERE redirect_uri=?`, args: [redirectUri] });
+  return (r.rows[0]?.client_id as string) ?? null;
+}
+export async function saveOauthClient(redirectUri: string, clientId: string) {
+  await db().execute({ sql: `INSERT OR REPLACE INTO oauth_clients(redirect_uri,client_id,created_at) VALUES(?,?,?)`, args: [redirectUri, clientId, Date.now()] });
 }
 
 export async function takeOauthState(state: string) {
@@ -174,7 +187,13 @@ export async function takeOauthState(state: string) {
   const row = r.rows[0];
   if (!row) return null;
   await db().execute({ sql: `DELETE FROM oauth_states WHERE state=? OR created_at < ?`, args: [state, Date.now() - 15 * 60_000] });
-  return { address: row.address as string, verifier: row.verifier as string, clientId: row.client_id as string, redirectTo: row.redirect_to as string };
+  let redirectTo = row.redirect_to as string, redirectUri = "";
+  try {
+    const j = JSON.parse(redirectTo) as { to: string; uri: string };
+    redirectTo = j.to;
+    redirectUri = j.uri;
+  } catch {}
+  return { address: row.address as string, verifier: row.verifier as string, clientId: row.client_id as string, redirectTo, redirectUri };
 }
 
 // ---- moonlets --------------------------------------------------------------

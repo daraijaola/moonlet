@@ -25,6 +25,7 @@ export type OrbioKey = { key: string; limitUsd: number; raw: unknown };
 export type OrbioKeyStatus = { spentUsd: number; limitUsd: number; remainingUsd: number; active: boolean; raw: unknown };
 
 export type OrbioClient = {
+  listTools?(): Promise<Array<{ name: string; inputSchema?: unknown }>>;
   getBalance(): Promise<OrbioBalance>;
   claimKey(amountUsd?: number): Promise<OrbioKey>;
   getKeyStatus(): Promise<OrbioKeyStatus>;
@@ -43,6 +44,47 @@ export class OrbioAuthError extends Error {
 }
 
 let rpcId = 1;
+
+type ToolDef = { name: string; inputSchema?: { properties?: Record<string, unknown>; required?: string[] } };
+const schemaCache = new Map<string, Promise<Map<string, ToolDef>>>();
+
+/** tools/list once per token; tells us the real argument names Orbio expects. */
+async function toolDefs(accessToken: string, fetchImpl: typeof fetch): Promise<Map<string, ToolDef>> {
+  const k = accessToken.slice(-16);
+  if (!schemaCache.has(k)) {
+    schemaCache.set(
+      k,
+      (async () => {
+        const res = await fetchImpl(ORBIO.mcp, {
+          method: "POST",
+          headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ jsonrpc: "2.0", id: rpcId++, method: "tools/list", params: {} }),
+        });
+        if (res.status === 401) throw new OrbioAuthError();
+        const text = await res.text();
+        const data = text.includes("data:") ? text.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).pop() ?? "{}" : text;
+        const msg = JSON.parse(data) as { result?: { tools?: ToolDef[] } };
+        return new Map((msg.result?.tools ?? []).map((t) => [t.name, t]));
+      })().catch((e) => {
+        schemaCache.delete(k);
+        throw e;
+      }),
+    );
+  }
+  return schemaCache.get(k)!;
+}
+
+/** Pick the first property name Orbio's schema exposes for a dollar amount. */
+async function amountKey(accessToken: string, tool: string, fetchImpl: typeof fetch) {
+  try {
+    const defs = await toolDefs(accessToken, fetchImpl);
+    const props = Object.keys(defs.get(tool)?.inputSchema?.properties ?? {});
+    return props.find((p) => /amount|usd|dollar|limit|credit/i.test(p)) ?? props[0] ?? "amount_usd";
+  } catch (e) {
+    if (e instanceof OrbioAuthError) throw e;
+    return "amount_usd";
+  }
+}
 
 async function callTool(accessToken: string, name: string, args: Record<string, unknown> = {}, fetchImpl: typeof fetch = fetch) {
   const res = await fetchImpl(ORBIO.mcp, {
@@ -97,12 +139,17 @@ const str = (o: unknown, ...keys: string[]) => {
 export function makeOrbioClient(accessToken: string, fetchImpl: typeof fetch = fetch): OrbioClient {
   const call = (name: string, args?: Record<string, unknown>) => callTool(accessToken, name, args, fetchImpl);
   return {
+    async listTools() {
+      return [...(await toolDefs(accessToken, fetchImpl)).values()];
+    },
     async getBalance() {
       const raw = await call("orbio_get_balance");
       return { availableUsd: num(raw, "available_usd", "availableUsd", "balance_usd", "balance", "available"), raw };
     },
     async claimKey(amountUsd) {
-      const raw = await call("orbio_claim_key", amountUsd ? { amount_usd: amountUsd } : {});
+      const args: Record<string, unknown> = {};
+      if (amountUsd) args[await amountKey(accessToken, "orbio_claim_key", fetchImpl)] = amountUsd;
+      const raw = await call("orbio_claim_key", args);
       return { key: str(raw, "key", "api_key", "apiKey", "secret"), limitUsd: num(raw, "limit_usd", "limitUsd", "limit", "amount_usd"), raw };
     },
     async getKeyStatus() {
@@ -120,7 +167,7 @@ export function makeOrbioClient(accessToken: string, fetchImpl: typeof fetch = f
       };
     },
     async topUpKey(amountUsd) {
-      await call("orbio_top_up_key", { amount_usd: amountUsd });
+      await call("orbio_top_up_key", { [await amountKey(accessToken, "orbio_top_up_key", fetchImpl)]: amountUsd });
       return this.getKeyStatus();
     },
     async rotateKey() {

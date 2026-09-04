@@ -48,7 +48,7 @@ export type ApiRun = {
   error: string | null;
 };
 
-export type OrbioStatus = { approved: boolean; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; canWrite: boolean };
+export type OrbioStatus = { approved: boolean; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; canWrite: boolean; orbio: { tools: string[]; error: string | null; expiresAt: number | null; dev: boolean } };
 
 async function req<T>(owner: string | null, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -62,7 +62,9 @@ async function req<T>(owner: string | null, path: string, init?: RequestInit): P
 
 export const api = {
   orbioStatus: (owner: string) => req<OrbioStatus>(owner, "/api/orbio/status"),
-  orbioStart: (owner: string, redirectTo: string) => req<{ url: string }>(owner, "/api/orbio/start", { method: "POST", body: JSON.stringify({ redirectTo }) }),
+  orbioDisconnect: (owner: string) => req<{ ok: boolean }>(owner, "/api/orbio/status", { method: "DELETE" }),
+  orbioStart: (owner: string, redirectTo: string) =>
+    req<{ url: string }>(owner, "/api/orbio/start", { method: "POST", body: JSON.stringify({ redirectTo, origin: typeof window !== "undefined" ? window.location.origin : undefined }) }),
   listMoonlets: (owner: string) => req<{ moonlets: ApiMoonlet[] }>(owner, "/api/moonlets"),
   getMoonlet: (id: string) => req<{ moonlet: ApiMoonlet }>(null, `/api/moonlets/${id}`),
   runs: (id: string) => req<{ runs: ApiRun[] }>(null, `/api/moonlets/${id}/runs`),

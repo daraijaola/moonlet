@@ -82,6 +82,7 @@ function DashboardInner() {
           ＋ Launch a moonlet
         </Link>
         <Ledger moonlets={moonlets} status={status} />
+        <OrbioCard status={status} owner={address!} />
       </aside>
 
       <Detail key={selected.id} m={selected} owner={address!} onChange={load} />
@@ -108,6 +109,57 @@ function Ledger({ moonlets, status }: { moonlets: ApiMoonlet[]; status: OrbioSta
       <p className="mt-3 text-[11px] leading-[1.5] text-ink-faint">
         Idle credit is inference you already own and aren&apos;t using. Launch another moonlet to put it to work.
       </p>
+    </div>
+  );
+}
+
+function OrbioCard({ status, owner }: { status: OrbioStatus | null; owner: string }) {
+  const { approveOrbio } = useAuth();
+  const [busy, setBusy] = useState(false);
+  if (!status) return null;
+  const o = status.orbio;
+  return (
+    <div className="mt-3 hidden rounded-lg border border-ink/10 bg-white p-4 lg:block">
+      <h3 className="flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">
+        Orbio
+        <span className={`rounded-full px-2 py-0.5 text-[10px] normal-case tracking-normal ${status.approved ? "bg-moss/10 text-moss" : "bg-ink/5 text-ink-soft"}`}>
+          {o.dev ? "dev stub" : status.approved ? "approved" : "not approved"}
+        </span>
+      </h3>
+      <p className="mt-2 font-mono text-[11.5px] leading-[1.6] text-ink-soft">
+        {status.approved
+          ? o.tools.length
+            ? `${o.tools.length} MCP tools for this wallet: ${o.tools.map((t) => t.replace("orbio_", "")).join(", ")}`
+            : "Token on file for this wallet."
+          : "This wallet hasn't approved Moonlet on orbio.so yet. Moonlets can't claim keys until it does."}
+        {o.error && <span className="block text-red-700">{o.error}</span>}
+      </p>
+      <div className="mt-3 flex gap-2">
+        {status.approved ? (
+          <button
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              await api.orbioDisconnect(owner).catch(() => undefined);
+              location.reload();
+            }}
+            className="rounded-md border border-ink/15 px-2.5 py-1 font-mono text-[11.5px] text-ink-soft hover:border-ink/40 hover:text-ink disabled:opacity-50"
+          >
+            Disconnect
+          </button>
+        ) : (
+          <button
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              await approveOrbio("/app").catch(() => setBusy(false));
+            }}
+            className="btn-hard rounded-md border-2 border-ink bg-white px-2.5 py-1 font-mono text-[11.5px] font-medium text-ink disabled:opacity-50"
+          >
+            Approve on Orbio
+          </button>
+        )}
+      </div>
     </div>
   );
 }

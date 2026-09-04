@@ -13,14 +13,14 @@ const TABS = [
   { href: "/sky", label: "The sky" },
 ];
 
-/** Quiet top bar for signed-in surfaces. Gates on the auth stub. */
+/** Quiet top bar for signed-in surfaces. Gates on a connected wallet. */
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { ready, address, orbioApproved, disconnect } = useAuth();
+  const { ready, address, disconnect } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
-  const skipOrbio = process.env.NEXT_PUBLIC_DEV_ORBIO === "1";
-  const allowed = !!address && (orbioApproved || skipOrbio);
+  // A wallet is enough to enter; Orbio approval is prompted inside the app.
+  const allowed = !!address;
 
   useEffect(() => {
     if (!ready) return;
