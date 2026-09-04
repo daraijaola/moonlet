@@ -36,6 +36,9 @@ export const OrbioMark = (p: P) => <Img src="/brands/orbio.png" alt="Orbio" {...
 export const OpenRouterMark = (p: P) => <Mono src="/brands/openrouter.svg" label="OpenRouter" {...p} />;
 export const RobinhoodMark = (p: P) => <Mono src="/brands/robinhood.svg" label="Robinhood" {...p} />;
 export const AnthropicMark = (p: P) => <Mono src="/brands/anthropic.svg" label="Anthropic" {...p} />;
+export const GitHubMark = (p: P) => <Mono src="/brands/github.svg" label="GitHub" {...p} />;
+export const TelegramMark = (p: P) => <Mono src="/brands/telegram.svg" label="Telegram" {...p} />;
+export const XMark = (p: P) => <Mono src="/brands/x.svg" label="X" {...p} />;
 
 /** Auto routing is OpenRouter picking the model, so it wears OpenRouter's mark. */
 export const AutoMark = OpenRouterMark;

@@ -10,6 +10,7 @@ export type ApiMoonlet = {
   spec: JobSpec;
   status: "running" | "idle" | "paused" | "quiet" | "deleted";
   delivery: { telegram?: string; x?: string };
+  autopilot: boolean;
   cadence: string;
   perRunCapUsd: number;
   earnPerDayUsd: number;
@@ -48,7 +49,24 @@ export type ApiRun = {
   error: string | null;
 };
 
-export type OrbioStatus = { approved: boolean; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; canWrite: boolean };
+export type ConnectionKind = "telegram" | "github" | "x";
+export type Connections = {
+  connections: Array<{ kind: ConnectionKind; label: string; createdAt: number }>;
+  available: { telegram: boolean; telegramBot: string | null; github: boolean; githubOAuth: boolean; x: boolean };
+};
+export type Proposal = {
+  id: string;
+  moonletId: string;
+  kind: "tweet" | "pull_request" | "issue_comment";
+  status: "pending" | "approved" | "rejected" | "executed" | "failed";
+  title: string;
+  body: string;
+  result: Record<string, unknown> | null;
+  createdAt: number;
+  decidedAt: number | null;
+};
+
+export type OrbioStatus = { approved: boolean; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; canWrite: boolean; orbio: { tools: string[]; error: string | null; expiresAt: number | null; dev: boolean } };
 
 async function req<T>(owner: string | null, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -62,18 +80,29 @@ async function req<T>(owner: string | null, path: string, init?: RequestInit): P
 
 export const api = {
   orbioStatus: (owner: string) => req<OrbioStatus>(owner, "/api/orbio/status"),
-  orbioStart: (owner: string, redirectTo: string) => req<{ url: string }>(owner, "/api/orbio/start", { method: "POST", body: JSON.stringify({ redirectTo }) }),
+  orbioDisconnect: (owner: string) => req<{ ok: boolean }>(owner, "/api/orbio/status", { method: "DELETE" }),
+  orbioStart: (owner: string, redirectTo: string) =>
+    req<{ url: string }>(owner, "/api/orbio/start", { method: "POST", body: JSON.stringify({ redirectTo, origin: typeof window !== "undefined" ? window.location.origin : undefined }) }),
   listMoonlets: (owner: string) => req<{ moonlets: ApiMoonlet[] }>(owner, "/api/moonlets"),
   getMoonlet: (id: string) => req<{ moonlet: ApiMoonlet }>(null, `/api/moonlets/${id}`),
   runs: (id: string) => req<{ runs: ApiRun[] }>(null, `/api/moonlets/${id}/runs`),
   compile: (owner: string, body: { sentence: string; template: JobSpec["template"]; name?: string }) =>
     req<{ spec: JobSpec; compiled: boolean }>(owner, "/api/moonlets/compile", { method: "POST", body: JSON.stringify(body) }),
-  launch: (owner: string, body: { spec: JobSpec; delivery: { telegram?: string; x?: string }; runNow?: boolean }) =>
+  launch: (owner: string, body: { spec: JobSpec; delivery: { telegram?: string; x?: string }; autopilot?: boolean; runNow?: boolean }) =>
     req<{ moonlet: ApiMoonlet; plan: Plan; firstRun: { status: string; error?: string; runId?: string } | null }>(owner, "/api/moonlets", { method: "POST", body: JSON.stringify(body) }),
-  patch: (owner: string, id: string, body: { action: "pause" | "resume" | "rotate_key" | "edit"; spec?: JobSpec; delivery?: { telegram?: string; x?: string } }) =>
+  patch: (owner: string, id: string, body: { action: "pause" | "resume" | "rotate_key" | "edit"; spec?: JobSpec; delivery?: { telegram?: string; x?: string }; autopilot?: boolean }) =>
     req<{ moonlet: ApiMoonlet }>(owner, `/api/moonlets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   remove: (owner: string, id: string) => req<{ ok: boolean; returnedUsd: number }>(owner, `/api/moonlets/${id}`, { method: "DELETE" }),
   runNow: (owner: string, id: string) => req<{ status: string; error?: string; runId?: string }>(owner, `/api/moonlets/${id}/run`, { method: "POST" }),
+  connections: (owner: string) => req<Connections>(owner, "/api/connections"),
+  disconnect: (owner: string, kind: ConnectionKind) => req<{ ok: boolean }>(owner, "/api/connections", { method: "DELETE", body: JSON.stringify({ kind }) }),
+  telegramLink: (owner: string) => req<{ code: string; url: string | null }>(owner, "/api/connections/telegram", { method: "POST" }),
+  telegramPoll: (owner: string) => req<{ linked: boolean; label: string | null }>(owner, "/api/connections/telegram"),
+  githubStart: (owner: string) => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
+  githubConnect: (owner: string, token: string) => req<{ ok: boolean; login: string }>(owner, "/api/connections/github", { method: "POST", body: JSON.stringify({ token }) }),
+  xConnect: (owner: string) => req<{ url: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
+  proposals: (owner: string, status?: Proposal["status"]) => req<{ proposals: Proposal[] }>(owner, `/api/proposals${status ? `?status=${status}` : ""}`),
+  decide: (owner: string, id: string, action: "approve" | "reject") => req<{ ok: boolean; status: string; result?: Record<string, unknown> }>(owner, `/api/proposals/${id}`, { method: "POST", body: JSON.stringify({ action }) }),
   sky: () => req<{ alive: number; total: number; creditsPerDay: number; burnPerDay: number; spentTotalUsd: number; runsToday: number; anchoredToday: number }>(null, "/api/sky/stats"),
 };
 

@@ -21,6 +21,7 @@ const Patch = z.object({
   action: z.enum(["pause", "resume", "rotate_key", "edit"]),
   spec: JobSpec.optional(),
   delivery: z.object({ telegram: z.string().max(64).optional(), x: z.string().max(64).optional() }).optional(),
+  autopilot: z.boolean().optional(),
 });
 
 export async function PATCH(req: Request, { params }: Ctx) {
@@ -47,6 +48,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
       spec,
       name: spec.name,
       delivery: body.data.delivery ?? m.delivery,
+      autopilot: body.data.autopilot ?? m.autopilot,
       cadence: p.cadence,
       perRunCapUsd: p.perRunCapUsd,
       earnPerDayUsd: p.earnPerDayUsd,

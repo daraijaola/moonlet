@@ -16,7 +16,21 @@ export const TOOL_IDS = [
   "token_market",
   "sandbox",
   "deliver",
+  "github_read",
+  "open_pull_request",
+  "comment_on_issue",
+  "post_tweet",
 ] as const;
+
+/** Tools that need a connection on the owner's account before a moonlet may use them. */
+export const TOOL_REQUIRES: Partial<Record<ToolId, "telegram" | "github" | "x">> = {
+  github_read: "github",
+  open_pull_request: "github",
+  comment_on_issue: "github",
+  post_tweet: "x",
+};
+/** Tools that act on the owner's behalf; always go through draft → approve unless autopilot. */
+export const ACTING_TOOLS: ToolId[] = ["open_pull_request", "comment_on_issue", "post_tweet"];
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export const MODEL_CHOICES = ["auto", "google/gemini-3.8-flash", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5"] as const;
@@ -81,7 +95,7 @@ export const TEMPLATE_DEFAULTS: Record<
     costPerRunUsd: 0.012,
   },
   "repo-mechanic": {
-    tools: ["web_fetch", "web_search", "deliver"],
+    tools: ["github_read", "web_fetch", "deliver"],
     cadence: "24h",
     output: { kind: "digest", maxWords: 220, alwaysReport: false },
     costPerRunUsd: 0.02,

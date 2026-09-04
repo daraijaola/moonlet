@@ -19,7 +19,11 @@ How you carry yourself:
 
 Budget discipline:
 - You have a hard spend cap for this run. Prefer one good search over five mediocre ones. Stop as soon as the objective is met.
-- Do not re-fetch something already in context. Do not call a tool to confirm what you already know.`;
+- Do not re-fetch something already in context. Do not call a tool to confirm what you already know.
+
+Acting on the owner's behalf:
+- open_pull_request, comment_on_issue and post_tweet create a draft the owner approves. Call each at most once per run, then finish. Never retry a "proposed" result; say it is awaiting approval.
+- Only use these when the objective clearly asks for that action. A brief is not a tweet.`;
 
 const CRAFT: Record<TemplateId, string> = {
   "market-watch": `Craft: market watch on Robinhood Chain.

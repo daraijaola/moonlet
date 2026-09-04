@@ -1,5 +1,7 @@
 import { createClient, type Client } from "@libsql/client";
 import { randomBytes } from "node:crypto";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import type { KeyEvent, KeyState } from "./runner";
 import type { JobSpec } from "./spec";
 
@@ -26,6 +28,7 @@ export type MoonletRow = {
   spec: JobSpec;
   status: "running" | "idle" | "paused" | "quiet" | "deleted";
   delivery: { telegram?: string; x?: string };
+  autopilot: boolean;
   key: KeyState;
   cadence: string;
   perRunCapUsd: number;
@@ -66,8 +69,10 @@ let ready: Promise<void> | null = null;
 
 export function db() {
   if (!client) {
+    const url = process.env.DATABASE_URL ?? "file:./.data/moonlet.db";
+    if (url.startsWith("file:")) mkdirSync(dirname(url.slice(5)), { recursive: true });
     client = createClient({
-      url: process.env.DATABASE_URL ?? "file:./.data/moonlet.db",
+      url,
       authToken: process.env.DATABASE_AUTH_TOKEN,
     });
   }
@@ -105,9 +110,26 @@ export function migrate() {
         `CREATE TABLE IF NOT EXISTS oauth_states (
           state TEXT PRIMARY KEY, address TEXT NOT NULL, verifier TEXT NOT NULL, client_id TEXT NOT NULL, redirect_to TEXT NOT NULL, created_at INTEGER NOT NULL
         )`,
+        `CREATE TABLE IF NOT EXISTS oauth_clients (
+          redirect_uri TEXT PRIMARY KEY, client_id TEXT NOT NULL, created_at INTEGER NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS connections (
+          owner TEXT NOT NULL, kind TEXT NOT NULL, label TEXT NOT NULL, data TEXT NOT NULL, created_at INTEGER NOT NULL,
+          PRIMARY KEY(owner, kind)
+        )`,
+        `CREATE TABLE IF NOT EXISTS link_codes (
+          code TEXT PRIMARY KEY, owner TEXT NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL
+        )`,
+        `CREATE TABLE IF NOT EXISTS proposals (
+          id TEXT PRIMARY KEY, owner TEXT NOT NULL, moonlet_id TEXT NOT NULL, run_id TEXT, kind TEXT NOT NULL, payload TEXT NOT NULL,
+          status TEXT NOT NULL, result TEXT, telegram_msg TEXT, created_at INTEGER NOT NULL, decided_at INTEGER
+        )`,
+        `CREATE INDEX IF NOT EXISTS proposals_owner ON proposals(owner, status, created_at DESC)`,
+        `CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT NOT NULL)`,
       ],
       "write",
     );
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
   })();
   return ready;
 }
@@ -156,12 +178,22 @@ export async function clearOwnerOrbio(address: string) {
 
 // ---- oauth state -----------------------------------------------------------
 
-export async function saveOauthState(s: { state: string; address: string; verifier: string; clientId: string; redirectTo: string }) {
+export async function saveOauthState(s: { state: string; address: string; verifier: string; clientId: string; redirectTo: string; redirectUri: string }) {
   await migrate();
   await db().execute({
     sql: `INSERT INTO oauth_states(state,address,verifier,client_id,redirect_to,created_at) VALUES(?,?,?,?,?,?)`,
-    args: [s.state, s.address.toLowerCase(), s.verifier, s.clientId, s.redirectTo, Date.now()],
+    args: [s.state, s.address.toLowerCase(), s.verifier, s.clientId, JSON.stringify({ to: s.redirectTo, uri: s.redirectUri }), Date.now()],
   });
+}
+
+/** One Orbio OAuth client per redirect_uri, registered once and reused. */
+export async function getOauthClient(redirectUri: string) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT client_id FROM oauth_clients WHERE redirect_uri=?`, args: [redirectUri] });
+  return (r.rows[0]?.client_id as string) ?? null;
+}
+export async function saveOauthClient(redirectUri: string, clientId: string) {
+  await db().execute({ sql: `INSERT OR REPLACE INTO oauth_clients(redirect_uri,client_id,created_at) VALUES(?,?,?)`, args: [redirectUri, clientId, Date.now()] });
 }
 
 export async function takeOauthState(state: string) {
@@ -170,7 +202,13 @@ export async function takeOauthState(state: string) {
   const row = r.rows[0];
   if (!row) return null;
   await db().execute({ sql: `DELETE FROM oauth_states WHERE state=? OR created_at < ?`, args: [state, Date.now() - 15 * 60_000] });
-  return { address: row.address as string, verifier: row.verifier as string, clientId: row.client_id as string, redirectTo: row.redirect_to as string };
+  let redirectTo = row.redirect_to as string, redirectUri = "";
+  try {
+    const j = JSON.parse(redirectTo) as { to: string; uri: string };
+    redirectTo = j.to;
+    redirectUri = j.uri;
+  } catch {}
+  return { address: row.address as string, verifier: row.verifier as string, clientId: row.client_id as string, redirectTo, redirectUri };
 }
 
 // ---- moonlets --------------------------------------------------------------
@@ -183,6 +221,7 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
     spec: JSON.parse(row.spec as string),
     status: row.status as MoonletRow["status"],
     delivery: JSON.parse(row.delivery as string),
+    autopilot: !!row.autopilot,
     key: row.key ? (JSON.parse(open(row.key as string)) as KeyState) : null,
     cadence: row.cadence as string,
     perRunCapUsd: Number(row.per_run_cap_usd),
@@ -198,13 +237,13 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
   };
 }
 
-export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt">) {
+export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot"> & { autopilot?: boolean }) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
-      m.id, m.owner.toLowerCase(), m.name, JSON.stringify(m.spec), m.status, JSON.stringify(m.delivery),
+      m.id, m.owner.toLowerCase(), m.name, JSON.stringify(m.spec), m.status, JSON.stringify(m.delivery), m.autopilot ? 1 : 0,
       m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt,
     ],
   });
@@ -241,6 +280,7 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
     spec: (v) => JSON.stringify(v),
     status: (v) => v,
     delivery: (v) => JSON.stringify(v),
+    autopilot: (v) => (v ? 1 : 0),
     key: (v) => (v ? seal(JSON.stringify(v)) : null),
     cadence: (v) => v,
     perRunCapUsd: (v) => v,
@@ -254,7 +294,7 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
     spentTotalUsd: (v) => v,
   };
   const cols: Record<string, string> = {
-    name: "name", spec: "spec", status: "status", delivery: "delivery", key: "key", cadence: "cadence",
+    name: "name", spec: "spec", status: "status", delivery: "delivery", autopilot: "autopilot", key: "key", cadence: "cadence",
     perRunCapUsd: "per_run_cap_usd", earnPerDayUsd: "earn_per_day_usd", burnPerDayUsd: "burn_per_day_usd",
     nextRunAt: "next_run_at", lastRunAt: "last_run_at", keysRotated: "keys_rotated", runsTotal: "runs_total",
     runsFailed: "runs_failed", spentTotalUsd: "spent_total_usd",
@@ -378,6 +418,130 @@ export async function skyStats() {
     runsToday: Number(b?.today ?? 0),
     anchoredToday: Number(b?.anchored ?? 0),
   };
+}
+
+// ---- connections -----------------------------------------------------------
+
+export type ConnectionKind = "telegram" | "github" | "x";
+export type ConnectionRow<T = Record<string, unknown>> = { owner: string; kind: ConnectionKind; label: string; data: T; createdAt: number };
+
+export async function setConnection(owner: string, kind: ConnectionKind, label: string, data: Record<string, unknown>) {
+  await migrate();
+  await db().execute({
+    sql: `INSERT OR REPLACE INTO connections(owner,kind,label,data,created_at) VALUES(?,?,?,?,?)`,
+    args: [owner.toLowerCase(), kind, label, seal(JSON.stringify(data)), Date.now()],
+  });
+}
+
+export async function getConnection<T = Record<string, unknown>>(owner: string, kind: ConnectionKind): Promise<ConnectionRow<T> | null> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM connections WHERE owner=? AND kind=?`, args: [owner.toLowerCase(), kind] });
+  const row = r.rows[0];
+  if (!row) return null;
+  return { owner: row.owner as string, kind, label: row.label as string, data: JSON.parse(open(row.data as string)) as T, createdAt: Number(row.created_at) };
+}
+
+export async function listConnections(owner: string) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT owner, kind, label, created_at FROM connections WHERE owner=?`, args: [owner.toLowerCase()] });
+  return r.rows.map((row) => ({ kind: row.kind as ConnectionKind, label: row.label as string, createdAt: Number(row.created_at) }));
+}
+
+export async function deleteConnection(owner: string, kind: ConnectionKind) {
+  await db().execute({ sql: `DELETE FROM connections WHERE owner=? AND kind=?`, args: [owner.toLowerCase(), kind] });
+}
+
+export async function saveLinkCode(code: string, owner: string, kind: ConnectionKind) {
+  await migrate();
+  await db().execute({ sql: `INSERT OR REPLACE INTO link_codes(code,owner,kind,created_at) VALUES(?,?,?,?)`, args: [code, owner.toLowerCase(), kind, Date.now()] });
+}
+
+export async function takeLinkCode(code: string) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM link_codes WHERE code=? AND created_at > ?`, args: [code, Date.now() - 30 * 60_000] });
+  const row = r.rows[0];
+  await db().execute({ sql: `DELETE FROM link_codes WHERE code=? OR created_at < ?`, args: [code, Date.now() - 30 * 60_000] });
+  return row ? { owner: row.owner as string, kind: row.kind as ConnectionKind } : null;
+}
+
+// ---- proposals (draft → approve → act) --------------------------------------
+
+export type ProposalKind = "tweet" | "pull_request" | "issue_comment";
+export type ProposalStatus = "pending" | "approved" | "rejected" | "executed" | "failed";
+export type ProposalRow = {
+  id: string;
+  owner: string;
+  moonletId: string;
+  runId: string | null;
+  kind: ProposalKind;
+  payload: Record<string, unknown>;
+  status: ProposalStatus;
+  result: Record<string, unknown> | null;
+  telegramMsg: { chatId: string; messageId: number } | null;
+  createdAt: number;
+  decidedAt: number | null;
+};
+
+function rowToProposal(row: Record<string, unknown>): ProposalRow {
+  return {
+    id: row.id as string,
+    owner: row.owner as string,
+    moonletId: row.moonlet_id as string,
+    runId: (row.run_id as string) ?? null,
+    kind: row.kind as ProposalKind,
+    payload: JSON.parse(row.payload as string),
+    status: row.status as ProposalStatus,
+    result: row.result ? JSON.parse(row.result as string) : null,
+    telegramMsg: row.telegram_msg ? JSON.parse(row.telegram_msg as string) : null,
+    createdAt: Number(row.created_at),
+    decidedAt: row.decided_at === null ? null : Number(row.decided_at),
+  };
+}
+
+export async function insertProposal(p: { id: string; owner: string; moonletId: string; runId: string | null; kind: ProposalKind; payload: Record<string, unknown> }) {
+  await migrate();
+  await db().execute({
+    sql: `INSERT INTO proposals(id,owner,moonlet_id,run_id,kind,payload,status,created_at) VALUES(?,?,?,?,?,?,'pending',?)`,
+    args: [p.id, p.owner.toLowerCase(), p.moonletId, p.runId, p.kind, JSON.stringify(p.payload), Date.now()],
+  });
+}
+
+export async function getProposal(id: string) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM proposals WHERE id=?`, args: [id] });
+  return r.rows[0] ? rowToProposal(r.rows[0] as Record<string, unknown>) : null;
+}
+
+export async function listProposals(owner: string, status?: ProposalStatus, limit = 50) {
+  await migrate();
+  const r = status
+    ? await db().execute({ sql: `SELECT * FROM proposals WHERE owner=? AND status=? ORDER BY created_at DESC LIMIT ?`, args: [owner.toLowerCase(), status, limit] })
+    : await db().execute({ sql: `SELECT * FROM proposals WHERE owner=? ORDER BY created_at DESC LIMIT ?`, args: [owner.toLowerCase(), limit] });
+  return r.rows.map((x) => rowToProposal(x as Record<string, unknown>));
+}
+
+/** Atomically move pending → approved/rejected. Returns false if it wasn't pending. */
+export async function decideProposal(id: string, status: "approved" | "rejected") {
+  const r = await db().execute({ sql: `UPDATE proposals SET status=?, decided_at=? WHERE id=? AND status='pending'`, args: [status, Date.now(), id] });
+  return r.rowsAffected === 1;
+}
+
+export async function finishProposal(id: string, status: "executed" | "failed", result: Record<string, unknown>) {
+  await db().execute({ sql: `UPDATE proposals SET status=?, result=? WHERE id=?`, args: [status, JSON.stringify(result), id] });
+}
+
+export async function setProposalTelegram(id: string, msg: { chatId: string; messageId: number }) {
+  await db().execute({ sql: `UPDATE proposals SET telegram_msg=? WHERE id=?`, args: [JSON.stringify(msg), id] });
+}
+
+export async function kvGet(k: string) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT v FROM kv WHERE k=?`, args: [k] });
+  return (r.rows[0]?.v as string) ?? null;
+}
+export async function kvSet(k: string, v: string) {
+  await migrate();
+  await db().execute({ sql: `INSERT OR REPLACE INTO kv(k,v) VALUES(?,?)`, args: [k, v] });
 }
 
 // ---- secrets at rest -------------------------------------------------------

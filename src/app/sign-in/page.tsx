@@ -145,23 +145,28 @@ function SignInInner() {
                 <p className="mt-3 font-mono text-[12px] text-ink-soft">Checking Orbio…</p>
               )}
               {step === 2 && (
-                <button
-                  disabled={busy !== null}
-                  onClick={async () => {
-                    setBusy("orbio");
-                    setErr(null);
-                    try {
-                      await approveOrbio(next);
-                    } catch (e) {
-                      setErr((e as Error).message);
-                      setBusy(null);
-                    }
-                  }}
-                  className="btn-hard mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border-2 border-ink bg-white px-4 py-2.5 font-mono text-[13.5px] font-medium text-ink disabled:opacity-60"
-                >
-                  <OrbioOrb />
-                  {busy === "orbio" ? "Waiting for Orbio…" : "Approve on Orbio"}
-                </button>
+                <>
+                  <button
+                    disabled={busy !== null}
+                    onClick={async () => {
+                      setBusy("orbio");
+                      setErr(null);
+                      try {
+                        await approveOrbio(next);
+                      } catch (e) {
+                        setErr((e as Error).message);
+                        setBusy(null);
+                      }
+                    }}
+                    className="btn-hard mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border-2 border-ink bg-white px-4 py-2.5 font-mono text-[13.5px] font-medium text-ink disabled:opacity-60"
+                  >
+                    <OrbioMark size={16} />
+                    {busy === "orbio" ? "Waiting for Orbio…" : "Approve on Orbio"}
+                  </button>
+                  <button onClick={() => router.replace(next)} className="mt-2 w-full font-mono text-[11.5px] text-ink-faint hover:text-ink">
+                    skip for now — moonlets stay quiet until approved
+                  </button>
+                </>
               )}
             </Step>
           </ol>
@@ -250,14 +255,6 @@ function Step({
   );
 }
 
-function OrbioOrb() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden>
-      <circle cx="8" cy="8" r="4.2" fill="var(--moon-deep)" stroke="var(--ink)" strokeWidth="1.2" />
-      <ellipse cx="8" cy="8.6" rx="7" ry="2.4" fill="none" stroke="var(--ink)" strokeWidth="1.1" transform="rotate(-18 8 8)" />
-    </svg>
-  );
-}
 
 export default function SignInPage() {
   return (

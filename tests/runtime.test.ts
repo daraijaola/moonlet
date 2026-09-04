@@ -136,7 +136,9 @@ describe("budget", () => {
     expect(p.cadence).not.toBe("15m");
     expect(p.perRunCapUsd).toBeGreaterThanOrEqual(0.012);
     expect(plan(marketWatch, 999).quiet).toBe(true);
-    expect(plan({ ...marketWatch, template: "repo-mechanic" }, 1_000).quiet).toBe(true);
+    const tiny = plan({ ...marketWatch, template: "repo-mechanic" }, 1_000);
+    expect(tiny.quiet).toBe(false);
+    expect(["24h", "7d"]).toContain(tiny.cadence);
   });
 });
 

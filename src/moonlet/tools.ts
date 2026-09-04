@@ -1,6 +1,8 @@
 import { tool, serverTool } from "@openrouter/agent";
 import { z } from "zod";
 import type { ToolId } from "./spec";
+import { readRepo, type GitHubConn } from "./connections/github";
+import { propose, type ProposeCtx } from "./proposals";
 
 /**
  * The moonlet toolset. Bounded on purpose: a moonlet runs unattended on a
@@ -21,6 +23,9 @@ export type ToolDeps = {
   fetch?: typeof fetch;
   deliver?: DeliverySink;
   delivery: { telegram?: string; x?: string };
+  /** Connections the owner has made. A tool that needs one is simply not offered without it. */
+  connections?: { github?: GitHubConn; telegram?: boolean; x?: boolean };
+  propose?: ProposeCtx;
 };
 
 const j = async (f: typeof fetch, url: string, init?: RequestInit) => {
@@ -142,6 +147,63 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
     },
   });
 
+  const ghToken = deps.connections?.github?.token;
+  const githubRead = tool({
+    name: "github_read",
+    description: "Read a GitHub repo the owner connected: open issues, pull requests, recent commits, a file, or a directory listing. Read-only.",
+    inputSchema: z.object({
+      action: z.enum(["issues", "pulls", "commits", "file", "tree"]),
+      repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/).describe("owner/name"),
+      path: z.string().optional().describe("for file / tree"),
+      ref: z.string().optional().describe("branch or sha"),
+      state: z.enum(["open", "closed", "all"]).optional(),
+      limit: z.number().int().min(1).max(30).optional(),
+    }),
+    execute: async (q) => {
+      if (!ghToken) return { error: "GitHub not connected" };
+      try {
+        return await readRepo(ghToken, q as never, f);
+      } catch (e) {
+        return { error: (e as Error).message };
+      }
+    },
+  });
+
+  const gate = <T,>(toInput: (a: T) => Parameters<typeof propose>[0]) =>
+    async (a: T) => {
+      if (!deps.propose) return { error: "acting tools are unavailable in this environment" };
+      const r = await propose(toInput(a), { ...deps.propose, fetch: f });
+      if (r.status === "pending") return { proposed: true, proposalId: r.proposalId, note: "Drafted for the owner. Do not retry; tell them it is waiting for approval." };
+      if (r.status === "failed") return { executed: false, error: (r.result as { error?: string })?.error ?? "failed", note: "Do not retry." };
+      return { executed: true, proposalId: r.proposalId, result: r.result };
+    };
+
+  const openPr = tool({
+    name: "open_pull_request",
+    description: "Propose a pull request on a connected GitHub repo: new branch, the files you specify (full contents), title and body. The owner approves before it is opened. Keep changes small and self-contained.",
+    inputSchema: z.object({
+      repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/),
+      title: z.string().min(4).max(90),
+      body: z.string().max(3000),
+      files: z.array(z.object({ path: z.string().min(1).max(200), content: z.string().max(60_000) })).min(1).max(10),
+    }),
+    execute: gate((a: { repo: string; title: string; body: string; files: Array<{ path: string; content: string }> }) => ({ kind: "pull_request", plan: a })),
+  });
+
+  const commentIssue = tool({
+    name: "comment_on_issue",
+    description: "Propose a comment on a GitHub issue or PR in a connected repo. The owner approves before it posts.",
+    inputSchema: z.object({ repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/), number: z.number().int().positive(), body: z.string().min(1).max(3000) }),
+    execute: gate((a: { repo: string; number: number; body: string }) => ({ kind: "issue_comment", repo: a.repo, number: a.number, body: a.body })),
+  });
+
+  const postTweet = tool({
+    name: "post_tweet",
+    description: "Propose a post on the owner's X account (max 280 chars). The owner approves before it posts. No price predictions, no financial advice, no hype.",
+    inputSchema: z.object({ text: z.string().min(1).max(280) }),
+    execute: gate((a: { text: string }) => ({ kind: "tweet", text: a.text })),
+  });
+
   const webSearch = serverTool({ type: "openrouter:web_search" });
   const webFetch = serverTool({ type: "openrouter:web_fetch" });
   const sandbox = serverTool({ type: "openrouter:shell" });
@@ -153,7 +215,16 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
     web_search: webSearch,
     web_fetch: webFetch,
     sandbox,
+    github_read: githubRead,
+    open_pull_request: openPr,
+    comment_on_issue: commentIssue,
+    post_tweet: postTweet,
   } as const;
 
-  return ids.map((id) => all[id]);
+  const available = (id: ToolId) => {
+    if (id === "github_read" || id === "open_pull_request" || id === "comment_on_issue") return !!ghToken;
+    if (id === "post_tweet") return !!deps.connections?.x;
+    return true;
+  };
+  return ids.filter(available).map((id) => all[id]);
 }

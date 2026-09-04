@@ -16,6 +16,7 @@ export async function GET(req: Request) {
 const Launch = z.object({
   spec: JobSpec,
   delivery: z.object({ telegram: z.string().max(64).optional(), x: z.string().max(64).optional() }).default({}),
+  autopilot: z.boolean().default(false),
   runNow: z.boolean().default(true),
 });
 
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
   if (!owner) return bad("sign in with your wallet first", 401);
   const body = Launch.safeParse(await req.json().catch(() => null));
   if (!body.success) return bad(body.error.message);
-  const { spec, delivery, runNow } = body.data;
+  const { spec, delivery, autopilot, runNow } = body.data;
 
   const bag = await bagOf(owner);
   const p = plan(spec, bag);
@@ -38,6 +39,7 @@ export async function POST(req: Request) {
     spec,
     status: p.quiet ? "quiet" : "idle",
     delivery: { telegram: delivery.telegram || undefined, x: delivery.x || undefined },
+    autopilot,
     key: null,
     cadence: p.cadence,
     perRunCapUsd: p.perRunCapUsd,
@@ -62,6 +64,7 @@ export function publicMoonlet(m: store.MoonletRow) {
     spec: m.spec,
     status: m.status,
     delivery: m.delivery,
+    autopilot: m.autopilot,
     cadence: m.cadence,
     perRunCapUsd: m.perRunCapUsd,
     earnPerDayUsd: m.earnPerDayUsd,

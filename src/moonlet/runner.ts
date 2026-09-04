@@ -5,7 +5,7 @@ import { fallbackModels, makeClient, pickModel, type OpenRouterClient } from "./
 import { OrbioAuthError, type OrbioClient } from "./orbio";
 import { buildInstructions } from "./personality";
 import { RunOutput, RunOutputJsonSchema, type JobSpec } from "./spec";
-import { buildTools, type DeliverySink } from "./tools";
+import { buildTools, type DeliverySink, type ToolDeps } from "./tools";
 
 /**
  * One moonlet run, end to end:
@@ -28,6 +28,9 @@ export type MoonletState = {
   spec: JobSpec;
   delivery: { telegram?: string; x?: string };
   key: KeyState;
+  autopilot?: boolean;
+  connections?: ToolDeps["connections"];
+  runId?: string | null;
 };
 
 export type KeyEvent = { kind: "claimed" | "topped_up" | "rotated" | "quiet"; detail: string; amountUsd?: number };
@@ -83,7 +86,13 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   const clientFor = deps.clientFor ?? makeClient;
   const attempt = async (k: NonNullable<KeyState>) => {
     const client = clientFor(k.key);
-    const tools = buildTools(m.spec.tools, { fetch: deps.fetch, deliver: deps.deliver, delivery: m.delivery });
+    const tools = buildTools(m.spec.tools, {
+      fetch: deps.fetch,
+      deliver: deps.deliver,
+      delivery: m.delivery,
+      connections: m.connections,
+      propose: { owner: m.owner, moonletId: m.id, moonletName: m.spec.name, runId: m.runId ?? null, autopilot: !!m.autopilot },
+    });
     const result = callModel(client, {
       model,
       models: fallbackModels(model),

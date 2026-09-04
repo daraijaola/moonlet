@@ -7,6 +7,9 @@ import { runMoonlet, type RunDeps } from "./runner";
 import { CADENCE_MS, type Cadence } from "./spec";
 import * as store from "./store";
 import { RH_RPC, type DeliverySink } from "./tools";
+import * as tg from "./connections/telegram";
+import type { GitHubConn } from "./connections/github";
+import { telegramCallback } from "./proposals";
 
 /**
  * The scheduler is what a cron tick calls. It picks due moonlets, claims each
@@ -94,6 +97,7 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   };
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
   await anchorPending(deps).catch(() => undefined);
+  await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
   return results;
 }
 
@@ -165,16 +169,32 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   }
 
   const bag = await getBag(m.owner);
+  const [ghConn, tgConn, xConn] = await Promise.all([
+    store.getConnection<GitHubConn>(m.owner, "github"),
+    store.getConnection<tg.TelegramConn>(m.owner, "telegram"),
+    store.getConnection(m.owner, "x"),
+  ]);
+  const deliver: DeliverySink | undefined =
+    deps.deliver ??
+    (tgConn && tg.telegramConfigured()
+      ? async ({ channel, text }) => (channel === "telegram" ? tg.sendMessage(tgConn.data.chatId, tg.esc(text), { fetch: deps.fetch }) : { ok: false })
+      : undefined);
+  const runId = store.newId("run");
   const result = await run(
-    { id: m.id, owner: m.owner, bag, spec: m.spec, delivery: m.delivery, key: m.key },
-    { orbio, clientFor: deps.clientFor, fetch: deps.fetch, deliver: deps.deliver, bagOf: async () => bag },
+    {
+      id: m.id, owner: m.owner, bag, spec: m.spec, key: m.key, autopilot: m.autopilot, runId,
+      delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined },
+      connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn },
+    },
+    { orbio, clientFor: deps.clientFor, fetch: deps.fetch, deliver, bagOf: async () => bag },
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;
   const nextRunAt = now() + (result.status === "failed" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : CADENCE_MS[cadence]);
   const rotated = result.keyEvents.filter((e) => e.kind === "rotated").length;
 
-  const runId = await recordRun(m.id, now(), {
+  await recordRun(m.id, now(), {
+    id: runId,
     status: result.status,
     output: result.output,
     outputHash: result.outputHash,
@@ -207,9 +227,9 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     txHash = a.txHash;
   }
 
-  if (result.status === "done" && result.output && !result.output.nothingHappened && deps.deliver && m.delivery.telegram) {
+  if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && tgConn) {
     const text = `${result.output.title}\n\n${result.output.summary}`;
-    await deps.deliver({ channel: "telegram", text }).catch(() => undefined);
+    await deliver({ channel: "telegram", text }).catch(() => undefined);
   }
 
   if ((result.error ?? "").includes("authorization expired")) {
@@ -223,6 +243,7 @@ async function recordRun(
   moonletId: string,
   at: number,
   r: {
+    id?: string;
     status: "done" | "quiet" | "failed";
     output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean };
     outputHash?: string;
@@ -234,7 +255,7 @@ async function recordRun(
     keyEvents: store.RunRow["keyEvents"];
   },
 ) {
-  const id = store.newId("run");
+  const id = r.id ?? store.newId("run");
   const quietTitle = r.keyEvents.find((e) => e.kind === "quiet")?.detail ?? "Went quiet";
   await store.insertRun({
     id,
