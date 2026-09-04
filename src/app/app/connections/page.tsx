@@ -11,7 +11,9 @@ function ConnectionsInner() {
   const { address } = useAuth();
   const params = useSearchParams();
   const [data, setData] = useState<Connections | null>(null);
-  const [err, setErr] = useState<string | null>(params.get("x") === "failed" ? "X didn't complete the connection. Try again." : null);
+  const [err, setErr] = useState<string | null>(
+    params.get("x") === "failed" ? "X didn't complete the connection. Try again." : params.get("github") === "failed" ? "GitHub didn't complete the connection. Try again." : null,
+  );
 
   const load = useCallback(async () => {
     if (!address) return;
@@ -42,7 +44,7 @@ function ConnectionsInner() {
 
       <div className="mt-6 space-y-3">
         <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} />
-        <GitHubCard owner={address} conn={has("github")} onChange={load} />
+        <GitHubCard owner={address} conn={has("github")} oauth={data.available.githubOAuth} onChange={load} />
         <XCard owner={address} conn={has("x")} available={data.available.x} onChange={load} setErr={setErr} />
       </div>
 
@@ -121,15 +123,35 @@ function TelegramCard({ owner, conn, available, bot, onChange }: CardProps & { o
   );
 }
 
-function GitHubCard({ owner, conn, onChange }: CardProps & { owner: string }) {
+function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: string; oauth: boolean }) {
   const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [showToken, setShowToken] = useState(!oauth);
   return (
-    <Shell mark={<GitHubMark size={20} />} name="GitHub" blurb="A fine-grained token lets a moonlet read the repos you choose and propose pull requests or comments. You approve each one before it lands." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
-      {!conn && (
+    <Shell mark={<GitHubMark size={20} />} name="GitHub" blurb="Sign in with GitHub and a moonlet can read your repos and propose pull requests or comments. You approve each one before it lands." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
+      {!conn && oauth && (
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={async () => {
+              try {
+                const { url } = await api.githubStart(owner);
+                window.location.assign(url);
+              } catch (e) {
+                setErr((e as Error).message);
+              }
+            }}
+            className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream"
+          >
+            <GitHubMark size={14} /> Connect GitHub
+          </button>
+          {!showToken && <button onClick={() => setShowToken(true)} className="font-mono text-[11.5px] text-ink-faint hover:text-ink">or paste a token</button>}
+          {err && <p className="w-full font-mono text-[11.5px] text-red-700">{err}</p>}
+        </div>
+      )}
+      {!conn && showToken && (
         <form
-          className="flex flex-wrap items-center gap-2"
+          className="mt-3 flex flex-wrap items-center gap-2"
           onSubmit={async (e) => {
             e.preventDefault();
             setBusy(true);

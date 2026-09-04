@@ -173,9 +173,9 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
     async (a: T) => {
       if (!deps.propose) return { error: "acting tools are unavailable in this environment" };
       const r = await propose(toInput(a), { ...deps.propose, fetch: f });
-      return r.status === "pending"
-        ? { proposed: true, proposalId: r.proposalId, note: "Drafted for the owner. Do not retry; tell them it is waiting for approval." }
-        : { executed: r.status === "executed", proposalId: r.proposalId, result: r.result };
+      if (r.status === "pending") return { proposed: true, proposalId: r.proposalId, note: "Drafted for the owner. Do not retry; tell them it is waiting for approval." };
+      if (r.status === "failed") return { executed: false, error: (r.result as { error?: string })?.error ?? "failed", note: "Do not retry." };
+      return { executed: true, proposalId: r.proposalId, result: r.result };
     };
 
   const openPr = tool({

@@ -44,7 +44,7 @@ sentence ──compile──▶ JobSpec (you review) ──launch──▶ plan 
 
 ## Connections and approvals
 
-Holders connect what their moonlets may touch on **/app/connections**: Telegram (tap the bot, done), GitHub (fine-grained token), X (OAuth). Each connection unlocks a tool: `deliver`, `github_read`, `open_pull_request`, `comment_on_issue`, `post_tweet`.
+Holders connect what their moonlets may touch on **/app/connections**: Telegram (tap the bot, done), GitHub (sign in with GitHub; token paste as fallback), X (OAuth). Each connection unlocks a tool: `deliver`, `github_read`, `open_pull_request`, `comment_on_issue`, `post_tweet`.
 
 Anything that acts on the owner's behalf is **drafted first**. The draft shows up on the dashboard under "Waiting for your OK" and, if Telegram is linked, as a message with Approve / Reject buttons. Approve executes it once; reject discards it; both are recorded. Flip **Autopilot** on a moonlet to let it act without asking.
 

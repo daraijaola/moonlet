@@ -1,3 +1,4 @@
+import { randomBytes } from "node:crypto";
 import * as store from "../store";
 
 /**
@@ -27,6 +28,37 @@ async function gh<T = unknown>(token: string, path: string, init: RequestInit = 
   }
   if (!res.ok) throw new Error(`GitHub ${init.method ?? "GET"} ${path}: ${res.status} ${(j as { message?: string })?.message ?? ""}`.trim());
   return j as T;
+}
+
+export function githubOAuthConfigured() {
+  return !!(process.env.GITHUB_CLIENT_ID && process.env.GITHUB_CLIENT_SECRET);
+}
+
+/** OAuth web flow: authorize → callback → exchange. Scope `repo` covers read + PRs on the user's repos. */
+export async function beginOAuth(owner: string, redirectUri: string, redirectTo: string) {
+  const clientId = process.env.GITHUB_CLIENT_ID;
+  if (!clientId) throw new Error("GitHub sign-in isn't configured (GITHUB_CLIENT_ID)");
+  const state = `gh_${randomBytes(12).toString("base64url")}`;
+  await store.saveOauthState({ state, address: owner, verifier: "", clientId, redirectTo, redirectUri });
+  const u = new URL("https://github.com/login/oauth/authorize");
+  u.search = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, scope: "repo read:user", state, allow_signup: "false" }).toString();
+  return u.toString();
+}
+
+export async function finishOAuth(code: string, state: string, fetchImpl: typeof fetch = fetch) {
+  const saved = await store.takeOauthState(state);
+  if (!saved) throw new Error("state expired");
+  const res = await fetchImpl("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify({ client_id: saved.clientId, client_secret: process.env.GITHUB_CLIENT_SECRET, code, redirect_uri: saved.redirectUri }),
+  });
+  const t = (await res.json().catch(() => ({}))) as { access_token?: string; error_description?: string; scope?: string };
+  if (!res.ok || !t.access_token) throw new Error(`GitHub token exchange failed: ${t.error_description ?? res.status}`);
+  const conn = await verifyToken(t.access_token, fetchImpl);
+  conn.scopes = t.scope;
+  await store.setConnection(saved.address, "github", `@${conn.login}`, conn);
+  return { owner: saved.address, redirectTo: saved.redirectTo, login: conn.login };
 }
 
 export async function verifyToken(token: string, fetchImpl?: typeof fetch): Promise<GitHubConn> {

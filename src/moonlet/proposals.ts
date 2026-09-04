@@ -31,6 +31,8 @@ export function describe(kind: store.ProposalKind, payload: Record<string, unkno
 
 /** Create the proposal (or act immediately on autopilot). Returns what the tool should tell the model. */
 export async function propose(input: ProposalInput, ctx: ProposeCtx) {
+  const needs = input.kind === "tweet" ? "x" : "github";
+  if (!(await store.getConnection(ctx.owner, needs))) return { proposalId: null, status: "failed" as const, result: { error: `${needs === "x" ? "X" : "GitHub"} is not connected` } };
   const payload: Record<string, unknown> = input.kind === "tweet" ? { text: input.text } : input.kind === "pull_request" ? { plan: input.plan } : { repo: input.repo, number: input.number, body: input.body };
   const id = store.newId("p");
   await store.insertProposal({ id, owner: ctx.owner, moonletId: ctx.moonletId, runId: ctx.runId, kind: input.kind, payload });
@@ -96,9 +98,11 @@ async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ s
 }
 
 /** Telegram button handler: decide, then return the text the message should be edited to. */
-export const telegramCallback: tg.CallbackHandler = async (action, id) => {
+export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   const p = await store.getProposal(id);
   const d = p ? describe(p.kind, p.payload) : { title: "proposal", body: "" };
+  if (!p) return "This draft no longer exists.";
+  if (!(await tg.chatOwns(ctx.chatId, p.owner))) return "This chat isn't linked to the wallet that owns this draft.";
   const r = await decide(id, action);
   if (!r.ok) return `<b>${tg.esc(d.title)}</b>\n\n${tg.esc(r.error)}.`;
   if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing was posted.`;

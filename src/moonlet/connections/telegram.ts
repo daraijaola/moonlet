@@ -74,20 +74,43 @@ type Update = {
 
 export type CallbackHandler = (action: "approve" | "reject", proposalId: string, ctx: { chatId: string; messageId: number }) => Promise<string>;
 
+export async function chatOwns(chatId: string, owner: string) {
+  const c = await store.getConnection<TelegramConn>(owner, "telegram");
+  return !!c && c.data.chatId === chatId;
+}
+
 /**
  * Pull pending updates and handle them: /start <code> links a wallet;
  * callback buttons decide proposals. Offset is persisted so nothing is
  * processed twice. Returns a small summary for logs.
  */
-export async function processUpdates(onCallback: CallbackHandler, fetchImpl: typeof fetch = fetch) {
+let inflight: Promise<{ linked: number; decided: number; skipped: boolean }> | null = null;
+
+export function processUpdates(onCallback: CallbackHandler, fetchImpl: typeof fetch = fetch) {
+  // Telegram allows one getUpdates at a time per bot; page polls and cron ticks share this.
+  if (inflight) return inflight;
+  inflight = processUpdatesInner(onCallback, fetchImpl).finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}
+
+async function processUpdatesInner(onCallback: CallbackHandler, fetchImpl: typeof fetch) {
   if (!telegramConfigured()) return { linked: 0, decided: 0, skipped: true };
   const offset = Number((await store.kvGet("telegram.offset")) ?? 0);
-  const updates = await call<Update[]>("getUpdates", { offset, timeout: 0, allowed_updates: ["message", "callback_query"] }, fetchImpl);
+  let updates: Update[];
+  try {
+    updates = await call<Update[]>("getUpdates", { offset, timeout: 0, allowed_updates: ["message", "callback_query"] }, fetchImpl);
+  } catch (e) {
+    // 409 = another poller or a webhook is set; not fatal, try next tick.
+    if (/409|Conflict|terminated by other/i.test((e as Error).message)) return { linked: 0, decided: 0, skipped: true };
+    throw e;
+  }
   let linked = 0, decided = 0, last = offset - 1;
   for (const u of updates) {
     last = Math.max(last, u.update_id);
     try {
-      if (u.message?.text?.startsWith("/start")) {
+      if (u.message?.text?.startsWith("/start") && u.message.chat.type === "private") {
         const code = u.message.text.split(/\s+/)[1];
         const chatId = String(u.message.chat.id);
         const hit = code ? await store.takeLinkCode(code) : null;

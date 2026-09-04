@@ -52,7 +52,7 @@ export type ApiRun = {
 export type ConnectionKind = "telegram" | "github" | "x";
 export type Connections = {
   connections: Array<{ kind: ConnectionKind; label: string; createdAt: number }>;
-  available: { telegram: boolean; telegramBot: string | null; github: boolean; x: boolean };
+  available: { telegram: boolean; telegramBot: string | null; github: boolean; githubOAuth: boolean; x: boolean };
 };
 export type Proposal = {
   id: string;
@@ -98,6 +98,7 @@ export const api = {
   disconnect: (owner: string, kind: ConnectionKind) => req<{ ok: boolean }>(owner, "/api/connections", { method: "DELETE", body: JSON.stringify({ kind }) }),
   telegramLink: (owner: string) => req<{ code: string; url: string | null }>(owner, "/api/connections/telegram", { method: "POST" }),
   telegramPoll: (owner: string) => req<{ linked: boolean; label: string | null }>(owner, "/api/connections/telegram"),
+  githubStart: (owner: string) => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
   githubConnect: (owner: string, token: string) => req<{ ok: boolean; login: string }>(owner, "/api/connections/github", { method: "POST", body: JSON.stringify({ token }) }),
   xConnect: (owner: string) => req<{ url: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
   proposals: (owner: string, status?: Proposal["status"]) => req<{ proposals: Proposal[] }>(owner, `/api/proposals${status ? `?status=${status}` : ""}`),

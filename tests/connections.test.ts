@@ -80,24 +80,30 @@ describe("connections + proposals", () => {
 
     const r = await propose({ kind: "tweet", text: "ORBIO liquidity +11% in 6h. Source: DexScreener." }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: xFetch });
     expect(r.status).toBe("pending");
+    const pid = r.proposalId!;
     const msg = t.sent.at(-1)!;
     expect(msg.chat_id).toBe("4242");
     expect(msg.text).toContain("Post on X");
-    expect(msg.buttons).toEqual([`approve:${r.proposalId}`, `reject:${r.proposalId}`]);
+    expect(msg.buttons).toEqual([`approve:${pid}`, `reject:${pid}`]);
     expect(posted).toBeNull();
 
     // owner taps Approve
-    t.push({ update_id: 3, callback_query: { id: "cq1", data: `approve:${r.proposalId}`, message: { message_id: 100, chat: { id: 4242 } } } });
+    // a stranger's chat tapping the button must be refused
+    t.push({ update_id: 3, callback_query: { id: "cq0", data: `approve:${pid}`, message: { message_id: 100, chat: { id: 1 } } } });
+    await tg.processUpdates(telegramCallback, t.fetchImpl);
+    expect((await store.getProposal(pid))?.status).toBe("pending");
+    expect(t.edited.at(-1)?.text).toContain("isn't linked");
+    t.push({ update_id: 4, callback_query: { id: "cq1", data: `approve:${pid}`, message: { message_id: 100, chat: { id: 4242 } } } });
     const handler: tg.CallbackHandler = (a, id, ctx) => telegramCallbackWith(a, id, ctx, xFetch);
     await tg.processUpdates(handler, t.fetchImpl);
     expect(posted).toBe("ORBIO liquidity +11% in 6h. Source: DexScreener.");
-    const p = await store.getProposal(r.proposalId);
+    const p = await store.getProposal(pid);
     expect(p?.status).toBe("executed");
     expect((p?.result as { url: string }).url).toBe("https://x.com/dara/status/777");
     expect(t.edited.at(-1)?.text).toContain("Done");
 
     // a second tap on the same button does nothing
-    const again = await decide(r.proposalId, "approve", xFetch);
+    const again = await decide(pid, "approve", xFetch);
     expect(again.ok).toBe(false);
   });
 
@@ -109,7 +115,7 @@ describe("connections + proposals", () => {
       return t.fetchImpl(i, init);
     };
     const r = await propose({ kind: "tweet", text: "never" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: xFetch });
-    const d = await decide(r.proposalId, "reject", xFetch);
+    const d = await decide(r.proposalId!, "reject", xFetch);
     expect(d.ok && d.status).toBe("rejected");
     expect(hits).toBe(0);
   });
@@ -132,7 +138,47 @@ describe("connections + proposals", () => {
     const xFetch: typeof fetch = async () => new Response(JSON.stringify({ detail: "Forbidden" }), { status: 403 });
     const r = await propose({ kind: "tweet", text: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: true, fetch: xFetch });
     expect(r.status).toBe("failed");
-    expect((await store.getProposal(r.proposalId))?.result).toEqual({ error: "X post failed: Forbidden" });
+    expect((await store.getProposal(r.proposalId!))?.result).toEqual({ error: "X post failed: Forbidden" });
+  });
+
+  it("proposing without the connection fails fast instead of queueing a doomed draft", async () => {
+    const r = await propose({ kind: "pull_request", plan: { repo: "a/b", title: "t", body: "", files: [{ path: "x", content: "y" }] } }, { owner: OTHER, moonletId: "m", moonletName: "N", runId: null, autopilot: false });
+    expect(r.status).toBe("failed");
+    expect(r.proposalId).toBeNull();
+  });
+
+  it("a Telegram 409 (another poller / webhook) is skipped, not thrown", async () => {
+    const f: typeof fetch = async () => new Response(JSON.stringify({ ok: false, description: "Conflict: terminated by other getUpdates request" }), { status: 409 });
+    const r = await tg.processUpdates(telegramCallback, f);
+    expect(r.skipped).toBe(true);
+  });
+
+  it("github oauth: exchanges the code, verifies the user, stores the token sealed", async () => {
+    process.env.GITHUB_CLIENT_ID = "cid";
+    process.env.GITHUB_CLIENT_SECRET = "sec";
+    const url = await gh.beginOAuth(OWNER, "https://m.example/api/connections/github/callback", "/app/connections");
+    const u = new URL(url);
+    expect(u.searchParams.get("client_id")).toBe("cid");
+    expect(u.searchParams.get("scope")).toContain("repo");
+    const state = u.searchParams.get("state")!;
+    const f: typeof fetch = async (i, init) => {
+      const url = String(i);
+      if (url.includes("login/oauth/access_token")) {
+        const b = JSON.parse(String(init?.body));
+        expect(b.code).toBe("thecode");
+        expect(b.client_secret).toBe("sec");
+        return new Response(JSON.stringify({ access_token: "gho_abc", scope: "repo,read:user" }), { headers: { "content-type": "application/json" } });
+      }
+      if (url.endsWith("/user")) return new Response(JSON.stringify({ login: "octo" }), { headers: { "content-type": "application/json" } });
+      return new Response("nf", { status: 404 });
+    };
+    const r = await gh.finishOAuth("thecode", state, f);
+    expect(r.login).toBe("octo");
+    const c = await store.getConnection<gh.GitHubConn>(OWNER, "github");
+    expect(c?.data.token).toBe("gho_abc");
+    expect(c?.label).toBe("@octo");
+    // replaying the same state must fail
+    await expect(gh.finishOAuth("thecode", state, f)).rejects.toThrow(/state expired/);
   });
 
   it("acting tools are only offered when the connection exists; deliver refuses unlinked channels", async () => {
