@@ -46,6 +46,7 @@ export type ApiRun = {
   txHash: string | null;
   explorerUrl: string | null;
   keyEvents: Array<{ kind: string; detail: string; amountUsd?: number }>;
+  trace?: Array<{ at: number; tool: string; summary: string }>;
   error: string | null;
 };
 

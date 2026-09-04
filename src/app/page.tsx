@@ -2,6 +2,7 @@ import { Nav } from "@/components/nav";
 import { Hero } from "@/components/hero";
 import { How } from "@/components/how";
 import { Session } from "@/components/session";
+import { Rails } from "@/components/rails";
 import { SiteFooter } from "@/components/site-footer";
 
 export default function Home() {
@@ -12,6 +13,7 @@ export default function Home() {
         <Hero />
         <How />
         <Session />
+        <Rails />
       </main>
       <SiteFooter />
     </div>

@@ -204,6 +204,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     modelCalls: result.modelCalls,
     durationMs: result.durationMs,
     keyEvents: result.keyEvents,
+    trace: result.trace,
   });
 
   await store.updateMoonlet(id, {
@@ -253,6 +254,7 @@ async function recordRun(
     modelCalls: number;
     durationMs: number;
     keyEvents: store.RunRow["keyEvents"];
+    trace?: store.RunRow["trace"];
   },
 ) {
   const id = r.id ?? store.newId("run");
@@ -275,6 +277,7 @@ async function recordRun(
     outputHash: r.outputHash ?? null,
     txHash: null,
     keyEvents: r.keyEvents,
+    trace: r.trace ?? [],
     error: r.error ?? null,
   });
   return id;
