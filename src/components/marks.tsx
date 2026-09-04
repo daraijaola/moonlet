@@ -37,12 +37,7 @@ export const OpenRouterMark = (p: P) => <Mono src="/brands/openrouter.svg" label
 export const RobinhoodMark = (p: P) => <Mono src="/brands/robinhood.svg" label="Robinhood" {...p} />;
 export const AnthropicMark = (p: P) => <Mono src="/brands/anthropic.svg" label="Anthropic" {...p} />;
 
-export function AutoMark({ size = 16, className }: P) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" className={className} aria-hidden>
-      <path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" />
-    </svg>
-  );
-}
+/** Auto routing is OpenRouter picking the model, so it wears OpenRouter's mark. */
+export const AutoMark = OpenRouterMark;
 
 export const VENDOR_MARK = { auto: AutoMark, google: GoogleMark, openai: OpenAIMark, anthropic: AnthropicMark } as const;
