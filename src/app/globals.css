@@ -183,6 +183,9 @@ body {
     linear-gradient(to right, black 0%, black 30%, rgba(0, 0, 0, 0.6) 55%, transparent 100%),
     linear-gradient(to bottom, transparent 0%, black 18%, black 80%, transparent 100%);
 }
+.dither-around {
+  mask-image: radial-gradient(ellipse 62% 70% at 50% 50%, transparent 0%, transparent 42%, rgba(0, 0, 0, 0.55) 70%, black 100%);
+}
 /* No-WebGL fallback: a static Bayer-style dot field. */
 .dither-css {
   background-color: transparent;
