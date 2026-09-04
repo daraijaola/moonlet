@@ -1,0 +1,7 @@
+16labs.xyz {
+  encode zstd gzip
+  reverse_proxy web:3000
+}
+www.16labs.xyz {
+  redir https://16labs.xyz{uri} permanent
+}
