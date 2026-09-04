@@ -2,7 +2,7 @@ import { createClient, type Client } from "@libsql/client";
 import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { KeyEvent, KeyState } from "./runner";
+import type { KeyEvent, KeyState, TraceEvent } from "./runner";
 import type { JobSpec } from "./spec";
 
 /**
@@ -61,6 +61,7 @@ export type RunRow = {
   outputHash: string | null;
   txHash: string | null;
   keyEvents: KeyEvent[];
+  trace?: TraceEvent[];
   error: string | null;
 };
 
@@ -130,6 +131,7 @@ export function migrate() {
       "write",
     );
     await c.execute(`ALTER TABLE moonlets ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
+    await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
   })();
   return ready;
 }
@@ -332,11 +334,11 @@ export async function claimForRun(id: string, now = Date.now()) {
 export async function insertRun(r: RunRow) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
       r.id, r.moonletId, r.at, r.status, r.title, r.summary, r.body, JSON.stringify(r.sources), r.signal, r.nothingHappened ? 1 : 0,
-      r.costUsd, r.model, r.modelCalls, r.durationMs, r.outputHash, r.txHash, JSON.stringify(r.keyEvents), r.error,
+      r.costUsd, r.model, r.modelCalls, r.durationMs, r.outputHash, r.txHash, JSON.stringify(r.keyEvents), r.error, JSON.stringify(r.trace ?? []),
     ],
   });
 }
@@ -365,6 +367,7 @@ function rowToRun(row: Record<string, unknown>): RunRow {
     outputHash: (row.output_hash as string) ?? null,
     txHash: (row.tx_hash as string) ?? null,
     keyEvents: JSON.parse(row.key_events as string),
+    trace: row.trace ? JSON.parse(row.trace as string) : [],
     error: (row.error as string) ?? null,
   };
 }

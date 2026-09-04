@@ -26,6 +26,13 @@ export type ToolDeps = {
   /** Connections the owner has made. A tool that needs one is simply not offered without it. */
   connections?: { github?: GitHubConn; telegram?: boolean; x?: boolean };
   propose?: ProposeCtx;
+  /** Called after every local tool call with a one-line summary of what it did. */
+  trace?: (e: { tool: string; summary: string }) => void;
+};
+
+const brief = (v: unknown, n = 160) => {
+  const s = typeof v === "string" ? v : JSON.stringify(v);
+  return s && s.length > n ? s.slice(0, n - 1) + "…" : (s ?? "");
 };
 
 const j = async (f: typeof fetch, url: string, init?: RequestInit) => {
@@ -36,6 +43,11 @@ const j = async (f: typeof fetch, url: string, init?: RequestInit) => {
 
 export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
   const f = deps.fetch ?? fetch;
+  const traced = <A, R>(name: string, label: (a: A, r: R) => string, run: (a: A) => Promise<R>) => async (a: A) => {
+    const r = await run(a);
+    deps.trace?.({ tool: name, summary: label(a, r) });
+    return r;
+  };
 
   const rpc = async (method: string, params: unknown[]) => {
     const r = (await j(f, RH_RPC, {
@@ -66,7 +78,7 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
       wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional().describe("Wallet address, for balance_of"),
       limit: z.number().int().min(1).max(50).default(15),
     }),
-    execute: async ({ action, token, wallet, limit }) => {
+    execute: traced("chain_read", (a: { action: string; token: string; wallet?: string; limit?: number }, r: unknown) => `${a.action} ${a.token.slice(0, 6)}…${a.token.slice(-4)} · ${brief(r, 90)}`, async ({ action, token, wallet, limit }) => {
       try {
         if (action === "balance_of") {
           if (!wallet) return { error: "wallet required" };
@@ -98,7 +110,7 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
       } catch (e) {
         return { error: (e as Error).message };
       }
-    },
+    }),
   });
 
   const tokenMarket = tool({
@@ -110,7 +122,7 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
       chain: z.string().default("robinhood").describe("DexScreener chain id, e.g. robinhood"),
       limit: z.number().int().min(1).max(10).default(3),
     }),
-    execute: async ({ query, chain, limit }) => {
+    execute: traced("token_market", (a: { query: string; chain: string; limit: number }, r: unknown) => `${a.query} on ${a.chain} · ${brief(r, 90)}`, async ({ query, chain, limit }) => {
       const r = (await j(f, `${DEXSCREENER}/latest/dex/search?q=${encodeURIComponent(query)}`)) as { pairs?: Array<Record<string, unknown>> };
       const pairs = (r.pairs ?? []).filter((p) => !chain || p.chainId === chain).slice(0, limit);
       return {
@@ -129,7 +141,7 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
           url: p.url,
         })),
       };
-    },
+    }),
   });
 
   const deliver = tool({
@@ -140,11 +152,11 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
       channel: z.enum(["telegram", "x"]),
       text: z.string().min(1).max(1200),
     }),
-    execute: async ({ channel, text }) => {
+    execute: traced("deliver", (a: { channel: "telegram" | "x"; text: string }) => `${a.channel} · ${brief(a.text, 90)}`, async ({ channel, text }) => {
       if (!deps.delivery[channel]) return { ok: false, error: `${channel} not configured by owner` };
       if (!deps.deliver) return { ok: false, error: "delivery not available in this environment" };
       return deps.deliver({ channel, text });
-    },
+    }),
   });
 
   const ghToken = deps.connections?.github?.token;
@@ -159,20 +171,25 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
       state: z.enum(["open", "closed", "all"]).optional(),
       limit: z.number().int().min(1).max(30).optional(),
     }),
-    execute: async (q) => {
+    execute: traced("github_read", (q: { action: string; repo: string; path?: string }, r: unknown) => `${q.action} ${q.repo}${q.path ? " " + q.path : ""} · ${brief(r, 90)}`, async (q) => {
       if (!ghToken) return { error: "GitHub not connected" };
       try {
         return await readRepo(ghToken, q as never, f);
       } catch (e) {
         return { error: (e as Error).message };
       }
-    },
+    }),
   });
 
   const gate = <T,>(toInput: (a: T) => Parameters<typeof propose>[0]) =>
     async (a: T) => {
       if (!deps.propose) return { error: "acting tools are unavailable in this environment" };
-      const r = await propose(toInput(a), { ...deps.propose, fetch: f });
+      const input = toInput(a);
+      const r = await propose(input, { ...deps.propose, fetch: f });
+      deps.trace?.({
+        tool: input.kind === "tweet" ? "post_tweet" : input.kind === "pull_request" ? "open_pull_request" : "comment_on_issue",
+        summary: `${r.status}${r.proposalId ? " · " + r.proposalId : ""} · ${brief(input.kind === "pull_request" ? input.plan.title : input.kind === "tweet" ? input.text : input.body, 90)}`,
+      });
       if (r.status === "pending") return { proposed: true, proposalId: r.proposalId, note: "Drafted for the owner. Do not retry; tell them it is waiting for approval." };
       if (r.status === "failed") return { executed: false, error: (r.result as { error?: string })?.error ?? "failed", note: "Do not retry." };
       return { executed: true, proposalId: r.proposalId, result: r.result };

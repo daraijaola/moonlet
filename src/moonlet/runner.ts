@@ -33,6 +33,7 @@ export type MoonletState = {
   runId?: string | null;
 };
 
+export type TraceEvent = { at: number; tool: string; summary: string };
 export type KeyEvent = { kind: "claimed" | "topped_up" | "rotated" | "quiet"; detail: string; amountUsd?: number };
 
 export type RunResult = {
@@ -46,6 +47,7 @@ export type RunResult = {
   durationMs: number;
   plan: Plan;
   keyEvents: KeyEvent[];
+  trace: TraceEvent[];
   key: KeyState;
   error?: string;
 };
@@ -63,24 +65,25 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   const t0 = Date.now();
   const now = deps.now ?? (() => new Date());
   const keyEvents: KeyEvent[] = [];
+  const trace: TraceEvent[] = [];
   const bag = deps.bagOf ? await deps.bagOf(m.owner) : m.bag;
   const p = plan(m.spec, bag);
   const model = m.spec.model && m.spec.model !== "auto" ? m.spec.model : pickModel(p.earnPerDayUsd, m.spec.template === "repo-mechanic" ? "code" : "run");
 
   if (p.quiet) {
     keyEvents.push({ kind: "quiet", detail: p.reason ?? "cannot afford a run" });
-    return { ok: true, status: "quiet", costUsd: 0, model, modelCalls: 0, durationMs: Date.now() - t0, plan: p, keyEvents, key: m.key };
+    return { ok: true, status: "quiet", costUsd: 0, model, modelCalls: 0, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key: m.key };
   }
 
   let key: KeyState = m.key;
   try {
     key = await ensureFunded(key, p, deps.orbio, keyEvents);
   } catch (e) {
-    return fail(e, "funding", { t0, model, p, keyEvents, key });
+    return fail(e, "funding", { t0, model, p, keyEvents, trace, key });
   }
   if (!key) {
     keyEvents.push({ kind: "quiet", detail: "no credits available to fund a key" });
-    return { ok: true, status: "quiet", costUsd: 0, model, modelCalls: 0, durationMs: Date.now() - t0, plan: p, keyEvents, key };
+    return { ok: true, status: "quiet", costUsd: 0, model, modelCalls: 0, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key };
   }
 
   const clientFor = deps.clientFor ?? makeClient;
@@ -92,6 +95,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       delivery: m.delivery,
       connections: m.connections,
       propose: { owner: m.owner, moonletId: m.id, moonletName: m.spec.name, runId: m.runId ?? null, autopilot: !!m.autopilot },
+      trace: (e) => trace.push({ at: Date.now() - t0, ...e }),
     });
     const result = callModel(client, {
       model,
@@ -126,19 +130,19 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   try {
     ({ text, cost, calls } = await attemptWithBackoff(key));
   } catch (e) {
-    if (!isKeyExhausted(e)) return fail(e, "run", { t0, model, p, keyEvents, key });
+    if (!isKeyExhausted(e)) return fail(e, "run", { t0, model, p, keyEvents, trace, key });
     try {
       const rotated = await deps.orbio.rotateKey();
       key = { key: rotated.key, limitUsd: rotated.limitUsd, spentUsd: 0 };
       keyEvents.push({ kind: "rotated", detail: "key rejected mid-run; rotated and retried", amountUsd: rotated.limitUsd });
       ({ text, cost, calls } = await attemptWithBackoff(key));
     } catch (e2) {
-      return fail(e2, "run-after-rotate", { t0, model, p, keyEvents, key });
+      return fail(e2, "run-after-rotate", { t0, model, p, keyEvents, trace, key });
     }
   }
 
   const parsed = safeParseOutput(text);
-  if (!parsed) return fail(new Error("model did not return valid RunOutput"), "output", { t0, model, p, keyEvents, key, cost, calls });
+  if (!parsed) return fail(new Error("model did not return valid RunOutput"), "output", { t0, model, p, keyEvents, trace, key, cost, calls });
 
   key = { ...key, spentUsd: key.spentUsd + cost };
   return {
@@ -152,6 +156,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
     durationMs: Date.now() - t0,
     plan: p,
     keyEvents,
+    trace,
     key,
   };
 }
@@ -224,7 +229,7 @@ export function hashOutput(o: RunOutput) {
 function fail(
   e: unknown,
   stage: string,
-  ctx: { t0: number; model: string; p: Plan; keyEvents: KeyEvent[]; key: KeyState; cost?: number; calls?: number },
+  ctx: { t0: number; model: string; p: Plan; keyEvents: KeyEvent[]; trace: TraceEvent[]; key: KeyState; cost?: number; calls?: number },
 ): RunResult {
   const msg = e instanceof OrbioAuthError ? "Orbio authorization expired; owner must re-approve" : `${stage}: ${(e as Error)?.message ?? String(e)}`;
   return {
@@ -236,6 +241,7 @@ function fail(
     durationMs: Date.now() - ctx.t0,
     plan: ctx.p,
     keyEvents: ctx.keyEvents,
+    trace: ctx.trace,
     key: ctx.key,
     error: msg,
   };
