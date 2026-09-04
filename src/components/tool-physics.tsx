@@ -6,7 +6,7 @@ import { Bodies, Body, Composite, Engine, Events, Mouse, MouseConstraint, Render
 /* Sprites are 340px renders of a 170px tile; scaled to a 96px body. */
 const TILE = 96;
 const SPRITE_SCALE = TILE / 340;
-const SPRITES = ["moonlet", "github", "x", "orbio", "robinhood"] as const;
+const SPRITES = ["moonlet", "github", "orbio", "openrouter", "robinhood"] as const;
 
 export function ToolPhysics({ className }: { className?: string }) {
   const host = useRef<HTMLDivElement>(null);
@@ -168,7 +168,7 @@ export function ToolPhysics({ className }: { className?: string }) {
   return (
     <div
       ref={host}
-      aria-label="Tiles for moonlet, GitHub, X, Orbio and Robinhood Chain"
+      aria-label="Tiles for moonlet, GitHub, Orbio, OpenRouter and Robinhood Chain"
       role="img"
       className={`${className ?? ""} [&>canvas]:absolute [&>canvas]:inset-0 [&>canvas]:cursor-grab [&>canvas]:active:cursor-grabbing`}
     />
