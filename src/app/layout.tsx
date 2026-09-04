@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Bebas_Neue, Geist, Geist_Mono } from "next/font/google";
+import { Bebas_Neue, Geist, Geist_Mono, Instrument_Serif } from "next/font/google";
 import "./globals.css";
 import { AuthProvider } from "@/lib/auth";
 
@@ -11,6 +11,13 @@ const geistSans = Geist({
 const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
   subsets: ["latin"],
+});
+
+const serif = Instrument_Serif({
+  variable: "--font-instrument",
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
 });
 
 const bebas = Bebas_Neue({
@@ -36,7 +43,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} ${bebas.variable} h-full antialiased`}
+      className={`${geistSans.variable} ${geistMono.variable} ${bebas.variable} ${serif.variable} h-full antialiased`}
     >
       {process.env.NEXT_PUBLIC_TEST_WALLET === "1" && (
         <head>

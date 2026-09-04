@@ -16,7 +16,7 @@ const COLS: [string, { href: string; label: string; external?: boolean }[]][] = 
     "Learn",
     [
       { href: "#how", label: "How it works" },
-      { href: "#bag", label: "Your bag" },
+      { href: "#rules", label: "The rules" },
       { href: "https://www.orbio.so/build", label: "Orbio Build Week", external: true },
       { href: "https://github.com/daraijaola/moonlet", label: "Source", external: true },
     ],
@@ -33,65 +33,65 @@ const COLS: [string, { href: string; label: string; external?: boolean }[]][] = 
 
 export function SiteFooter() {
   return (
-    <footer className="relative overflow-hidden border-t-[3px] border-ink bg-midnight text-cream">
-      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[url('/mark-pattern.svg')] bg-[length:64px_64px] opacity-40" />
-
-      <div className="relative mx-auto max-w-[1180px] px-4 pt-24 pb-16 text-center sm:px-6 sm:pt-32">
-        <h2 className="font-display text-[3.6rem] leading-[0.88] sm:text-[6rem]">
-          Give it the job.
-          <br />
-          <span className="text-gold">It handles the bill.</span>
-        </h2>
-        <p className="mx-auto mt-5 max-w-[30rem] font-mono text-[14px] leading-[1.65] text-cream/70">
-          One sentence, one approval, and your bag is working. Watch it live in the sky.
-        </p>
-        <div className="relative mx-auto mt-28 max-w-[36rem] sm:mt-32">
+    <footer className="relative mt-32 overflow-hidden sm:mt-44">
+      <div aria-hidden className="glow-gold pointer-events-none absolute left-1/2 top-0 h-[600px] w-[1200px] -translate-x-1/2 opacity-50 blur-3xl" />
+      <div className="relative mx-auto max-w-[1180px] px-5 pb-20 text-center sm:px-6">
+        <div className="divider-fade" />
+        <div className="relative mx-auto mt-24 max-w-[44rem]">
           <Image
-            src="/mascot/moonlet-work.png"
+            src="/mascot/moonlet-rest.png"
             alt=""
             width={520}
-            height={520}
-            className="animate-drift pointer-events-none absolute -top-[112px] right-0 z-20 w-[160px] max-w-none select-none sm:-top-[136px] sm:-right-6 sm:w-[190px]"
+            height={357}
+            className="animate-drift pointer-events-none mx-auto w-[210px] select-none sm:w-[250px]"
           />
-          <div className="relative z-10">
+          <h2 className="serif -mt-2 text-[3.2rem] leading-[0.98] text-cream sm:text-[5rem]">
+            Give it the job.
+            <br />
+            <em className="text-gold">It handles the bill.</em>
+          </h2>
+          <p className="mx-auto mt-6 max-w-[30rem] text-[16px] leading-[1.6] text-cream/60">
+            One sentence, one approval, and your bag is working. Watch it live in the sky.
+          </p>
+          <div className="mx-auto mt-10 max-w-[36rem]">
             <JobInput id="job-footer" />
           </div>
-        </div>
-        <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-          <Link href="/sky" className="btn-hard rounded-md border-2 border-ink bg-cream px-4 py-2 font-mono text-[13px] font-medium text-midnight">
-            Watch the sky
-          </Link>
-          <Link href="/app" className="btn-hard rounded-md border-2 border-ink bg-gold px-4 py-2 font-mono text-[13px] font-medium text-midnight">
-            Launch a moonlet
-          </Link>
+          <div className="mt-5 flex flex-wrap items-center justify-center gap-3">
+            <Link href="/sky" className="btn-pill btn-ghost">
+              Watch the sky
+            </Link>
+            <Link href="/app" className="text-[14px] text-cream/60 underline decoration-cream/20 underline-offset-4 transition-colors hover:text-cream">
+              or sign in with your wallet
+            </Link>
+          </div>
         </div>
       </div>
 
-      <div className="relative border-t border-cream/10">
-        <div className="mx-auto grid max-w-[1180px] gap-10 px-4 py-14 sm:grid-cols-2 sm:px-6 lg:grid-cols-[1.3fr_1fr_1fr_1fr]">
+      <div className="relative border-t hair">
+        <div className="mx-auto grid max-w-[1180px] gap-10 px-5 py-16 sm:grid-cols-2 sm:px-6 lg:grid-cols-[1.4fr_1fr_1fr_1fr]">
           <div className="sm:col-span-2 lg:col-span-1">
-            <Link href="/" className="inline-flex items-center gap-2">
-              <MoonletMark size={34} moon="var(--cream)" feature="var(--midnight)" antenna="var(--gold)" tip="var(--gold)" />
-              <Wordmark className="text-[1.5rem] text-cream" />
+            <Link href="/" className="inline-flex items-center gap-2.5">
+              <MoonletMark size={30} badge="var(--night-soft)" ring="rgba(247,244,238,0.22)" />
+              <Wordmark className="text-[1.25rem] text-cream" />
             </Link>
-            <p className="mt-4 max-w-[22rem] font-mono text-[12.5px] leading-[1.6] text-cream/55">
+            <p className="mt-4 max-w-[22rem] text-[13.5px] leading-[1.6] text-cream/50">
               Self-funding agents for $ORBIO holders. Claims its own key, spends only what the bag earns, anchors every run on Robinhood Chain.
             </p>
           </div>
           {COLS.map(([title, links]) => (
             <div key={title}>
-              <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-cream/45">{title}</p>
-              <ul className="mt-4 space-y-2.5 font-mono text-[13.5px]">
+              <p className="eyebrow">{title}</p>
+              <ul className="mt-4 space-y-2.5 text-[14px]">
                 {links.map((l) => (
                   <li key={l.href}>
                     <Link
                       href={l.href}
                       target={l.external ? "_blank" : undefined}
                       rel={l.external ? "noreferrer" : undefined}
-                      className="text-cream/80 transition-colors hover:text-gold"
+                      className="text-cream/70 transition-colors hover:text-cream"
                     >
                       {l.label}
-                      {l.external && <span className="ml-1 text-cream/40">↗</span>}
+                      {l.external && <span className="ml-1 text-cream/30">↗</span>}
                     </Link>
                   </li>
                 ))}
@@ -99,7 +99,7 @@ export function SiteFooter() {
             </div>
           ))}
         </div>
-        <div className="mx-auto flex max-w-[1180px] flex-col gap-3 border-t border-cream/10 px-4 py-6 font-mono text-[11.5px] text-cream/45 sm:flex-row sm:items-center sm:justify-between sm:px-6">
+        <div className="mx-auto flex max-w-[1180px] flex-col gap-3 border-t hair px-5 py-6 text-[12px] text-cream/40 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <p>© 2026 moonlet · Built for Orbio Build Week</p>
           <p>Credits are promotional product access, not cash. Moonlet never moves your tokens.</p>
         </div>
