@@ -1,15 +1,18 @@
 import { ImageResponse } from "next/og";
-import { TEMPLATES, fmtBag, getMoonlet, shortAddr } from "@/lib/mock";
+import { TEMPLATE_LABEL } from "@/components/labels";
+import * as store from "@/moonlet/store";
+import { fmtBag, shortAddr } from "@/lib/api";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
 export default async function Image({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const m = getMoonlet(id);
+  const m = await store.getMoonlet(id);
+  const owner = m ? await store.getOwner(m.owner) : null;
   const name = m?.name ?? "moonlet";
-  const job = m?.job ?? "Your bag runs an agent.";
-  const meta = m ? `${TEMPLATES[m.template].name} · orbits ${shortAddr(m.owner)} · ${fmtBag(m.bag)} $ORBIO` : "";
+  const job = m?.spec.objective ?? "Your bag runs an agent.";
+  const meta = m ? `${TEMPLATE_LABEL[m.spec.template]} · orbits ${shortAddr(m.owner)}${owner ? ` · ${fmtBag(owner.bag)} $ORBIO` : ""}` : "";
   const alive = m ? m.status === "running" || m.status === "idle" : false;
 
   return new ImageResponse(

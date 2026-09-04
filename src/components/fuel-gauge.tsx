@@ -1,4 +1,4 @@
-import { fmtUsd } from "@/lib/mock";
+import { fmtUsd } from "@/lib/api";
 
 export type FuelTone = "green" | "amber" | "grey";
 
@@ -80,7 +80,7 @@ export function FuelGauge({
                 size === "lg" ? "text-[2.6rem]" : "text-[1.5rem]"
               }`}
             >
-              {tone === "grey" ? "—" : `${Math.round(ratio * 100)}%`}
+              {tone === "grey" ? "—" : ratio < 0.01 && ratio > 0 ? `${(ratio * 100).toFixed(1)}%` : `${Math.round(ratio * 100)}%`}
             </span>
             <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-soft">
               burn

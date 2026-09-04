@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth";
-import { shortAddr } from "@/lib/mock";
+import { shortAddr } from "@/lib/api";
 import { MoonletMark, Wordmark } from "./logo";
 
 const TABS = [

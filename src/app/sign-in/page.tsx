@@ -5,15 +5,20 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { shortAddr } from "@/lib/mock";
+import { shortAddr } from "@/lib/api";
 import { MoonletMark } from "@/components/logo";
 
 function SignInInner() {
-  const { ready, address, orbioApproved, connect, approveOrbio } = useAuth();
+  const { ready, address, orbioApproved, connect, approveOrbio, hasInjected } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") || "/app";
+  const orbioResult = params.get("orbio");
   const [busy, setBusy] = useState<"wallet" | "orbio" | null>(null);
+  const [manual, setManual] = useState("");
+  const [err, setErr] = useState<string | null>(
+    orbioResult && orbioResult !== "ok" ? `Orbio approval ${orbioResult.replace("_", " ")}. Try again.` : null,
+  );
 
   useEffect(() => {
     if (ready && address && orbioApproved) router.replace(next);
@@ -51,17 +56,31 @@ function SignInInner() {
               hint="Robinhood Chain · needs 1,000+ $ORBIO to earn"
             >
               {!address && (
-                <button
-                  disabled={busy !== null}
-                  onClick={async () => {
-                    setBusy("wallet");
-                    await connect();
-                    setBusy(null);
-                  }}
-                  className="btn-hard mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border-2 border-ink bg-gold px-4 py-2.5 font-mono text-[13.5px] font-medium text-midnight disabled:opacity-60"
-                >
-                  {busy === "wallet" ? "Waiting for wallet…" : "Connect wallet"}
-                </button>
+                <>
+                  <button
+                    disabled={busy !== null}
+                    onClick={async () => {
+                      setBusy("wallet");
+                      setErr(null);
+                      try {
+                        await connect(manual || undefined);
+                      } catch (e) {
+                        setErr((e as Error).message);
+                      }
+                      setBusy(null);
+                    }}
+                    className="btn-hard mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border-2 border-ink bg-gold px-4 py-2.5 font-mono text-[13.5px] font-medium text-midnight disabled:opacity-60"
+                  >
+                    {busy === "wallet" ? "Waiting for wallet…" : hasInjected && !manual ? "Connect wallet" : "Use this address"}
+                  </button>
+                  <input
+                    value={manual}
+                    onChange={(e) => setManual(e.target.value)}
+                    placeholder={hasInjected ? "or paste an address" : "paste your 0x… address"}
+                    spellCheck={false}
+                    className="mt-2 w-full rounded-md border border-ink/15 bg-paper px-3 py-2 font-mono text-[12.5px] text-ink outline-none focus:border-ink"
+                  />
+                </>
               )}
             </Step>
 
@@ -76,8 +95,13 @@ function SignInInner() {
                   disabled={busy !== null}
                   onClick={async () => {
                     setBusy("orbio");
-                    await approveOrbio();
-                    setBusy(null);
+                    setErr(null);
+                    try {
+                      await approveOrbio(next);
+                    } catch (e) {
+                      setErr((e as Error).message);
+                      setBusy(null);
+                    }
                   }}
                   className="btn-hard mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border-2 border-ink bg-white px-4 py-2.5 font-mono text-[13.5px] font-medium text-ink disabled:opacity-60"
                 >
@@ -87,6 +111,8 @@ function SignInInner() {
               )}
             </Step>
           </ol>
+
+          {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{err}</p>}
 
           <p className="mt-8 text-center text-[12px] leading-[1.6] text-ink-faint">
             No email, no password. Moonlet never sees your private key and never moves your

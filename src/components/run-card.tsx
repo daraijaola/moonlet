@@ -1,61 +1,69 @@
-import { EXPLORER, fmtUsd, timeAgo, type Run } from "@/lib/mock";
+"use client";
 
-const KIND_ICON: Record<NonNullable<Run["output"]>["kind"], string> = {
-  brief: "¶",
-  chart: "▁▃▅",
-  pr: "⎇",
-  note: "•",
-};
+import { useState } from "react";
+import { fmtUsd, timeAgo, type ApiRun } from "@/lib/api";
 
-export function RunCard({ run, compact }: { run: Run; compact?: boolean }) {
+export function RunCard({ run }: { run: ApiRun }) {
+  const [open, setOpen] = useState(false);
+  const tone = run.status === "failed" ? "border-red-700/30" : run.status === "quiet" ? "border-ink/10 opacity-80" : "border-ink/10";
+  const hasBody = run.body.trim().length > 0;
   return (
-    <article className="rounded-lg border border-ink/10 bg-white p-4 transition-colors hover:border-ink/25">
+    <article className={`rounded-lg border bg-white p-4 transition-colors hover:border-ink/25 ${tone}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
-          <h4 className="truncate text-[14.5px] font-semibold tracking-[-0.01em] text-ink">
+          <h4 className="flex items-center gap-2 truncate text-[14.5px] font-semibold tracking-[-0.01em] text-ink">
             {run.title}
+            {run.signal === "high" && <span className="rounded-full bg-gold/25 px-1.5 py-0.5 font-mono text-[10px]">high signal</span>}
+            {run.nothingHappened && run.status === "done" && <span className="rounded-full bg-ink/5 px-1.5 py-0.5 font-mono text-[10px] text-ink-soft">nothing new</span>}
           </h4>
-          <p className={`mt-1 text-[13px] leading-[1.55] text-ink-soft ${compact ? "line-clamp-2" : ""}`}>
-            {run.summary}
-          </p>
+          <p className={`mt-1 text-[13px] leading-[1.55] text-ink-soft ${open ? "" : "line-clamp-2"}`}>{run.summary}</p>
+          {open && hasBody && <pre className="mt-3 whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-[13px] leading-[1.6] text-ink">{run.body}</pre>}
+          {open && run.sources.length > 0 && (
+            <ul className="mt-2 space-y-0.5 font-mono text-[11.5px]">
+              {run.sources.map((s) => (
+                <li key={s}>
+                  <a href={s} target="_blank" rel="noreferrer" className="text-ink-soft underline decoration-ink/20 hover:text-ink">{s}</a>
+                </li>
+              ))}
+            </ul>
+          )}
+          {open && run.keyEvents.length > 0 && (
+            <ul className="mt-2 space-y-0.5 font-mono text-[11.5px] text-ink-soft">
+              {run.keyEvents.map((e, i) => (
+                <li key={i}>⟳ {e.kind.replace("_", " ")}: {e.detail}{e.amountUsd ? ` (${fmtUsd(e.amountUsd)})` : ""}</li>
+              ))}
+            </ul>
+          )}
         </div>
-        <time className="shrink-0 font-mono text-[11.5px] text-ink-faint" dateTime={run.at}>
-          {timeAgo(run.at)}
-        </time>
+        <time className="shrink-0 font-mono text-[11.5px] text-ink-faint" dateTime={new Date(run.at).toISOString()}>{timeAgo(run.at)}</time>
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[11.5px] text-ink-soft">
-        {run.output && (
-          <a
-            href={run.output.href ?? "#"}
-            target={run.output.href ? "_blank" : undefined}
-            rel="noreferrer"
-            className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-paper px-2 py-1 text-ink hover:border-ink/40"
-          >
-            <span aria-hidden className="text-[10px]">{KIND_ICON[run.output.kind]}</span>
-            {run.output.label}
-          </a>
+        {(hasBody || run.sources.length > 0 || run.keyEvents.length > 0) && (
+          <button onClick={() => setOpen((o) => !o)} className="rounded-md border border-ink/15 bg-paper px-2 py-1 text-ink hover:border-ink/40">
+            {open ? "Collapse" : hasBody ? "Read" : "Details"}
+          </button>
         )}
-        <span>{run.creditsSpent === 0 ? "no spend" : `${fmtUsd(run.creditsSpent, 3)} spent`}</span>
-        <span className="hidden sm:inline">{run.model}</span>
+        <span>{run.costUsd === 0 ? "no spend" : `${fmtUsd(run.costUsd, 4)} spent`}</span>
+        {run.model !== "-" && <span className="hidden sm:inline">{run.model}</span>}
+        <span className="hidden sm:inline">{(run.durationMs / 1000).toFixed(1)}s</span>
         {run.txHash ? (
-          <a
-            href={`${EXPLORER}${run.txHash}`}
-            target="_blank"
-            rel="noreferrer"
-            className="ml-auto inline-flex items-center gap-1 text-moss hover:underline"
-            title="Anchored on Robinhood Chain"
-          >
-            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
-              <circle cx="6" cy="6" r="5.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
-              <path d="M3.6 6.2 5.3 7.8 8.5 4.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            verified on chain
+          <a href={run.explorerUrl ?? "#"} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-moss hover:underline" title={`output hash ${run.outputHash}`}>
+            <Check /> verified on chain
           </a>
+        ) : run.outputHash ? (
+          <span className="ml-auto inline-flex items-center gap-1 text-ink-faint" title={run.outputHash}>hashed · anchoring…</span>
         ) : (
-          <span className="ml-auto text-ink-faint">anchoring…</span>
+          <span className="ml-auto text-ink-faint">{run.status}</span>
         )}
       </div>
     </article>
   );
 }
+
+const Check = () => (
+  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
+    <circle cx="6" cy="6" r="5.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    <path d="M3.6 6.2 5.3 7.8 8.5 4.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);

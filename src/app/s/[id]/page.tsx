@@ -4,31 +4,41 @@ import { notFound } from "next/navigation";
 import { PublicHeader } from "@/components/public-header";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
-import { TEMPLATES, fmtBag, fmtUsd, getMoonlet, getRuns, shortAddr, timeAgo } from "@/lib/mock";
+import { CADENCE_LABEL, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
+import { explorerTx } from "@/moonlet/anchor";
+import type { Cadence } from "@/moonlet/spec";
+import * as store from "@/moonlet/store";
+import { fmtBag, fmtUsd, shortAddr, timeAgo, timeUntil } from "@/lib/api";
+
+export const dynamic = "force-dynamic";
 
 const MASCOT: Record<string, string> = {
   running: "/mascot/moonlet-work.png",
   idle: "/mascot/moonlet-rest.png",
   paused: "/mascot/moonlet-doze.png",
   quiet: "/mascot/moonlet-doze.png",
+  deleted: "/mascot/moonlet-doze.png",
 };
 
 export async function generateMetadata({ params }: PageProps<"/s/[id]">): Promise<Metadata> {
   const { id } = await params;
-  const m = getMoonlet(id);
+  const m = await store.getMoonlet(id);
   return {
     title: m ? `${m.name} · a moonlet` : "moonlet",
-    description: m ? `“${m.job}” — running on ${shortAddr(m.owner)}'s bag, every run anchored on Robinhood Chain.` : undefined,
+    description: m ? `“${m.spec.objective}” — running on ${shortAddr(m.owner)}'s bag, every run anchored on Robinhood Chain.` : undefined,
   };
 }
 
 export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">) {
   const { id } = await params;
-  const m = getMoonlet(id);
+  const m = await store.getMoonlet(id);
   if (!m) notFound();
-  const runs = getRuns(m.id);
+  const runs = (await store.listRuns(m.id)).map((r) => ({ ...r, explorerUrl: r.txHash ? explorerTx(r.txHash) : null }));
+  const owner = await store.getOwner(m.owner);
   const quiet = m.status === "quiet" || m.status === "paused";
-  const tone = fuelTone(m.earnPerDay, m.burnPerDay, quiet);
+  const tone = fuelTone(m.earnPerDayUsd, m.burnPerDayUsd, quiet);
+  const anchored = runs.filter((r) => r.txHash).length;
+  const keyRemaining = m.key ? Math.max(0, m.key.limitUsd - m.key.spentUsd) : 0;
 
   return (
     <div className="min-h-screen bg-cream text-ink">
@@ -38,49 +48,43 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
           <div className="grain absolute inset-0 opacity-60" />
           <div className="relative grid gap-6 sm:grid-cols-[1fr_auto] sm:items-center">
             <div>
-              <div className="flex items-center gap-2 font-mono text-[11.5px] text-ink-soft">
+              <div className="flex flex-wrap items-center gap-2 font-mono text-[11.5px] text-ink-soft">
                 <StatusDot tone={tone} pulse={m.status === "running"} />
-                <span>{m.status === "running" ? "working right now" : m.status === "idle" ? `idle · next run ${m.cadence}` : m.status}</span>
+                <span>{m.status === "running" ? "working right now" : m.status === "idle" ? `idle · next run ${timeUntil(m.nextRunAt)}` : m.status}</span>
                 <span>·</span>
                 <span>launched {timeAgo(m.createdAt)}</span>
               </div>
               <h1 className="mt-2 font-display text-[3.4rem] leading-[0.9] text-ink sm:text-[4.2rem]">{m.name}</h1>
-              <p className="mt-3 max-w-[34rem] text-[15px] leading-[1.55] text-ink">“{m.job}”</p>
+              <p className="mt-3 max-w-[34rem] text-[15px] leading-[1.55] text-ink">“{m.spec.objective}”</p>
               <p className="mt-3 font-mono text-[12px] text-ink-soft">
-                {TEMPLATES[m.template].name} · orbits {shortAddr(m.owner)} · {fmtBag(m.bag)} $ORBIO
+                {TEMPLATE_LABEL[m.spec.template]} · orbits {shortAddr(m.owner)} · {owner ? `${fmtBag(owner.bag)} $ORBIO` : ""}
               </p>
+              <p className="mt-1 font-mono text-[12px] text-ink-faint">tools: {m.spec.tools.map((t) => TOOL_LABEL[t]).join(", ")}</p>
             </div>
-            <Image
-              src={MASCOT[m.status]}
-              alt=""
-              width={520}
-              height={357}
-              className={`pointer-events-none mx-auto w-[200px] select-none ${m.status === "running" ? "animate-drift" : ""}`}
-              priority
-            />
+            <Image src={MASCOT[m.status]} alt="" width={520} height={357} className={`pointer-events-none mx-auto w-[200px] select-none ${m.status === "running" ? "animate-drift" : ""}`} priority />
           </div>
         </section>
 
         <section className="mt-4 grid gap-3 sm:grid-cols-[auto_1fr]">
           <div className="rounded-lg border border-ink/10 bg-white p-5">
-            <FuelGauge earnPerDay={m.earnPerDay} burnPerDay={m.burnPerDay} balance={m.balance} quiet={quiet} size="lg" />
+            <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={keyRemaining} quiet={quiet} size="lg" />
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <Stat label="uptime" value={`${m.uptimePct.toFixed(1)}%`} />
-            <Stat label="runs today" value={String(m.runsToday)} />
+            <Stat label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : "none failed"} />
+            <Stat label="anchored" value={String(anchored)} hint="Robinhood Chain" />
             <Stat label="keys rotated" value={String(m.keysRotated)} hint="no human involved" />
-            <Stat label="anchored" value={String(runs.filter((r) => r.txHash).length)} hint="Robinhood Chain" />
-            <Stat label="earns" value={fmtUsd(m.earnPerDay)} hint="per day" />
-            <Stat label="burns" value={fmtUsd(m.burnPerDay)} hint="per day" />
-            <Stat label="on key" value={fmtUsd(m.balance)} hint="unspent" />
-            <Stat label="cadence" value={m.cadence.split(":")[0]} />
+            <Stat label="cadence" value={CADENCE_LABEL[m.cadence as Cadence] ?? m.cadence} />
+            <Stat label="earns" value={fmtUsd(m.earnPerDayUsd)} hint="per day" />
+            <Stat label="burns" value={fmtUsd(m.burnPerDayUsd)} hint="per day" />
+            <Stat label="on key" value={fmtUsd(keyRemaining)} hint="unspent" />
+            <Stat label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint="all time" />
           </div>
         </section>
 
         <section className="mt-8">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">What it did</h2>
-            <span className="font-mono text-[11px] text-ink-faint">every run hashed and anchored</span>
+            <a href={`/api/moonlets/${m.id}/runs`} className="font-mono text-[11px] text-ink-faint hover:text-ink">JSON ↗</a>
           </div>
           {runs.length ? (
             <div className="space-y-2.5">{runs.map((r) => <RunCard key={r.id} run={r} />)}</div>

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { getSkyStats } from "@/lib/mock";
+import * as store from "@/moonlet/store";
 
-/** MOCK: served from lib/mock until moonlets run for real. Shape is final. */
+export const dynamic = "force-dynamic";
+
 export async function GET() {
-  return NextResponse.json({ ...getSkyStats(), mock: true, at: new Date().toISOString() });
+  return NextResponse.json({ ...(await store.skyStats()), at: new Date().toISOString() });
 }
