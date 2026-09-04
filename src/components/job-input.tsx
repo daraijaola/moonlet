@@ -9,7 +9,7 @@ const EXAMPLES = [
   "At 9pm, five bullets from https://www.orbio.so/build.",
 ];
 
-export function JobInput() {
+export function JobInput({ id = "job" }: { id?: string } = {}) {
   const router = useRouter();
   const [value, setValue] = useState("");
   const [idx, setIdx] = useState(0);
@@ -43,35 +43,29 @@ export function JobInput() {
   return (
     <form
       onSubmit={submit}
-      className="relative flex items-center gap-2 rounded-xl border-2 border-ink bg-paper p-1.5 pl-4 shadow-[4px_4px_0_var(--ink)] focus-within:shadow-[2px_2px_0_var(--ink)] transition-shadow"
+      className="surface flex items-center gap-2 rounded-full p-1.5 pl-5 transition-[box-shadow] focus-within:shadow-[0_0_0_3px_rgba(233,182,76,0.35),0_1px_2px_rgba(21,22,29,0.08),0_12px_32px_-16px_rgba(21,22,29,0.25)]"
     >
-      <label htmlFor="job" className="sr-only">
+      <label htmlFor={id} className="sr-only">
         Describe the job in one sentence
       </label>
       <div className="relative min-w-0 flex-1 overflow-hidden">
         <input
-          id="job"
+          id={id}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           autoComplete="off"
           spellCheck={false}
           placeholder={target}
-          className="w-full bg-transparent py-2.5 font-mono text-[14px] text-ink outline-none placeholder:text-transparent"
+          className="w-full bg-transparent py-2.5 text-[15.5px] text-ink outline-none placeholder:text-transparent"
         />
         {!value && (
-          <div
-            aria-hidden
-            className="pointer-events-none absolute inset-0 flex items-center font-mono text-[14px] text-ink-soft"
-          >
+          <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center text-[15.5px] text-ink-soft">
             <span className="whitespace-nowrap">{target.slice(0, shown)}</span>
-            <span className="ml-px inline-block h-[1.05em] w-[2px] shrink-0 bg-ink animate-caret" />
+            <span className="ml-px inline-block h-[1.1em] w-[1.5px] shrink-0 bg-gold animate-caret" />
           </div>
         )}
       </div>
-      <button
-        type="submit"
-        className="btn-hard shrink-0 rounded-md border-2 border-ink bg-gold px-4 py-2 font-mono text-[13.5px] font-medium text-midnight"
-      >
+      <button type="submit" className="btn-press shrink-0 rounded-full bg-ink px-5 py-2.5 text-[14px] font-medium text-cream">
         Launch
       </button>
     </form>

@@ -7,7 +7,7 @@ export function PublicHeader() {
     <header className="border-b border-ink/10 bg-cream/90 backdrop-blur">
       <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between px-4 sm:px-6">
         <Link href="/" className="inline-flex items-center gap-2">
-          <MoonletMark size={30} moon="var(--midnight)" feature="var(--cream)" antenna="var(--midnight)" />
+          <MoonletMark size={30} face="var(--cream)" />
           <Wordmark className="text-[1.25rem] text-ink" />
         </Link>
         <nav className="flex items-center gap-1">

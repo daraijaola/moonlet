@@ -2,65 +2,38 @@
 type MarkProps = {
   size?: number;
   className?: string;
-  moon?: string;
-  feature?: string;
-  antenna?: string;
+  /** Silhouette colour. */
+  ink?: string;
+  /** Colour of the face cut-outs; set it to the surface behind the mark. */
+  face?: string;
+  /** Antenna tip; defaults to the silhouette colour. */
   tip?: string;
   title?: string;
 };
 
 /**
- * The moonlet face, drawn to match the mascot: sleepy lidded eyes, a couple of
- * craters, and a short antenna with a glowing tip. No outer badge ring, so it
- * reads as the character itself. Favicon uses its own badged variant.
+ * The moonlet mark: one solid silhouette (moon + antenna) with the closed eyes,
+ * smile and craters cut out. Two colours, reads at 16px, inverts cleanly.
  */
 export function MoonletMark({
-  size = 36,
+  size = 32,
   className,
-  moon = "var(--cream)",
-  feature = "var(--midnight)",
-  antenna = "var(--cream)",
-  tip = "var(--gold)",
+  ink = "var(--ink)",
+  face = "#fff",
+  tip,
   title = "moonlet",
 }: MarkProps) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 64 64"
-      role="img"
-      aria-label={title}
-      className={className}
-      style={{ overflow: "visible" }}
-    >
-      {/* antenna */}
-      <path d="M44 20 C 47 14, 51 11, 54 8" stroke={antenna} strokeWidth="3.4" strokeLinecap="round" fill="none" />
-      <circle cx="55" cy="6.5" r="4" fill={tip} stroke={feature} strokeWidth="1.4" />
-
-      {/* moon body */}
-      <circle cx="32" cy="36" r="24" fill={moon} stroke={feature} strokeWidth="3" />
-
-      {/* craters */}
-      <g fill="none" stroke={feature} strokeWidth="2" strokeLinecap="round" opacity="0.5">
-        <path d="M18 26 q3 -3 6 0" />
-        <path d="M44 44 q2.5 -2.5 5 0" />
-      </g>
-      <circle cx="20" cy="42" r="2.4" fill={feature} opacity="0.35" />
-
-      {/* sleepy eyes: circle with a heavy top lid */}
-      <g>
-        <circle cx="24" cy="37" r="6.5" fill="#fff" stroke={feature} strokeWidth="2.6" />
-        <path d="M17.5 37 a6.5 6.5 0 0 1 13 0 Z" fill={feature} />
-        <circle cx="24" cy="39.5" r="2.1" fill={feature} />
-      </g>
-      <g>
-        <circle cx="41" cy="37" r="6.5" fill="#fff" stroke={feature} strokeWidth="2.6" />
-        <path d="M34.5 37 a6.5 6.5 0 0 1 13 0 Z" fill={feature} />
-        <circle cx="41" cy="39.5" r="2.1" fill={feature} />
-      </g>
-
-      {/* smile */}
-      <path d="M28 47 q4.5 3.5 9 0" stroke={feature} strokeWidth="2.6" strokeLinecap="round" fill="none" />
+    <svg width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title} className={className} style={{ overflow: "visible" }}>
+      <path d="M45.5 18.5 L52.5 9.5" stroke={ink} strokeWidth="4.2" strokeLinecap="round" />
+      <circle cx="53.5" cy="8" r="4.6" fill={tip ?? ink} />
+      <circle cx="30" cy="37" r="24.5" fill={ink} />
+      <circle cx="19.5" cy="28" r="2.7" fill={face} />
+      <circle cx="41" cy="51" r="2.1" fill={face} />
+      <circle cx="16" cy="45.5" r="1.7" fill={face} />
+      <path d="M19.5 38.5 q5 4.4 10 0" stroke={face} strokeWidth="3.2" strokeLinecap="round" fill="none" />
+      <path d="M33 38.5 q5 4.4 10 0" stroke={face} strokeWidth="3.2" strokeLinecap="round" fill="none" />
+      <path d="M27.5 48 q3.8 3 7.6 0" stroke={face} strokeWidth="2.6" strokeLinecap="round" fill="none" />
     </svg>
   );
 }

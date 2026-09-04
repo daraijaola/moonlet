@@ -17,6 +17,9 @@
   --ember: var(--gold);
   --ember-soft: var(--gold-soft);
   --moss: #4f7a5a;
+  --night: #090b12;
+  --night-soft: #0f121b;
+  --hair: rgba(247, 244, 238, 0.09);
 }
 
 @theme inline {
@@ -34,6 +37,8 @@
   --color-ember: var(--ember);
   --color-ember-soft: var(--ember-soft);
   --color-moss: var(--moss);
+  --color-night: var(--night);
+  --color-night-soft: var(--night-soft);
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
@@ -147,4 +152,43 @@ body {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+
+
+/* ── landing ──────────────────────────────────────────────────── */
+.surface {
+  background: #fffdf8;
+  border: 1px solid rgba(21, 22, 29, 0.07);
+  box-shadow: 0 1px 2px rgba(21, 22, 29, 0.06), 0 12px 32px -16px rgba(21, 22, 29, 0.22);
+}
+.btn-press {
+  transition: transform 160ms cubic-bezier(0.23, 1, 0.32, 1), background-color 160ms ease;
+}
+.btn-press:hover { background-color: #23252f; }
+.btn-press:active { transform: scale(0.97); }
+
+/* Dither field: full at the right edge, gone by the copy; softened top and bottom. */
+.dither-field {
+  opacity: 0.5;
+  mix-blend-mode: multiply;
+  mask-image:
+    linear-gradient(to left, black 0%, black 30%, rgba(0, 0, 0, 0.6) 55%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, black 18%, black 80%, transparent 100%);
+  mask-composite: intersect;
+  -webkit-mask-composite: source-in;
+}
+.dither-left {
+  mask-image:
+    linear-gradient(to right, black 0%, black 30%, rgba(0, 0, 0, 0.6) 55%, transparent 100%),
+    linear-gradient(to bottom, transparent 0%, black 18%, black 80%, transparent 100%);
+}
+.dither-around {
+  mask-image: radial-gradient(ellipse 62% 70% at 50% 50%, transparent 0%, transparent 42%, rgba(0, 0, 0, 0.55) 70%, black 100%);
+}
+/* No-WebGL fallback: a static Bayer-style dot field. */
+.dither-css {
+  background-color: transparent;
+  background-image: radial-gradient(rgba(138, 122, 85, 0.9) 0.7px, transparent 1px);
+  background-size: 6px 6px;
 }
