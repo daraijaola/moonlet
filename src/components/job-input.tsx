@@ -43,7 +43,7 @@ export function JobInput({ id = "job" }: { id?: string } = {}) {
   return (
     <form
       onSubmit={submit}
-      className="group relative flex items-center gap-2 rounded-full border border-cream/15 bg-cream/[0.04] p-1.5 pl-5 shadow-[0_0_0_1px_rgba(0,0,0,0.4),0_20px_60px_-30px_rgba(233,182,76,0.35)] backdrop-blur-md transition-colors focus-within:border-cream/35 focus-within:bg-cream/[0.06]"
+      className="surface flex items-center gap-2 rounded-full p-1.5 pl-5 transition-[box-shadow] focus-within:shadow-[0_0_0_3px_rgba(233,182,76,0.35),0_1px_2px_rgba(21,22,29,0.08),0_12px_32px_-16px_rgba(21,22,29,0.25)]"
     >
       <label htmlFor={id} className="sr-only">
         Describe the job in one sentence
@@ -56,20 +56,17 @@ export function JobInput({ id = "job" }: { id?: string } = {}) {
           autoComplete="off"
           spellCheck={false}
           placeholder={target}
-          className="w-full bg-transparent py-2.5 text-[15px] text-cream outline-none placeholder:text-transparent"
+          className="w-full bg-transparent py-2.5 text-[15.5px] text-ink outline-none placeholder:text-transparent"
         />
         {!value && (
-          <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center text-[15px] text-cream/55">
+          <div aria-hidden className="pointer-events-none absolute inset-0 flex items-center text-[15.5px] text-ink-soft">
             <span className="whitespace-nowrap">{target.slice(0, shown)}</span>
             <span className="ml-px inline-block h-[1.1em] w-[1.5px] shrink-0 bg-gold animate-caret" />
           </div>
         )}
       </div>
-      <button type="submit" className="btn-pill btn-cream shrink-0 !px-5 !py-2.5">
+      <button type="submit" className="btn-press shrink-0 rounded-full bg-ink px-5 py-2.5 text-[14px] font-medium text-cream">
         Launch
-        <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 8h10M9 4l4 4-4 4" />
-        </svg>
       </button>
     </form>
   );

@@ -6,7 +6,6 @@ import { MoonletMark, Wordmark } from "./logo";
 
 const links = [
   { href: "#how", label: "How it works" },
-  { href: "#rules", label: "The rules" },
   { href: "/sky", label: "The sky" },
   { href: "https://www.orbio.so", label: "Orbio", external: true },
 ];
@@ -22,36 +21,24 @@ export function Nav() {
 
   return (
     <header className="fixed inset-x-0 top-0 z-50">
-      <div
-        className={`transition-[background-color,border-color,backdrop-filter] duration-300 ${
-          scrolled ? "border-b hair bg-night/70 backdrop-blur-xl" : "border-b border-transparent bg-transparent"
-        }`}
-      >
+      <div className={`border-b transition-[background-color,border-color] duration-300 ${scrolled ? "border-ink/[0.07] bg-cream/85 backdrop-blur-md" : "border-transparent"}`}>
         <div className="mx-auto flex h-16 max-w-[1180px] items-center justify-between px-5 sm:px-6">
           <Link href="/" className="group inline-flex items-center gap-2.5">
-            <MoonletMark size={30} ink="var(--cream)" face="var(--night)" className="transition-transform duration-500 group-hover:-rotate-6" />
-            <Wordmark className="text-[1.25rem] text-cream" />
+            <MoonletMark size={30} face="var(--cream)" className="transition-transform duration-500 group-hover:-rotate-6" />
+            <Wordmark className="text-[1.25rem] text-ink" />
           </Link>
-
-          <nav className="hidden items-center gap-8 text-[14px] text-cream/70 md:flex">
+          <nav className="hidden items-center gap-8 text-[14px] text-ink-soft md:flex">
             {links.map((l) => (
-              <Link
-                key={l.href}
-                href={l.href}
-                target={l.external ? "_blank" : undefined}
-                rel={l.external ? "noreferrer" : undefined}
-                className="transition-colors hover:text-cream"
-              >
+              <Link key={l.href} href={l.href} target={l.external ? "_blank" : undefined} rel={l.external ? "noreferrer" : undefined} className="transition-colors hover:text-ink">
                 {l.label}
               </Link>
             ))}
           </nav>
-
           <div className="flex items-center gap-3">
-            <Link href="/sign-in" className="hidden text-[14px] text-cream/70 transition-colors hover:text-cream sm:inline">
+            <Link href="/sign-in" className="hidden text-[14px] text-ink-soft transition-colors hover:text-ink sm:inline">
               Sign in
             </Link>
-            <Link href="/app" className="btn-pill btn-cream !py-2 !px-4 text-[13.5px]">
+            <Link href="/app" className="btn-press rounded-full bg-ink px-4 py-2 text-[13.5px] font-medium text-cream">
               Launch a moonlet
             </Link>
           </div>
