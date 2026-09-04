@@ -11,7 +11,7 @@ import { MetaMaskMark, OpenRouterMark, OrbioMark, RabbyMark, RobinhoodMark, Wall
 import { detectWallets, type WalletId } from "@/lib/auth";
 
 function SignInInner() {
-  const { ready, address, orbioApproved, connect, approveOrbio } = useAuth();
+  const { ready, address, orbioApproved, orbioChecked, connect, approveOrbio } = useAuth();
   const [wallets, setWallets] = useState<WalletId[]>([]);
   useEffect(() => {
     const t = setTimeout(() => setWallets(detectWallets()), 0);
@@ -26,12 +26,14 @@ function SignInInner() {
   const [err, setErr] = useState<string | null>(
     orbioResult && orbioResult !== "ok" ? `Orbio approval ${orbioResult.replace("_", " ")}. Try again.` : null,
   );
+  const skipOrbio = process.env.NEXT_PUBLIC_DEV_ORBIO === "1";
+  const inApp = !!address && (orbioApproved || skipOrbio);
 
   useEffect(() => {
-    if (ready && address && orbioApproved) router.replace(next);
-  }, [ready, address, orbioApproved, next, router]);
+    if (ready && inApp) router.replace(next);
+  }, [ready, inApp, next, router]);
 
-  const step = !address ? 1 : !orbioApproved ? 2 : 3;
+  const step = !address ? 1 : !orbioChecked && !skipOrbio ? 1 : !orbioApproved && !skipOrbio ? 2 : 3;
 
   return (
     <div className="grid min-h-screen bg-cream lg:grid-cols-[1fr_1fr]">
@@ -66,13 +68,15 @@ function SignInInner() {
                 <>
                   <div className="mt-3 grid gap-2">
                     {(["metamask", "rabby", "robinhood", "walletconnect"] as WalletId[]).map((w) => {
-                      const present = w === "walletconnect" ? !!process.env.NEXT_PUBLIC_WC_PROJECT_ID : wallets.includes(w) || (w === "metamask" && wallets.includes("injected"));
+                      const wcReady = !!process.env.NEXT_PUBLIC_WC_PROJECT_ID;
+                      const locked = w === "walletconnect" && !wcReady;
+                      const present = w === "walletconnect" ? wcReady : wallets.includes(w) || (w === "metamask" && wallets.includes("injected")) || wallets.length === 0;
                       const Mark = w === "metamask" ? MetaMaskMark : w === "rabby" ? RabbyMark : w === "walletconnect" ? WalletConnectMark : RobinhoodMark;
                       const name = w === "metamask" ? "MetaMask" : w === "rabby" ? "Rabby" : w === "walletconnect" ? "WalletConnect" : "Robinhood Wallet";
                       return (
                         <button
                           key={w}
-                          disabled={busy !== null || !present}
+                          disabled={busy !== null || locked}
                           onClick={async () => {
                             setBusy("wallet");
                             setErr(null);
@@ -84,18 +88,18 @@ function SignInInner() {
                             setBusy(null);
                           }}
                           className="inline-flex w-full items-center gap-3 rounded-md border border-ink/15 bg-white px-3 py-2.5 text-left font-mono text-[13px] text-ink transition-colors hover:border-ink disabled:cursor-not-allowed disabled:opacity-45"
-                          title={present ? `Connect ${name}` : `${name} not detected`}
+                          title={locked ? "WalletConnect is not configured yet" : `Connect ${name}`}
                         >
                           <Mark size={18} />
                           <span className="flex-1">{name}</span>
-                          <span className="text-[11px] text-ink-faint">{present ? (busy === "wallet" ? "waiting…" : w === "walletconnect" ? "QR / mobile" : "detected") : w === "walletconnect" ? "not configured" : "not found"}</span>
+                          <span className="text-[11px] text-ink-faint">{busy === "wallet" ? "waiting…" : locked ? "not configured" : present ? (w === "walletconnect" ? "QR / mobile" : "tap to connect") : "tap to try"}</span>
                         </button>
                       );
                     })}
                   </div>
                   <div className="mt-3 flex items-center gap-2 text-[11px] text-ink-faint">
                     <span className="h-px flex-1 bg-ink/10" />
-                    or paste the address that holds $ORBIO (view only)
+                    or paste your 0x address
                     <span className="h-px flex-1 bg-ink/10" />
                   </div>
                   <form
@@ -137,6 +141,9 @@ function SignInInner() {
               title="Let moonlet manage your Orbio credits"
               hint="Opens orbio.so. Approve once. Moonlet can claim, top up, rotate, and revoke keys, and nothing else."
             >
+              {address && !orbioChecked && !skipOrbio && (
+                <p className="mt-3 font-mono text-[12px] text-ink-soft">Checking Orbio…</p>
+              )}
               {step === 2 && (
                 <button
                   disabled={busy !== null}

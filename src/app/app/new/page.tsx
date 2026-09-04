@@ -15,15 +15,6 @@ const ORDER: TemplateId[] = ["market-watch", "repo-mechanic", "digest", "custom"
 const CADENCES: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
 const STEPS = ["The job", "Review", "Delivery", "Confirm"] as const;
 
-const LAUNCH_STEPS = [
-  { label: "Reading your Orbio balance", tool: "orbio_get_balance" },
-  { label: "Claiming a funded OpenRouter key", tool: "orbio_claim_key" },
-  { label: "Setting pace to your income", tool: "moonlet.plan" },
-  { label: "First run: doing the job", tool: "callModel · maxCost" },
-  { label: "Hashing the output", tool: "sha256" },
-  { label: "Anchoring on Robinhood Chain", tool: "eth_sendTransaction" },
-];
-
 function NewInner() {
   const { address } = useAuth();
   const router = useRouter();
@@ -31,7 +22,7 @@ function NewInner() {
   const editId = params.get("edit");
 
   const [step, setStep] = useState(0);
-  const [template, setTemplate] = useState<TemplateId>("custom");
+  const [template, setTemplate] = useState<TemplateId>("market-watch");
   const [sentence, setSentence] = useState(() => params.get("job") ?? "");
   const [name, setName] = useState("");
   const [spec, setSpec] = useState<JobSpec | null>(null);
@@ -41,7 +32,7 @@ function NewInner() {
   const [status, setStatus] = useState<OrbioStatus | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [launchStep, setLaunchStep] = useState(-1);
+  const [launching, setLaunching] = useState(false);
 
   useEffect(() => {
     if (!address) return;
@@ -85,25 +76,19 @@ function NewInner() {
     if (!address || !spec) return;
     setBusy("launch");
     setErr(null);
-    setLaunchStep(0);
-    const ticker = setInterval(() => setLaunchStep((s) => Math.min(s + 1, LAUNCH_STEPS.length - 2)), 2200);
+    setLaunching(true);
     try {
       const delivery = { telegram: telegram.trim() || undefined, x: x.trim() || undefined };
       if (editId) {
         await api.patch(address, editId, { action: "edit", spec, delivery });
-        clearInterval(ticker);
         router.push(`/app?m=${editId}`);
         return;
       }
       const r = await api.launch(address, { spec, delivery, runNow: true });
-      clearInterval(ticker);
-      setLaunchStep(LAUNCH_STEPS.length);
-      await new Promise((res) => setTimeout(res, 600));
       router.push(`/app?m=${r.moonlet.id}`);
     } catch (e) {
-      clearInterval(ticker);
       setErr((e as Error).message);
-      setLaunchStep(-1);
+      setLaunching(false);
       setBusy(null);
     }
   };
@@ -172,29 +157,29 @@ function NewInner() {
         {step === 2 && (
           <>
             <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">Where should results go?</h1>
-            <p className="mt-1 text-[13.5px] text-ink-soft">Every run lands on the public page and is anchored on chain. Add pings if you want them.</p>
+            <p className="mt-1 text-[13.5px] text-ink-soft">The public page is the receipt. Telegram/X handles are saved for later — nothing is posted from this build.</p>
             <ul className="mt-5 space-y-2.5">
               <li className="flex items-center justify-between rounded-lg border border-ink/10 bg-paper p-3.5">
                 <div>
                   <p className="text-[14px] font-semibold text-ink">Public page</p>
                   <p className="text-[12.5px] text-ink-soft">anyone can watch it work · JSON at /api/moonlets/:id/runs</p>
                 </div>
-                <span className="rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">always on</span>
+                <span className="rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">live now</span>
               </li>
-              <li className="rounded-lg border border-ink/10 p-3.5">
-                <p className="text-[14px] font-semibold text-ink">Telegram</p>
+              <li className="rounded-lg border border-ink/10 p-3.5 opacity-80">
+                <p className="text-[14px] font-semibold text-ink">Telegram <span className="ml-2 font-mono text-[11px] font-normal text-ink-faint">saved, not sent yet</span></p>
                 <input value={telegram} onChange={(e) => setTelegram(e.target.value)} placeholder="@handle or chat id" className={`mt-2 w-full rounded-md border bg-paper px-3 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-ink ${handleOk(telegram) ? "border-ink/20" : "border-red-700"}`} />
                 {!handleOk(telegram) && <p className="mt-1 font-mono text-[11px] text-red-700">Use @handle (3–32 chars) or a numeric chat id.</p>}
               </li>
-              <li className="rounded-lg border border-ink/10 p-3.5">
-                <p className="text-[14px] font-semibold text-ink">X</p>
-                <input value={x} onChange={(e) => setX(e.target.value)} placeholder="@handle to post from" className={`mt-2 w-full rounded-md border bg-paper px-3 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-ink ${handleOk(x) ? "border-ink/20" : "border-red-700"}`} />
+              <li className="rounded-lg border border-ink/10 p-3.5 opacity-80">
+                <p className="text-[14px] font-semibold text-ink">X <span className="ml-2 font-mono text-[11px] font-normal text-ink-faint">saved, not sent yet</span></p>
+                <input value={x} onChange={(e) => setX(e.target.value)} placeholder="@handle" className={`mt-2 w-full rounded-md border bg-paper px-3 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-ink ${handleOk(x) ? "border-ink/20" : "border-red-700"}`} />
               </li>
             </ul>
           </>
         )}
 
-        {step === 3 && spec && p && launchStep < 0 && (
+        {step === 3 && spec && p && !launching && (
           <>
             <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">The honest math</h1>
             <p className="mt-1 text-[13.5px] text-ink-soft">This is what your bag can afford. Buy more and it runs more. Sell and it goes quiet.</p>
@@ -228,30 +213,17 @@ function NewInner() {
           </>
         )}
 
-        {launchStep >= 0 && (
+        {launching && (
           <>
             <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">Launching {spec?.name}</h1>
-            <p className="mt-1 text-[13.5px] text-ink-soft">No human touches a key. The first run is happening right now.</p>
-            <ol className="mt-5 space-y-2">
-              {LAUNCH_STEPS.map((s, i) => {
-                const state = i < launchStep ? "done" : i === launchStep ? "active" : "todo";
-                return (
-                  <li key={s.tool} className={`flex items-center gap-3 rounded-md border px-3.5 py-2.5 ${state === "active" ? "border-ink bg-paper" : "border-ink/10"} ${state === "todo" ? "opacity-50" : ""}`}>
-                    <span className={`inline-flex h-5 w-5 items-center justify-center rounded-full font-mono text-[11px] ${state === "done" ? "bg-moss text-white" : state === "active" ? "bg-ink text-cream" : "bg-ink/10 text-ink-soft"}`}>
-                      {state === "done" ? "✓" : state === "active" ? <span className="h-2 w-2 animate-pulse rounded-full bg-gold" /> : i + 1}
-                    </span>
-                    <span className="flex-1 text-[13.5px] text-ink">{s.label}</span>
-                    <code className="font-mono text-[11px] text-ink-faint">{s.tool}</code>
-                  </li>
-                );
-              })}
-            </ol>
+            <p className="mt-1 text-[13.5px] text-ink-soft">Planning against the bag, then the first run if it can afford one. This page waits on the real response — it does not fake steps.</p>
+            <p className="mt-6 font-mono text-[13px] text-ink-soft">Working…</p>
           </>
         )}
 
         {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{err}</p>}
 
-        {launchStep < 0 && (
+        {!launching && (
           <div className="mt-6 flex items-center justify-between border-t border-ink/10 pt-5">
             <button onClick={() => (step === 0 ? router.push("/app") : setStep((s) => s - 1))} className="font-mono text-[13px] text-ink-soft hover:text-ink">
               ← {step === 0 ? "Cancel" : "Back"}

@@ -81,10 +81,10 @@ export const TEMPLATE_DEFAULTS: Record<
     costPerRunUsd: 0.012,
   },
   "repo-mechanic": {
-    tools: ["web_fetch", "sandbox", "deliver"],
+    tools: ["web_fetch", "web_search", "deliver"],
     cadence: "24h",
-    output: { kind: "pr", maxWords: 300, alwaysReport: false },
-    costPerRunUsd: 0.18,
+    output: { kind: "digest", maxWords: 220, alwaysReport: false },
+    costPerRunUsd: 0.02,
   },
   digest: {
     tools: ["web_fetch", "web_search", "deliver"],

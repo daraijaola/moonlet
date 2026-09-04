@@ -19,15 +19,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
 
+  const skipOrbio = process.env.NEXT_PUBLIC_DEV_ORBIO === "1";
+  const allowed = !!address && (orbioApproved || skipOrbio);
+
   useEffect(() => {
     if (!ready) return;
-    if (!address || !orbioApproved) {
+    if (!allowed) {
       const next = encodeURIComponent(pathname + (typeof window !== "undefined" ? window.location.search : ""));
       router.replace(`/sign-in?next=${next}`);
     }
-  }, [ready, address, orbioApproved, router, pathname]);
+  }, [ready, allowed, router, pathname]);
 
-  if (!ready || !address || !orbioApproved) {
+  if (!ready || !allowed) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-cream">
         <MoonletMark size={40} className="animate-drift" />
