@@ -8,7 +8,7 @@ import * as store from "@/moonlet/store";
 /** Is this owner approved on Orbio, and what does their bag look like? */
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
   const [orbio, bag] = await Promise.all([orbioFor(owner), bagOf(owner)]);
   let balanceUsd: number | null = null;
   let tools: string[] = [];
@@ -36,7 +36,7 @@ export async function GET(req: Request) {
 /** Disconnect Orbio for this owner (they can re-approve from sign-in). */
 export async function DELETE(req: Request) {
   const owner = ownerFrom(req, { write: true });
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
   await store.clearOwnerOrbio(owner);
   return NextResponse.json({ ok: true });
 }

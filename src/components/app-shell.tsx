@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { shortAddr } from "@/lib/api";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
+import { UnlockBanner } from "./unlock-banner";
 
 const TABS = [
   { href: "/app", label: "Moonlets" },
@@ -87,9 +88,40 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 sm:px-6">{children}</main>
+      <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 pb-24 sm:px-6 sm:pb-6">
+        <UnlockBanner />
+        {children}
+      </main>
       <PoweredBy />
+      <MobileTabs pathname={pathname} />
     </div>
+  );
+}
+
+/** Bottom tab bar for phones; the header tabs are hidden there. */
+function MobileTabs({ pathname }: { pathname: string }) {
+  const items = [
+    { href: "/app", label: "Moonlets", icon: <path d="M12 3a9 9 0 1 0 9 9" />, match: (p: string) => p === "/app" || (p.startsWith("/app") && !p.startsWith("/app/connections") && !p.startsWith("/app/new")) },
+    { href: "/app/new", label: "Launch", icon: <path d="M12 5v14M5 12h14" />, match: (p: string) => p.startsWith("/app/new") },
+    { href: "/app/connections", label: "Connections", icon: <path d="M8 12h8M10 8h-2a4 4 0 0 0 0 8h2M14 8h2a4 4 0 0 1 0 8h-2" />, match: (p: string) => p.startsWith("/app/connections") },
+    { href: "/sky", label: "The sky", icon: <path d="M3 17c3-6 6-9 9-9s6 3 9 9M7 20h10" />, match: (p: string) => p.startsWith("/sky") },
+  ];
+  return (
+    <nav aria-label="App" className="fixed inset-x-0 bottom-0 z-30 border-t border-ink/10 bg-cream/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
+      <ul className="grid grid-cols-4">
+        {items.map((it) => {
+          const active = it.match(pathname);
+          return (
+            <li key={it.href}>
+              <Link href={it.href} className={`flex flex-col items-center gap-1 py-2.5 font-mono text-[10.5px] ${active ? "text-ink" : "text-ink-soft"}`}>
+                <svg viewBox="0 0 24 24" className={`h-5 w-5 ${active ? "stroke-ink" : "stroke-ink-soft"}`} fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{it.icon}</svg>
+                {it.label}
+              </Link>
+            </li>
+          );
+        })}
+      </ul>
+    </nav>
   );
 }
 

@@ -26,7 +26,7 @@ const Patch = z.object({
 
 export async function PATCH(req: Request, { params }: Ctx) {
   const owner = ownerFrom(req, { write: true });
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
   const { id } = await params;
   const m = await store.getMoonlet(id);
   if (!m || m.owner !== owner) return bad("not found", 404);
@@ -63,7 +63,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
 /** Delete: revokes the key through Orbio so unspent credit returns to the owner's balance. */
 export async function DELETE(req: Request, { params }: Ctx) {
   const owner = ownerFrom(req, { write: true });
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
   const { id } = await params;
   const m = await store.getMoonlet(id);
   if (!m || m.owner !== owner) return bad("not found", 404);

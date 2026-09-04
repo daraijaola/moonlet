@@ -4,20 +4,29 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { api, timeAgo, type ConnectionKind, type Connections } from "@/lib/api";
-import { GitHubMark, TelegramMark, XMark } from "@/components/marks";
+import { api, timeAgo, type ConnectionKind, type Connections, type OrbioStatus } from "@/lib/api";
+import { GitHubMark, OrbioMark, TelegramMark, XMark } from "@/components/marks";
 
 function ConnectionsInner() {
-  const { address } = useAuth();
+  const { address, approveOrbio } = useAuth();
   const params = useSearchParams();
   const [data, setData] = useState<Connections | null>(null);
+  const [orbio, setOrbio] = useState<OrbioStatus | null>(null);
   const [err, setErr] = useState<string | null>(
-    params.get("x") === "failed" ? "X didn't complete the connection. Try again." : params.get("github") === "failed" ? "GitHub didn't complete the connection. Try again." : null,
+    params.get("x") === "failed" || params.get("x") === "denied"
+      ? "X didn't complete the connection. Try again."
+      : params.get("github") === "failed"
+        ? "GitHub didn't complete the connection. Try again."
+        : params.get("orbio") && params.get("orbio") !== "ok"
+          ? `Orbio approval ${params.get("orbio")!.replace("_", " ")}. Try again.`
+          : null,
   );
 
   const load = useCallback(async () => {
     if (!address) return;
-    setData(await api.connections(address));
+    const [c, o] = await Promise.all([api.connections(address), api.orbioStatus(address).catch(() => null)]);
+    setData(c);
+    setOrbio(o);
   }, [address]);
   useEffect(() => {
     const t = setTimeout(load, 0);
@@ -43,6 +52,21 @@ function ConnectionsInner() {
       {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{err}</p>}
 
       <div className="mt-6 space-y-3">
+        <Shell
+          mark={<OrbioMark size={22} />}
+          name="Orbio"
+          blurb="The budget. Once approved on orbio.so, your moonlets claim capped inference keys from the credits your $ORBIO earns. Moonlet can claim, top up, rotate and revoke keys, nothing else."
+          unlocks="claim_key, top_up, rotate, revoke"
+          conn={orbio?.approved ? { label: orbio.orbio.dev ? "dev stub" : `${orbio.orbio.tools.length || "MCP"} tools`, createdAt: 0 } : undefined}
+          onDisconnect={orbio?.approved ? async () => { await api.orbioDisconnect(address); await load(); } : undefined}
+        >
+          {orbio && !orbio.approved && (
+            <button onClick={() => approveOrbio("/app/connections").catch((e) => setErr((e as Error).message))} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[13px] font-medium text-midnight">
+              <OrbioMark size={14} /> Approve on Orbio
+            </button>
+          )}
+          {orbio?.orbio.error && <p className="font-mono text-[11.5px] text-red-700">{orbio.orbio.error}</p>}
+        </Shell>
         <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} />
         <GitHubCard owner={address} conn={has("github")} oauth={data.available.githubOAuth} onChange={load} />
         <XCard owner={address} conn={has("x")} available={data.available.x} onChange={load} setErr={setErr} />
@@ -61,7 +85,7 @@ function Shell({ mark, name, blurb, unlocks, conn, children, onDisconnect }: { m
   return (
     <section className={`rounded-lg border bg-white p-5 ${conn ? "border-moss/40" : "border-ink/10"}`}>
       <div className="flex items-start gap-4">
-        <span className="mt-0.5 inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink">{mark}</span>
+        <span className="mt-0.5 inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-ink/10 bg-paper text-ink">{mark}</span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{name}</h2>
@@ -76,7 +100,7 @@ function Shell({ mark, name, blurb, unlocks, conn, children, onDisconnect }: { m
           <div className="mt-3">{children}</div>
           {conn && onDisconnect && (
             <button onClick={onDisconnect} className="mt-3 font-mono text-[11.5px] text-ink-faint hover:text-red-700">
-              Disconnect · linked {timeAgo(conn.createdAt)}
+              Disconnect{conn.createdAt ? ` · linked ${timeAgo(conn.createdAt)}` : ""}
             </button>
           )}
         </div>
@@ -102,7 +126,7 @@ function TelegramCard({ owner, conn, available, bot, onChange }: CardProps & { o
   }, [waiting, owner, onChange]);
 
   return (
-    <Shell mark={<TelegramMark size={20} />} name="Telegram" blurb="Your moonlets message you here: briefs, alerts, and anything that needs your approval arrives with Approve / Reject buttons." unlocks="deliver, approvals" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "telegram"); await onChange(); }}>
+    <Shell mark={<TelegramMark size={24} />} name="Telegram" blurb="Your moonlets message you here: briefs, alerts, and anything that needs your approval arrives with Approve / Reject buttons." unlocks="deliver, approvals" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "telegram"); await onChange(); }}>
       {!conn && (available ? (
         link ? (
           <div className="flex flex-wrap items-center gap-3">
@@ -129,7 +153,7 @@ function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: strin
   const [err, setErr] = useState<string | null>(null);
   const [showToken, setShowToken] = useState(!oauth);
   return (
-    <Shell mark={<GitHubMark size={20} />} name="GitHub" blurb="Sign in with GitHub and a moonlet can read your repos and propose pull requests or comments. You approve each one before it lands." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
+    <Shell mark={<GitHubMark size={24} />} name="GitHub" blurb="Sign in with GitHub and a moonlet can read your repos and propose pull requests or comments. You approve each one before it lands." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
       {!conn && oauth && (
         <div className="flex flex-wrap items-center gap-3">
           <button
@@ -180,7 +204,7 @@ function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: strin
 
 function XCard({ owner, conn, available, onChange, setErr }: CardProps & { owner: string; available: boolean; setErr: (s: string | null) => void }) {
   return (
-    <Shell mark={<XMark size={18} />} name="X" blurb="Sign in with your X account. A moonlet can draft posts; each one waits for your approval unless you turn on autopilot. No price talk, no hype, by design." unlocks="post_tweet" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "x"); await onChange(); }}>
+    <Shell mark={<XMark size={21} />} name="X" blurb="Sign in with your X account. A moonlet can draft posts; each one waits for your approval unless you turn on autopilot. No price talk, no hype, by design." unlocks="post_tweet" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "x"); await onChange(); }}>
       {!conn && (available ? (
         <button
           onClick={async () => {
