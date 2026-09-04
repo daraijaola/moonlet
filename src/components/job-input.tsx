@@ -9,7 +9,7 @@ const EXAMPLES = [
   "At 9pm, five bullets from https://www.orbio.so/build.",
 ];
 
-export function JobInput() {
+export function JobInput({ id = "job" }: { id?: string } = {}) {
   const router = useRouter();
   const [value, setValue] = useState("");
   const [idx, setIdx] = useState(0);
@@ -45,12 +45,12 @@ export function JobInput() {
       onSubmit={submit}
       className="relative flex items-center gap-2 rounded-xl border-2 border-ink bg-paper p-1.5 pl-4 shadow-[4px_4px_0_var(--ink)] focus-within:shadow-[2px_2px_0_var(--ink)] transition-shadow"
     >
-      <label htmlFor="job" className="sr-only">
+      <label htmlFor={id} className="sr-only">
         Describe the job in one sentence
       </label>
       <div className="relative min-w-0 flex-1 overflow-hidden">
         <input
-          id="job"
+          id={id}
           value={value}
           onChange={(e) => setValue(e.target.value)}
           autoComplete="off"

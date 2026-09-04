@@ -1,69 +1,71 @@
 import Image from "next/image";
+import Link from "next/link";
 import { Reveal } from "./reveal";
-
-const RUNS = [
-  ["07:02", "brief sent · 412 tokens", "0x7c2e…a91f"],
-  ["yesterday", "key rotated · $0.00 lost", "0x9a4c…02f3"],
-  ["2d ago", "quiet — bag under 1,000", "—"],
-];
+import { TelegramApprove, SleepWake } from "./landing-mocks";
 
 export function Alive() {
   return (
-    <section className="relative overflow-hidden bg-midnight text-cream">
-      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[url('/mark-pattern.svg')] bg-[length:64px_64px] opacity-20" />
-      <div className="relative mx-auto max-w-[1180px] px-4 py-20 sm:px-6 sm:py-24">
-        <Reveal>
-          <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-gold">It&apos;s alive.</p>
-          <h2 className="mt-2 max-w-[18ch] font-display text-[3.2rem] leading-[0.9] text-cream sm:text-[4.4rem]">
-            Credits accrue. It claims. It proves.
+    <section className="relative overflow-hidden border-t-[3px] border-ink bg-midnight text-cream">
+      <div aria-hidden className="pointer-events-none absolute inset-0 bg-[url('/mark-pattern.svg')] bg-[length:64px_64px] opacity-30" />
+      <div aria-hidden className="halftone-light pointer-events-none absolute -right-56 -bottom-56 h-[32rem] w-[32rem] rounded-full opacity-[0.08]" />
+
+      <div className="relative mx-auto max-w-[1180px] px-4 py-20 sm:px-6 sm:py-28">
+        <Reveal className="max-w-[40rem]">
+          <span className="caption caption-gold text-[1rem]">It&apos;s alive</span>
+          <h2 className="mt-4 font-display text-[3.4rem] leading-[0.88] sm:text-[5rem]">
+            It asks before it acts.
+            <br />
+            It sleeps when you sell.
           </h2>
-        </Reveal>
-
-        <div className="mt-12 grid gap-4 lg:grid-cols-3">
-          <Reveal>
-            <article className="rounded-xl border border-cream/20 bg-midnight-soft p-5">
-              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-gold">SFX · CLINK</p>
-              <h3 className="mt-3 font-display text-[2.1rem] leading-none">Credits land</h3>
-              <p className="mt-3 font-mono text-[13px] leading-[1.6] text-cream/75">A share of trading fees, every hour, into the holder&apos;s Orbio balance. The moonlet reads `orbio_get_balance`.</p>
-            </article>
-          </Reveal>
-          <Reveal delay={0.08}>
-            <article className="rounded-xl border border-cream/20 bg-midnight-soft p-5">
-              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-gold">SFX · SNAP</p>
-              <h3 className="mt-3 font-display text-[2.1rem] leading-none">It takes a key</h3>
-              <p className="mt-3 font-mono text-[13px] leading-[1.6] text-cream/75">`orbio_claim_key`. Up to $200. Rotates if leaked. Deletes if you pull the plug. You never hold the secret.</p>
-            </article>
-          </Reveal>
-          <Reveal delay={0.16}>
-            <article className="rounded-xl border border-gold/40 bg-ink p-5">
-              <p className="flex items-center gap-2 font-mono text-[11px] uppercase tracking-[0.14em] text-gold">
-                <span className="relative flex h-2 w-2">
-                  <span className="absolute inline-flex h-full w-full rounded-full bg-gold animate-pulse-ring" />
-                  <span className="relative inline-flex h-2 w-2 rounded-full bg-gold" />
-                </span>
-                Proven on-chain
-              </p>
-              <h3 className="mt-3 font-display text-[2.1rem] leading-none">Hash → Robinhood</h3>
-              <ul className="mt-4 divide-y divide-cream/10 font-mono text-[12px]">
-                {RUNS.map(([t, what, tx]) => (
-                  <li key={tx} className="flex items-center justify-between gap-2 py-2">
-                    <span className="w-[5.2rem] shrink-0 text-cream/50">{t}</span>
-                    <span className="min-w-0 flex-1 truncate">{what}</span>
-                    <span className="shrink-0 text-gold/80">{tx}</span>
-                  </li>
-                ))}
-              </ul>
-              <p className="mt-3 font-mono text-[11px] text-cream/40">figures marked demo until your first live run</p>
-            </article>
-          </Reveal>
-        </div>
-
-        <Reveal delay={0.2} className="mt-10 flex flex-col items-center text-center">
-          <Image src="/mascot/moonlet-doze.png" alt="" width={520} height={357} className="w-[200px] select-none sm:w-[240px]" />
-          <p className="mt-2 max-w-[28rem] font-mono text-[13.5px] leading-[1.6] text-cream/70">
-            Sell the bag under 1,000 $ORBIO and it sleeps. Top back up and it wakes. No human in the loop.
+          <p className="mt-5 font-mono text-[14.5px] leading-[1.65] text-cream/70">
+            A moonlet can read the chain, the market, and the web on its own. Anything that speaks for you, a post, a pull request, a message, lands in your Telegram as a proposal first. Approve with one tap, or turn on autopilot per moonlet.
           </p>
         </Reveal>
+
+        <div className="mt-14 grid gap-6 lg:grid-cols-[1fr_1.1fr] lg:items-start">
+          <Reveal delay={0.05}>
+            <div className="panel bg-cream p-3 text-ink shadow-[7px_7px_0_var(--gold)]">
+              <span className="absolute -top-[15px] left-4 caption text-[0.95rem]">Proposal → approve</span>
+              <TelegramApprove />
+            </div>
+            <ul className="mt-6 space-y-3 font-mono text-[13px] leading-[1.55] text-cream/75">
+              {[
+                "Reads freely: Robinhood Chain, DEX data, public repos, the web.",
+                "Acts only through connections you approve: Telegram, GitHub, X.",
+                "Every action has a receipt. Every run has a hash.",
+              ].map((t) => (
+                <li key={t} className="flex gap-3">
+                  <span className="mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
+                  {t}
+                </li>
+              ))}
+            </ul>
+          </Reveal>
+
+          <Reveal delay={0.12} className="relative">
+            <div className="panel bg-white p-5 text-ink sm:p-6">
+              <span className="absolute -top-[15px] left-4 caption text-[0.95rem]">SFX: zzz</span>
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h3 className="font-display text-[2.4rem] leading-none">The bag is the on switch.</h3>
+                  <p className="mt-3 max-w-[26rem] font-mono text-[13.5px] leading-[1.6] text-ink-soft">
+                    Drop under 1,000 $ORBIO and the moonlet goes quiet. No runs, no spend, key revoked. Top back up and it wakes on the next tick. No human in the loop.
+                  </p>
+                </div>
+                <Image src="/mascot/moonlet-doze.png" alt="" width={520} height={520} className="hidden w-[120px] shrink-0 select-none sm:block" />
+              </div>
+              <div className="mt-6">
+                <SleepWake />
+              </div>
+            </div>
+            <div className="mt-6 flex flex-wrap items-center gap-4">
+              <Link href="/sky" className="btn-hard inline-flex rounded-md border-2 border-ink bg-gold px-5 py-2.5 font-mono text-[14px] font-medium text-midnight">
+                Watch the sky
+              </Link>
+              <p className="font-mono text-[12.5px] text-cream/60">Every live moonlet, its runs, and its receipts.</p>
+            </div>
+          </Reveal>
+        </div>
       </div>
     </section>
   );

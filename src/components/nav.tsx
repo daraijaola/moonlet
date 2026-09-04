@@ -1,5 +1,4 @@
 import Link from "next/link";
-import Image from "next/image";
 import { MoonletMark, Wordmark } from "./logo";
 
 const links = [
@@ -53,22 +52,15 @@ export function Nav() {
         </div>
       </div>
 
-      <div className="relative bg-gold text-midnight">
+      <div className="relative border-b-[3px] border-ink bg-gold text-midnight">
         <Link
           href="https://www.orbio.so/build"
           target="_blank"
           rel="noreferrer"
-          className="mx-auto block max-w-[1180px] truncate px-4 py-2.5 pr-20 text-center font-mono text-[13px] font-medium hover:underline sm:pr-4"
+          className="mx-auto block max-w-[1180px] truncate px-4 py-2.5 text-center font-mono text-[13px] font-medium hover:underline"
         >
           Built for Orbio Build Week · self-funding agents on Robinhood Chain →
         </Link>
-        <Image
-          src="/mascot/moonlet-rest.png"
-          alt=""
-          width={150}
-          height={103}
-          className="pointer-events-none absolute -top-[30px] right-3 z-10 w-[86px] max-w-none select-none sm:right-8"
-        />
       </div>
     </header>
   );

@@ -148,3 +148,116 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ── comic system ─────────────────────────────────────────────── */
+.panel {
+  position: relative;
+  border: 3px solid var(--ink);
+  background: var(--white);
+  box-shadow: 7px 7px 0 var(--ink);
+}
+.panel-flat {
+  position: relative;
+  border: 3px solid var(--ink);
+  background: var(--white);
+}
+.halftone {
+  background-image: radial-gradient(var(--ink) 1px, transparent 1.3px);
+  background-size: 9px 9px;
+}
+.halftone-fade {
+  mask-image: linear-gradient(to bottom, rgba(0,0,0,0.55), transparent 85%);
+}
+.halftone-light {
+  background-image: radial-gradient(var(--cream) 1px, transparent 1.3px);
+  background-size: 9px 9px;
+}
+.speedlines {
+  background: repeating-linear-gradient(
+    -18deg,
+    transparent 0 14px,
+    var(--ink) 14px 15px,
+    transparent 15px 34px
+  );
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 72%);
+}
+.caption {
+  display: inline-block;
+  background: var(--ink);
+  color: var(--cream);
+  font-family: var(--font-bebas), sans-serif;
+  letter-spacing: 0.06em;
+  padding: 0.3rem 0.7rem 0.2rem;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.caption-gold {
+  background: var(--gold);
+  color: var(--ink);
+}
+.sfx {
+  font-family: var(--font-bebas), sans-serif;
+  text-transform: uppercase;
+  color: var(--gold);
+  -webkit-text-stroke: 2px var(--ink);
+  paint-order: stroke fill;
+  text-shadow: 4px 4px 0 var(--ink);
+  line-height: 0.9;
+  letter-spacing: 0.02em;
+}
+.sfx-cream {
+  color: var(--cream);
+}
+.bubble {
+  position: relative;
+  border: 3px solid var(--ink);
+  background: var(--white);
+  border-radius: 1.2rem;
+  padding: 0.7rem 1rem;
+}
+.bubble::after,
+.bubble::before {
+  content: "";
+  position: absolute;
+  bottom: -18px;
+  left: 28px;
+  width: 0;
+  height: 0;
+  border-style: solid;
+  border-width: 18px 14px 0 0;
+  border-color: var(--ink) transparent transparent transparent;
+}
+.bubble::after {
+  bottom: -12px;
+  left: 31px;
+  border-width: 13px 9px 0 0;
+  border-color: var(--white) transparent transparent transparent;
+}
+.bubble-right::before { left: auto; right: 28px; border-width: 18px 0 0 14px; border-color: var(--ink) transparent transparent transparent; }
+.bubble-right::after { left: auto; right: 31px; border-width: 13px 0 0 9px; border-color: var(--white) transparent transparent transparent; }
+
+/* slanted gutters: outer layer is the ink border, inner layer the face */
+.cut {
+  position: relative;
+  background: var(--ink);
+  padding: 3px;
+}
+.cut > * {
+  background: var(--white);
+  height: 100%;
+}
+@media (min-width: 1024px) {
+  .cut-l, .cut-l > * { clip-path: polygon(0 0, 100% 0, calc(100% - 3.5rem) 100%, 0 100%); }
+  .cut-r, .cut-r > * { clip-path: polygon(3.5rem 0, 100% 0, 100% 100%, 0 100%); }
+  .cut-both, .cut-both > * { clip-path: polygon(3.5rem 0, 100% 0, calc(100% - 3.5rem) 100%, 0 100%); }
+  .cut-l { padding-right: 4px; }
+  .cut-r { padding-left: 4px; }
+  .cut-both { padding-left: 4px; padding-right: 4px; }
+}
+.scribble {
+  text-decoration-line: underline;
+  text-decoration-style: wavy;
+  text-decoration-color: var(--gold);
+  text-decoration-thickness: 3px;
+  text-underline-offset: 6px;
+}
