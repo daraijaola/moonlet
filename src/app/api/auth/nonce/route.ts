@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { newNonce, siweMessage } from "@/moonlet/session";
-import { bad } from "@/moonlet/http";
+import { bad, publicOrigin } from "@/moonlet/http";
 
 const nonces = new Map<string, number>();
 
@@ -10,8 +10,8 @@ export async function POST(req: Request) {
   const nonce = newNonce();
   nonces.set(nonce, Date.now() + 10 * 60_000);
   for (const [n, exp] of nonces) if (exp < Date.now()) nonces.delete(n);
-  const u = new URL(req.url);
-  const message = siweMessage({ domain: u.host, uri: `${u.protocol}//${u.host}`, address, nonce, issuedAt: new Date().toISOString() });
+  const u = publicOrigin(req);
+  const message = siweMessage({ domain: u.host, uri: u.origin, address, nonce, issuedAt: new Date().toISOString() });
   return NextResponse.json({ nonce, message });
 }
 

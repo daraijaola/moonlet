@@ -2,7 +2,7 @@ import { callModel, stepCountIs } from "@openrouter/agent";
 import { buildCompilerInstructions } from "./personality";
 import type { OpenRouterClient } from "./model";
 import { pickModel } from "./model";
-import { JobSpec, JobSpecJsonSchema, TEMPLATE_DEFAULTS, type TemplateId } from "./spec";
+import { JobSpec, JobSpecJsonSchema, TEMPLATE_DEFAULTS, type Cadence, type TemplateId } from "./spec";
 
 /**
  * One sentence in, a JobSpec out. Structured output with a strict schema; the
@@ -50,13 +50,14 @@ function withDefaults(spec: JobSpec, input: { sentence: string; template: Templa
 /** Deterministic spec when the model is unavailable, so launch never dead-ends. */
 export function fallbackSpec(input: { sentence: string; template: TemplateId; name?: string }): JobSpec {
   const d = TEMPLATE_DEFAULTS[input.template];
-  const alert = /\b(ping|alert|tell me when|notify|if)\b/i.test(input.sentence);
+  const s = input.sentence;
+  const alert = /\b(ping|alert|tell me when|notify me|if .+ moves?|when .+ moves?)\b/i.test(s);
   return {
     name: input.name?.trim() || "Lumen",
     template: input.template,
-    objective: input.sentence.trim(),
-    cadence: alert ? "4h" : d.cadence,
-    sources: extractSources(input.sentence),
+    objective: s.trim(),
+    cadence: cadenceFrom(s, alert ? "4h" : d.cadence),
+    sources: extractSources(s),
     tools: d.tools,
     output: { ...d.output, alwaysReport: alert ? false : d.output.alwaysReport },
     voice: "terse, concrete, sources named, no hype",
@@ -65,11 +66,24 @@ export function fallbackSpec(input: { sentence: string; template: TemplateId; na
   };
 }
 
+function cadenceFrom(s: string, fallback: Cadence): Cadence {
+  if (/\b(every 15|realtime|real[- ]time)\b/i.test(s)) return "15m";
+  if (/\bhourly\b/i.test(s)) return "1h";
+  if (/\bevery 4h\b/i.test(s)) return "4h";
+  if (/\bevery 6h\b/i.test(s)) return "6h";
+  if (/\btwice (a |daily)|every 12h\b/i.test(s)) return "12h";
+  if (/\b(every morning|daily|each day|at \d|tonight|nightly)\b/i.test(s)) return "24h";
+  if (/\bweekly|once a week\b/i.test(s)) return "7d";
+  return fallback;
+}
+
 export function extractSources(s: string) {
   const out = new Set<string>();
   for (const m of s.match(/0x[0-9a-fA-F]{40}/g) ?? []) out.add(m);
   for (const m of s.match(/https?:\/\/\S+/g) ?? []) out.add(m.replace(/[.,)]+$/, ""));
   for (const m of s.match(/\$[A-Z]{2,10}\b/g) ?? []) out.add(m);
   for (const m of s.match(/\b[\w-]+\/[\w.-]+\b/g) ?? []) if (!m.includes("http") && /^[a-z0-9-]+\/[a-z0-9._-]+$/i.test(m)) out.add(m);
+  if (/\bORBIO\b/i.test(s) && ![...out].some((x) => /orbio/i.test(x))) out.add("$ORBIO");
+  if (/\brobinhood\b/i.test(s)) out.add("Robinhood Chain");
   return [...out].slice(0, 8);
 }

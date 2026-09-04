@@ -27,10 +27,11 @@ const CRAFT: Record<TemplateId, string> = {
 - Report changes, not levels: "+11% liquidity in 6h" beats "$257K liquidity".
 - Flag whale moves, new pool creations, graduations, LP changes. Ignore noise under 3% unless the owner asked for it.
 - If nothing crossed a threshold, set nothingHappened=true and keep the summary to one sentence.`,
-  "repo-mechanic": `Craft: repo mechanic.
-- Read the repo's open issues and recent commits with web_fetch before touching the sandbox.
-- Pick at most one small, well-defined fix per run. Reproduce, patch, run tests in the sandbox, then describe the change and open the PR through deliver.
-- Never force-push, never touch secrets or CI config, never widen scope. If no issue is safely fixable, say so and stop.`,
+  "repo-mechanic": `Craft: repo watch.
+- Read the repo with web_fetch: open issues, recent commits, latest release notes. Do not claim you opened a PR — there is no GitHub write tool.
+- Report what changed since the last run. Name issue numbers and commit SHAs you actually saw.
+- Sandbox is only for reading cloned public pages or parsing fetched text. Never invent a diff.
+- If nothing new, set nothingHappened=true.`,
   digest: `Craft: digest.
 - Read every source given. Extract facts, decisions, and asks. Drop chatter.
 - Group by theme, not by source. Three to seven bullets. Each bullet one fact with who/what/when.

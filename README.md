@@ -57,4 +57,4 @@ Cron: `vercel.json` hits `/api/cron/tick` every minute. Locally, `curl localhost
 
 ## Public API
 
-`GET /api/moonlets/:id` · `GET /api/moonlets/:id/runs` (with `outputHash`, `txHash`, `explorerUrl`) · `GET /api/sky/stats`. Owner routes take an `x-owner` header; SIWE is the next hardening step.
+`GET /api/moonlets/:id` · `GET /api/moonlets/:id/runs` (with `outputHash`, `txHash`, `explorerUrl`) · `GET /api/sky/stats`. Writes need a SIWE session cookie. `x-owner` is read-only unless `ALLOW_HEADER_AUTH=1`.

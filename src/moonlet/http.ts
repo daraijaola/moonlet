@@ -23,3 +23,17 @@ export function requireCron(req: Request) {
   const auth = req.headers.get("authorization") ?? "";
   return auth === `Bearer ${secret}`;
 }
+
+/** Public origin as the browser sees it — not the Next listen address. */
+export function publicOrigin(req: Request) {
+  if (process.env.APP_URL) {
+    try {
+      return new URL(process.env.APP_URL);
+    } catch {
+      /* fall through */
+    }
+  }
+  const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? new URL(req.url).host;
+  const proto = req.headers.get("x-forwarded-proto") ?? (host.startsWith("localhost") || host.startsWith("127.") ? "http" : "https");
+  return new URL(`${proto.split(",")[0].trim()}://${host.split(",")[0].trim()}`);
+}

@@ -3,9 +3,9 @@
 /**
  * Auth = a wallet address plus an Orbio approval.
  *
- * Wallet: uses an injected EIP-1193 provider (MetaMask, Rabby, Robinhood
- * wallet) when present, otherwise a pasted address. The address is asserted to
- * the API via x-owner; SIWE signatures are the next hardening step.
+ * Wallet: injected EIP-1193 (MetaMask, Rabby, Robinhood) or a pasted address.
+ * Injected wallets try SIWE; a failed signature still stores the address so
+ * the owner can enter. Writes in production need the session cookie.
  *
  * Orbio: real OAuth. approveOrbio() asks the API for the authorize URL and
  * redirects; on return the callback has stored the token and the status
@@ -137,11 +137,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error("No wallet found. Paste your Robinhood Chain address instead.");
     let signed = false;
     if (!manual && eth) {
-      const { nonce, message } = (await (await fetch("/api/auth/nonce", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address }) })).json()) as { nonce: string; message: string };
-      const signature = (await eth.request({ method: "personal_sign", params: [message, address] })) as string;
-      const v = await fetch("/api/auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address, message, signature, nonce }) });
-      if (!v.ok) throw new Error("Signature rejected. Try again.");
-      signed = true;
+      try {
+        const nr = await fetch("/api/auth/nonce", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address }) });
+        const body = (await nr.json()) as { nonce?: string; message?: string; error?: string };
+        if (!nr.ok || !body.nonce || !body.message) throw new Error(body.error ?? "Could not start sign-in.");
+        const signature = (await eth.request({ method: "personal_sign", params: [body.message, address] })) as string;
+        const v = await fetch("/api/auth/verify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ address, message: body.message, signature, nonce: body.nonce }) });
+        if (v.ok) signed = true;
+      } catch {
+        // Address is enough to enter. SIWE is hardening, not a lock.
+      }
     }
     write({ address, signed });
     return address;
