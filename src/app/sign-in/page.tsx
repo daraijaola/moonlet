@@ -14,6 +14,11 @@ import { detectWallets, type WalletId } from "@/lib/auth";
 function SignInInner() {
   const { ready, address, orbioApproved, orbioChecked, connect, approveOrbio } = useAuth();
   const host = typeof window !== "undefined" ? window.location.host : "16labs.xyz";
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setIsPhone(window.matchMedia("(max-width: 639px), (pointer: coarse)").matches), 0);
+    return () => clearTimeout(t);
+  }, []);
   const [wallets, setWallets] = useState<WalletId[]>([]);
   useEffect(() => {
     const t = setTimeout(() => setWallets(detectWallets()), 0);
@@ -99,7 +104,7 @@ function SignInInner() {
                     })}
                   </div>
                   {wallets.length === 0 && (
-                    <div className="mt-3 rounded-md border border-ink/10 bg-paper px-3 py-2.5 text-[11.5px] leading-[1.55] text-ink-soft">
+                    <div className="mt-3 rounded-md border border-ink/10 bg-paper px-3 py-2.5 text-[11.5px] leading-[1.55] text-ink-soft sm:hidden">
                       <p className="font-medium text-ink">No wallet extension here?</p>
                       <p className="mt-0.5">On a phone, tap <span className="font-medium text-ink">MetaMask</span> above: it opens the MetaMask app, you approve there and land back here signed in. Other wallets: open this page inside the wallet app’s browser.</p>
                       <div className="mt-2 flex flex-wrap gap-2">
@@ -116,7 +121,7 @@ function SignInInner() {
               n={2}
               state={step > 2 ? "done" : step === 2 ? "active" : "todo"}
               title="Let moonlet manage your Orbio credits"
-              hint="Opens orbio.so, where you connect the same wallet and approve once. On a phone, Orbio’s page needs your wallet app’s browser (MetaMask → Browser → 16labs.xyz). Moonlet can claim, top up, rotate and revoke keys, nothing else."
+              hint={`Opens orbio.so, where you connect the same wallet and approve once. Moonlet can claim, top up, rotate and revoke keys, nothing else.${isPhone ? " On a phone, Orbio’s page needs your wallet app’s browser (MetaMask → Browser → 16labs.xyz)." : ""}`}
             >
               {address && !orbioChecked && !skipOrbio && (
                 <p className="mt-3 font-mono text-[12px] text-ink-soft">Checking Orbio…</p>

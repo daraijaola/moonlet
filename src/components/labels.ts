@@ -9,16 +9,16 @@ export const TEMPLATE_LABEL: Record<TemplateId, string> = {
 
 export const TEMPLATE_BLURB: Record<TemplateId, string> = {
   "market-watch": "Liquidity, whales, new pools on Robinhood Chain. Briefs you when something actually moved.",
-  "repo-mechanic": "Reads a public GitHub repo on a schedule. Issues and commits only — it does not push or open PRs.",
+  "repo-mechanic": "Reads your repos on a schedule: commits, issues, PRs, files. Can draft pull requests and comments; you approve each one.",
   digest: "Reads the pages you name and sends one short brief. No guessing unread sources.",
   custom: "One sentence. Tools we actually have: search, fetch, chain, market, sandbox.",
 };
 
 export const TEMPLATE_EXAMPLE: Record<TemplateId, string> = {
   "market-watch": "Ping me if $ORBIO liquidity moves 10%.",
-  "repo-mechanic": "Nightly: what changed in daraijaola/moonlet issues and commits.",
+  "repo-mechanic": "Every night, summarise the day's commits and open issues in my repo.",
   digest: "At 9pm, five bullets from https://www.orbio.so/build.",
-  custom: "Every morning, tell me what moved on Robinhood Chain and why.",
+  custom: "Every 12 hours, check my repo for new issues and message me a plan for each.",
 };
 
 export const TOOL_LABEL: Record<ToolId, string> = {
