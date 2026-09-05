@@ -93,7 +93,7 @@ function SignInInner() {
                         >
                           <Mark size={18} />
                           <span className="flex-1">{name}</span>
-                          <span className="text-[11px] text-ink-faint">{busy === "wallet" ? "waiting…" : locked ? "not configured" : present ? (w === "walletconnect" ? "QR / mobile" : "tap to connect") : "tap to try"}</span>
+                          <span className="text-[11px] text-ink-faint">{busy === "wallet" ? "waiting…" : locked ? "not configured" : present ? (w === "walletconnect" ? "QR / mobile" : "tap to connect") : w === "metamask" ? "opens the app" : "tap to try"}</span>
                         </button>
                       );
                     })}
@@ -101,9 +101,9 @@ function SignInInner() {
                   {wallets.length === 0 && (
                     <div className="mt-3 rounded-md border border-ink/10 bg-paper px-3 py-2.5 text-[11.5px] leading-[1.55] text-ink-soft">
                       <p className="font-medium text-ink">No wallet extension here?</p>
-                      <p className="mt-0.5">On a phone, open this page inside your wallet app’s browser and tap its button above:</p>
+                      <p className="mt-0.5">On a phone, tap <span className="font-medium text-ink">MetaMask</span> above: it opens the MetaMask app, you approve there and land back here signed in. Other wallets: open this page inside the wallet app’s browser.</p>
                       <div className="mt-2 flex flex-wrap gap-2">
-                        <a href={`https://metamask.app.link/dapp/${host}/sign-in`} className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-white px-2.5 py-1.5 font-mono text-[11.5px] text-ink hover:border-ink"><MetaMaskMark size={13} /> Open in MetaMask</a>
+                        <a href={`https://metamask.app.link/dapp/${host}/sign-in`} className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-white px-2.5 py-1.5 font-mono text-[11.5px] text-ink hover:border-ink"><MetaMaskMark size={13} /> Open in MetaMask browser</a>
                         <a href={`https://rabby.io/`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-white px-2.5 py-1.5 font-mono text-[11.5px] text-ink hover:border-ink"><RabbyMark size={13} /> Get Rabby</a>
                       </div>
                     </div>

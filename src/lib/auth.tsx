@@ -134,6 +134,26 @@ async function siwe(eth: Eip1193, address: string) {
   if (!v.ok) throw new Error(((await v.json().catch(() => ({}))) as { error?: string }).error ?? "Signature was not accepted.");
 }
 
+let mmSdkProvider: Eip1193 | null = null;
+/**
+ * MetaMask without an extension (phone browsers): the SDK deep-links into the
+ * MetaMask app, the user approves there and comes back. No project id needed.
+ */
+async function metamaskSdkProvider(): Promise<Eip1193> {
+  if (mmSdkProvider) return mmSdkProvider;
+  const { MetaMaskSDK } = await import("@metamask/sdk");
+  const sdk = new MetaMaskSDK({
+    dappMetadata: { name: "Moonlet", url: window.location.origin, iconUrl: `${window.location.origin}/icon.svg` },
+    checkInstallationImmediately: false,
+    logging: { developerMode: false },
+  });
+  await sdk.init();
+  const provider = sdk.getProvider();
+  if (!provider) throw new Error("MetaMask could not be reached. Install the MetaMask app and try again.");
+  mmSdkProvider = provider as unknown as Eip1193;
+  return mmSdkProvider;
+}
+
 function providerFor(id: WalletId): Eip1193 | undefined {
   const eth = injected();
   if (!eth) return undefined;
@@ -176,9 +196,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [hydrated, saved.address, orbio.for, refreshOrbio]);
 
   const connect = useCallback(async (wallet?: WalletId) => {
-    const eth = wallet === "walletconnect" ? await walletConnectProvider() : wallet ? providerFor(wallet) : injected();
+    let eth = wallet === "walletconnect" ? await walletConnectProvider() : wallet ? providerFor(wallet) : injected();
+    if (!eth && (wallet === "metamask" || !wallet)) eth = await metamaskSdkProvider();
     if (!eth) {
-      throw new Error(`${walletName(wallet)} isn't available in this browser. On a phone, open this page inside your wallet app's browser.`);
+      throw new Error(`${walletName(wallet)} isn't available in this browser. Use MetaMask, or open this page inside your wallet app's browser.`);
     }
     await ensureRobinhoodChain(eth);
     const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
