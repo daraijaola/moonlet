@@ -132,20 +132,13 @@ function Queue({ owner }: { owner: string }) {
                 disabled={!!busy}
                 onClick={async () => {
                   setBusy(p.id);
-                  // Open synchronously so phone browsers don't block the X compose window.
-                  const win = p.kind === "tweet" ? window.open("", "_blank") : null;
-                  const r = await api.decide(owner, p.id, "approve").catch(() => null);
-                  const url = (r?.result as { url?: string; handPost?: boolean } | undefined)?.handPost ? (r?.result as { url: string }).url : null;
-                  if (win) {
-                    if (url) win.location.href = url;
-                    else win.close();
-                  }
+                  await api.decide(owner, p.id, "approve").catch(() => undefined);
                   await load();
                   setBusy(null);
                 }}
                 className="btn-hard rounded-md border-2 border-ink bg-gold px-3 py-1 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50"
               >
-                {busy === p.id ? "Doing it…" : p.kind === "tweet" ? "✓ Approve & post on X" : "✓ Approve"}
+                {busy === p.id ? "Doing it…" : "✓ Approve"}
               </button>
               <button disabled={!!busy} onClick={async () => { setBusy(p.id); await api.decide(owner, p.id, "reject").catch(() => undefined); await load(); setBusy(null); }} className="rounded-md border border-ink/15 bg-white px-3 py-1 font-mono text-[12.5px] text-ink-soft hover:border-ink/40 hover:text-ink disabled:opacity-50">
                 ✗ Reject

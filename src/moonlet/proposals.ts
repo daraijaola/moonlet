@@ -37,8 +37,7 @@ export async function propose(input: ProposalInput, ctx: ProposeCtx) {
   const id = store.newId("p");
   await store.insertProposal({ id, owner: ctx.owner, moonletId: ctx.moonletId, runId: ctx.runId, kind: input.kind, payload });
 
-  const handPost = input.kind === "tweet" && (await x.xMode(ctx.owner)) === "hand";
-  if (ctx.autopilot && !handPost) {
+  if (ctx.autopilot) {
     if (!(await store.decideProposal(id, "approved"))) return { proposalId: id, status: "pending" as const };
     const r = await execute(id, ctx.fetch);
     return { proposalId: id, status: r.status, result: r.result };
@@ -58,7 +57,7 @@ export async function propose(input: ProposalInput, ctx: ProposeCtx) {
       // Telegram down is not a reason to lose the proposal; it still shows on the dashboard.
     }
   }
-  return { proposalId: id, status: "pending" as const, note: handPost ? "Drafted. The owner posts it from their own X account when they approve." : "Waiting for the owner's approval. It will run once they approve." };
+  return { proposalId: id, status: "pending" as const, note: "Waiting for the owner's approval. It will run once they approve." };
 }
 
 /** Owner decided. Executes on approve. Safe to call twice (second call is a no-op). */
@@ -108,8 +107,7 @@ export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   if (!r.ok) return `<b>${tg.esc(d.title)}</b>\n\n${tg.esc(r.error)}.`;
   if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing was posted.`;
   if (r.status === "executed") {
-    const { url, handPost } = (r.result as { url?: string; handPost?: boolean }) ?? {};
-    if (handPost && url) return `<b>${tg.esc(d.title)}</b>\n\n✓ Approved. Tap to post it from your account:\n${tg.esc(url)}`;
+    const url = (r.result as { url?: string })?.url;
     return `<b>${tg.esc(d.title)}</b>\n\n✓ Done.${url ? ` ${tg.esc(url)}` : ""}`;
   }
   return `<b>${tg.esc(d.title)}</b>\n\n⚠ Approved, but it failed: ${tg.esc(String((r.result as { error?: string })?.error ?? "unknown"))}`;

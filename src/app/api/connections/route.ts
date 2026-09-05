@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { bad, ownerFrom } from "@/moonlet/http";
 import * as store from "@/moonlet/store";
 import { botUsername, telegramConfigured } from "@/moonlet/connections/telegram";
-import { xConfigured } from "@/moonlet/connections/x";
 import { githubOAuthConfigured } from "@/moonlet/connections/github";
 
 /** What this wallet has connected, and what the platform supports. */
@@ -12,7 +11,7 @@ export async function GET(req: Request) {
   const list = await store.listConnections(owner);
   return NextResponse.json({
     connections: list,
-    available: { telegram: telegramConfigured(), telegramBot: botUsername(), github: true, githubOAuth: githubOAuthConfigured(), x: xConfigured() },
+    available: { telegram: telegramConfigured(), telegramBot: botUsername(), github: true, githubOAuth: githubOAuthConfigured(), x: true },
   });
 }
 
