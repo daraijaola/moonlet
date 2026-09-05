@@ -450,6 +450,13 @@ export async function listConnections(owner: string) {
   return r.rows.map((row) => ({ kind: row.kind as ConnectionKind, label: row.label as string, createdAt: Number(row.created_at) }));
 }
 
+/** Every connection of one kind, data opened. Small table; used to map a Telegram chat back to its wallet. */
+export async function connectionsOfKind<T = Record<string, unknown>>(kind: ConnectionKind): Promise<ConnectionRow<T>[]> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM connections WHERE kind=?`, args: [kind] });
+  return r.rows.map((row) => ({ owner: row.owner as string, kind, label: row.label as string, data: JSON.parse(open(row.data as string)) as T, createdAt: Number(row.created_at) }));
+}
+
 export async function deleteConnection(owner: string, kind: ConnectionKind) {
   await db().execute({ sql: `DELETE FROM connections WHERE owner=? AND kind=?`, args: [owner.toLowerCase(), kind] });
 }

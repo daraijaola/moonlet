@@ -3,9 +3,9 @@
 /**
  * Auth = a wallet address plus an Orbio approval.
  *
- * Wallet: injected EIP-1193 (MetaMask, Rabby, Robinhood) or a pasted address.
- * Injected wallets try SIWE; a failed signature still stores the address so
- * the owner can enter. Writes in production need the session cookie.
+ * Wallet: injected EIP-1193 (MetaMask, Rabby, Robinhood) or WalletConnect.
+ * Sign-in is a SIWE signature exchanged for a session cookie; the address is
+ * only stored once the server accepted the signature.
  *
  * Orbio: real OAuth. approveOrbio() asks the API for the authorize URL and
  * redirects; on return the callback has stored the token and the status
@@ -20,11 +20,7 @@ type AuthState = Saved & { ready: boolean; orbioApproved: boolean; orbioChecked:
 
 type Auth = AuthState & {
   signed: boolean;
-  /** Set when the last wallet connect stored the address but the sign-in signature failed. */
-  signError: string | null;
-  connect: (manual?: string, wallet?: WalletId) => Promise<string>;
-  /** Re-run the SIWE signature for the stored address (needs an injected wallet). */
-  sign: (wallet?: WalletId) => Promise<void>;
+  connect: (wallet?: WalletId) => Promise<string>;
   approveOrbio: (redirectTo?: string) => Promise<void>;
   refreshOrbio: () => Promise<boolean>;
   disconnect: () => void;
@@ -150,7 +146,6 @@ const Ctx = createContext<Auth | null>(null);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const saved = useSyncExternalStore(subscribe, read, () => SERVER);
   const [orbio, setOrbio] = useState<{ approved: boolean; checked: boolean; for: string | null }>({ approved: false, checked: false, for: null });
-  const [signError, setSignError] = useState<string | null>(null);
   const hydrated = useSyncExternalStore(() => () => {}, () => true, () => false);
 
   const refreshOrbio = useCallback(async () => {
@@ -167,50 +162,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
+    const onUnauthorized = () => {
+      if (read().address) write(null);
+    };
+    window.addEventListener("moonlet:unauthorized", onUnauthorized);
+    return () => window.removeEventListener("moonlet:unauthorized", onUnauthorized);
+  }, []);
+
+  useEffect(() => {
     if (!hydrated || !saved.address || orbio.for === saved.address) return;
     const t = setTimeout(() => void refreshOrbio(), 0);
     return () => clearTimeout(t);
   }, [hydrated, saved.address, orbio.for, refreshOrbio]);
 
-  const connect = useCallback(async (manual?: string, wallet?: WalletId) => {
-    let address = manual?.trim().toLowerCase() ?? "";
+  const connect = useCallback(async (wallet?: WalletId) => {
     const eth = wallet === "walletconnect" ? await walletConnectProvider() : wallet ? providerFor(wallet) : injected();
-    if (!address && !eth) {
-      throw new Error(`${walletName(wallet)} isn't available in this browser. On a phone, open this page inside your wallet app's browser, or paste your address below.`);
+    if (!eth) {
+      throw new Error(`${walletName(wallet)} isn't available in this browser. On a phone, open this page inside your wallet app's browser.`);
     }
-    if (!address && eth) {
-      await ensureRobinhoodChain(eth);
-      const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-      address = accounts[0]?.toLowerCase() ?? "";
-    }
-    if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error("No account was shared. Unlock your wallet and try again, or paste your address.");
-    let signed = false;
-    setSignError(null);
-    if (!manual && eth) {
-      try {
-        await siwe(eth, address);
-        signed = true;
-      } catch (e) {
-        // The address is enough to look around; signing (or approving Orbio) unlocks actions.
-        setSignError((e as Error).message);
-      }
-    }
-    write({ address, signed });
-    return address;
-  }, []);
-
-  const sign = useCallback(async (wallet?: WalletId) => {
-    const address = read().address;
-    if (!address) throw new Error("connect a wallet first");
-    const eth = wallet === "walletconnect" ? await walletConnectProvider() : wallet ? providerFor(wallet) : injected();
-    if (!eth) throw new Error("No browser wallet found. Open this page inside your wallet app, or approve Orbio to unlock instead.");
     await ensureRobinhoodChain(eth);
     const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
-    const active = accounts[0]?.toLowerCase();
-    if (active !== address) throw new Error(`Your wallet is on ${active?.slice(0, 6)}…; switch to ${address.slice(0, 6)}… or disconnect and connect again.`);
-    setSignError(null);
+    const address = accounts[0]?.toLowerCase() ?? "";
+    if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error("No account was shared. Unlock your wallet and try again.");
+    // The signature is the login. Without it nothing is stored and nothing is shown.
     await siwe(eth, address);
     write({ address, signed: true });
+    return address;
   }, []);
 
   const approveOrbio = useCallback(async (redirectTo = "/app") => {
@@ -223,7 +200,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const disconnect = useCallback(() => {
     void fetch("/api/auth/logout", { method: "POST" });
     write(null);
-    setSignError(null);
     setOrbio({ approved: false, checked: false, for: null });
   }, []);
 
@@ -232,17 +208,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       ready: hydrated && (!saved.address || (orbio.checked && orbio.for === saved.address)),
       address: saved.address,
       signed: saved.signed,
-      signError,
       orbioApproved: orbio.approved,
       orbioChecked: orbio.checked,
       connect,
-      sign,
       approveOrbio,
       refreshOrbio,
       disconnect,
       hasInjected: !!injected(),
     }),
-    [hydrated, saved.address, saved.signed, signError, orbio, connect, sign, approveOrbio, refreshOrbio, disconnect],
+    [hydrated, saved.address, saved.signed, orbio, connect, approveOrbio, refreshOrbio, disconnect],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

@@ -67,9 +67,9 @@ function ConnectionsInner() {
           )}
           {orbio?.orbio.error && <p className="font-mono text-[11.5px] text-red-700">{orbio.orbio.error}</p>}
         </Shell>
-        <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} />
+        <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} setErr={setErr} />
         <GitHubCard owner={address} conn={has("github")} oauth={data.available.githubOAuth} onChange={load} />
-        <XCard owner={address} conn={has("x")} available={data.available.x} onChange={load} setErr={setErr} />
+        <XCard owner={address} conn={has("x")} onChange={load} setErr={setErr} />
       </div>
 
       <p className="mt-8 text-[12px] leading-[1.6] text-ink-faint">
@@ -109,9 +109,10 @@ function Shell({ mark, name, blurb, unlocks, conn, children, onDisconnect }: { m
   );
 }
 
-function TelegramCard({ owner, conn, available, bot, onChange }: CardProps & { owner: string; available: boolean; bot: string | null }) {
+function TelegramCard({ owner, conn, available, bot, onChange, setErr }: CardProps & { owner: string; available: boolean; bot: string | null; setErr: (s: string | null) => void }) {
   const [link, setLink] = useState<string | null>(null);
   const [waiting, setWaiting] = useState(false);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!waiting) return;
     const t = setInterval(async () => {
@@ -126,105 +127,138 @@ function TelegramCard({ owner, conn, available, bot, onChange }: CardProps & { o
   }, [waiting, owner, onChange]);
 
   return (
-    <Shell mark={<TelegramMark size={24} />} name="Telegram" blurb="Your moonlets message you here: briefs, alerts, and anything that needs your approval arrives with Approve / Reject buttons." unlocks="deliver, approvals" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "telegram"); await onChange(); }}>
+    <Shell mark={<TelegramMark size={24} />} name="Telegram" blurb="Tap Link, open the moonlet bot in Telegram and press Start. From then on your moonlets message you there: briefs, alerts, and anything that needs your OK arrives with Approve / Reject buttons. Nothing to install." unlocks="deliver, approvals" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "telegram"); await onChange(); }}>
       {!conn && (available ? (
         link ? (
           <div className="flex flex-wrap items-center gap-3">
             <a href={link} target="_blank" rel="noreferrer" className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[13px] font-medium text-midnight">
               <TelegramMark size={14} /> Open @{bot} and tap Start
             </a>
-            <span className="font-mono text-[11.5px] text-ink-soft">{waiting ? "waiting for you to tap Start…" : ""}</span>
+            <span className="font-mono text-[11.5px] text-ink-soft">{waiting ? "waiting for you to press Start in Telegram…" : ""}</span>
           </div>
         ) : (
-          <button onClick={async () => { const r = await api.telegramLink(owner); setLink(r.url); setWaiting(true); }} className="btn-hard rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink">
-            Link Telegram
+          <button
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setErr(null);
+              try {
+                const r = await api.telegramLink(owner);
+                if (!r.url) throw new Error("The bot has no username set on this deployment.");
+                setLink(r.url);
+                setWaiting(true);
+              } catch (e) {
+                setErr((e as Error).message);
+              }
+              setBusy(false);
+            }}
+            className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink disabled:opacity-60"
+          >
+            <TelegramMark size={14} /> {busy ? "One moment…" : "Link Telegram"}
           </button>
         )
       ) : (
-        <span className="font-mono text-[11.5px] text-ink-faint">Not configured on this deployment (TELEGRAM_BOT_TOKEN).</span>
+        <span className="font-mono text-[11.5px] text-ink-faint">Telegram isn’t switched on for this deployment yet.</span>
       ))}
     </Shell>
   );
 }
 
 function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: string; oauth: boolean }) {
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [showToken, setShowToken] = useState(!oauth);
   return (
-    <Shell mark={<GitHubMark size={24} />} name="GitHub" blurb="Sign in with GitHub and a moonlet can read your repos and propose pull requests or comments. You approve each one before it lands." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
-      {!conn && oauth && (
-        <div className="flex flex-wrap items-center gap-3">
-          <button
-            onClick={async () => {
-              try {
-                const { url } = await api.githubStart(owner);
-                window.location.assign(url);
-              } catch (e) {
-                setErr((e as Error).message);
-              }
-            }}
-            className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream"
-          >
-            <GitHubMark size={14} /> Connect GitHub
-          </button>
-          {!showToken && <button onClick={() => setShowToken(true)} className="font-mono text-[11.5px] text-ink-faint hover:text-ink">or paste a token</button>}
-          {err && <p className="w-full font-mono text-[11.5px] text-red-700">{err}</p>}
-        </div>
-      )}
-      {!conn && showToken && (
-        <form
-          className="mt-3 flex flex-wrap items-center gap-2"
-          onSubmit={async (e) => {
-            e.preventDefault();
+    <Shell mark={<GitHubMark size={24} />} name="GitHub" blurb="Sign in with GitHub once. A moonlet can then read your repos and draft pull requests or comments; each one waits for your approval before it lands." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
+      {!conn && (oauth ? (
+        <button
+          disabled={busy}
+          onClick={async () => {
             setBusy(true);
             setErr(null);
             try {
-              await api.githubConnect(owner, token);
-              setToken("");
-              await onChange();
-            } catch (e2) {
-              setErr((e2 as Error).message);
+              const { url } = await api.githubStart(owner);
+              window.location.assign(url);
+            } catch (e) {
+              setErr((e as Error).message);
+              setBusy(false);
             }
-            setBusy(false);
           }}
+          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream disabled:opacity-60"
         >
-          <input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder="github_pat_… (Contents: read/write, Pull requests: read/write, Issues: read/write)" spellCheck={false} className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 font-mono text-[12.5px] text-ink outline-none focus:border-ink" />
-          <button type="submit" disabled={busy || token.length < 20} className="btn-hard rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink disabled:opacity-40">
-            {busy ? "Checking…" : "Connect"}
-          </button>
-          <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noreferrer" className="font-mono text-[11.5px] text-ink-soft underline decoration-ink/20 hover:text-ink">create a token ↗</a>
-          {err && <p className="w-full font-mono text-[11.5px] text-red-700">{err}</p>}
-        </form>
-      )}
+          <GitHubMark size={14} /> {busy ? "Opening GitHub…" : "Connect GitHub"}
+        </button>
+      ) : (
+        <span className="font-mono text-[11.5px] text-ink-faint">GitHub sign-in isn’t switched on for this deployment yet.</span>
+      ))}
+      {err && <p className="mt-2 font-mono text-[11.5px] text-red-700">{err}</p>}
     </Shell>
   );
 }
 
-function XCard({ owner, conn, available, onChange, setErr }: CardProps & { owner: string; available: boolean; setErr: (s: string | null) => void }) {
-  const [handle, setHandle] = useState("");
+const X_STEPS: Array<[string, React.ReactNode]> = [
+  ["Create a developer account", <>Go to <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noreferrer" className="underline decoration-ink/30 hover:decoration-ink">developer.x.com</a> and sign in with the X account the moonlet should post from. It creates a default project and app for you.</>],
+  ["Add a card on X", <>X&rsquo;s API is pay-per-use: about <span className="font-mono">$0.015</span> per post (more if it contains a link), billed by X to your developer account, never through moonlet. In <em>Billing</em>, add a card and buy a small amount of credits. $5 covers hundreds of posts.</>],
+  ["Set permissions to Read and Write", <>In your app → <em>Settings</em> → <em>User authentication settings</em>, pick <em>Read and write</em>, type <em>Web App</em>, and put <span className="font-mono">https://16labs.xyz</span> in both URL fields. Save.</>],
+  ["Copy the four keys", <>In <em>Keys and tokens</em>: regenerate <em>API Key and Secret</em>, then generate <em>Access Token and Secret</em>. The token must say <em>Read and Write</em>; if it says Read, regenerate it after step 3. Paste all four below.</>],
+];
+
+function XCard({ owner, conn, onChange, setErr }: CardProps & { owner: string; setErr: (s: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [keys, setKeys] = useState({ apiKey: "", apiSecret: "", accessToken: "", accessSecret: "" });
   const [busy, setBusy] = useState(false);
+  const ready = Object.values(keys).every((v) => v.trim().length >= 10);
+  const field = (k: keyof typeof keys, label: string, placeholder: string) => (
+    <label key={k} className="block">
+      <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">{label}</span>
+      <input
+        value={keys[k]}
+        onChange={(e) => setKeys({ ...keys, [k]: e.target.value })}
+        type={k.endsWith("Secret") ? "password" : "text"}
+        placeholder={placeholder}
+        spellCheck={false}
+        autoComplete="off"
+        className="mt-1 w-full rounded-md border border-ink/15 bg-paper px-3 py-2 font-mono text-[12.5px] text-ink outline-none focus:border-ink"
+      />
+    </label>
+  );
   return (
     <Shell
       mark={<XMark size={21} />}
       name="X"
-      blurb="Tell us your handle. A moonlet drafts posts; when you approve one, X's compose window opens with the text ready and you post it from your own account. Free, nothing to install, no price talk or hype by design."
-      unlocks="post_tweet (you press Post)"
+      blurb="Posts go out through X's official API from your own account. You bring your own X developer app (X bills you directly, pay-per-use); moonlet drafts, you approve, it posts. No price talk, no hype, by design."
+      unlocks="post_tweet"
       conn={conn}
       onDisconnect={async () => { await api.disconnect(owner, "x"); await onChange(); }}
     >
-      {!conn && (
-        <div className="space-y-3">
+      {!conn && !open && (
+        <button onClick={() => setOpen(true)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink">
+          <XMark size={14} /> Connect X
+        </button>
+      )}
+      {!conn && open && (
+        <div className="rounded-lg border border-ink/10 bg-paper/60 p-4">
+          <p className="text-[13px] font-semibold text-ink">Four steps on developer.x.com, about five minutes.</p>
+          <ol className="mt-3 space-y-3">
+            {X_STEPS.map(([title, body], i) => (
+              <li key={title} className="flex gap-3">
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink font-mono text-[10.5px] text-cream">{i + 1}</span>
+                <div>
+                  <p className="text-[13px] font-medium text-ink">{title}</p>
+                  <p className="mt-0.5 text-[12.5px] leading-[1.55] text-ink-soft">{body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
           <form
-            className="flex flex-wrap items-center gap-2"
+            className="mt-4 grid gap-3 sm:grid-cols-2"
             onSubmit={async (e) => {
               e.preventDefault();
               setBusy(true);
               setErr(null);
               try {
-                await api.xConnectHandle(owner, handle);
-                setHandle("");
+                await api.xConnect(owner, keys);
+                setKeys({ apiKey: "", apiSecret: "", accessToken: "", accessSecret: "" });
+                setOpen(false);
                 await onChange();
               } catch (e2) {
                 setErr((e2 as Error).message);
@@ -232,29 +266,18 @@ function XCard({ owner, conn, available, onChange, setErr }: CardProps & { owner
               setBusy(false);
             }}
           >
-            <div className="flex min-w-0 flex-1 items-center rounded-md border border-ink/15 bg-paper px-3 font-mono text-[12.5px] text-ink focus-within:border-ink">
-              <span className="text-ink-faint">@</span>
-              <input value={handle} onChange={(e) => setHandle(e.target.value)} placeholder="yourhandle" spellCheck={false} autoCapitalize="none" className="min-w-0 flex-1 bg-transparent py-2 pl-0.5 outline-none" />
+            {field("apiKey", "API Key", "25 characters")}
+            {field("apiSecret", "API Key Secret", "50 characters")}
+            {field("accessToken", "Access Token", "digits-letters")}
+            {field("accessSecret", "Access Token Secret", "45 characters")}
+            <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+              <button type="submit" disabled={busy || !ready} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream disabled:opacity-40">
+                <XMark size={14} /> {busy ? "Checking with X…" : "Verify and connect"}
+              </button>
+              <button type="button" onClick={() => setOpen(false)} className="font-mono text-[11.5px] text-ink-faint hover:text-ink">cancel</button>
+              <span className="font-mono text-[11px] text-ink-faint">We call X once to confirm the account, then store the keys encrypted.</span>
             </div>
-            <button type="submit" disabled={busy || handle.trim().replace(/^@/, "").length === 0} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink disabled:opacity-40">
-              <XMark size={14} /> {busy ? "Saving…" : "Connect X"}
-            </button>
           </form>
-          {available && (
-            <button
-              onClick={async () => {
-                try {
-                  const { url } = await api.xConnect(owner);
-                  window.location.assign(url);
-                } catch (e) {
-                  setErr((e as Error).message);
-                }
-              }}
-              className="font-mono text-[11.5px] text-ink-faint underline decoration-ink/20 hover:text-ink"
-            >
-              or sign in with X so moonlets can post for you (autopilot)
-            </button>
-          )}
         </div>
       )}
     </Shell>

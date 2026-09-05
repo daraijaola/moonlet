@@ -7,7 +7,6 @@ import { useAuth } from "@/lib/auth";
 import { shortAddr } from "@/lib/api";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
-import { UnlockBanner } from "./unlock-banner";
 
 const TABS = [
   { href: "/app", label: "Moonlets" },
@@ -17,12 +16,12 @@ const TABS = [
 
 /** Quiet top bar for signed-in surfaces. Gates on a connected wallet. */
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { ready, address, disconnect } = useAuth();
+  const { ready, address, signed, disconnect } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
-  // A wallet is enough to enter; Orbio approval is prompted inside the app.
-  const allowed = !!address;
+  // A signed wallet is the account; Orbio approval is prompted inside the app.
+  const allowed = !!address && signed;
 
   useEffect(() => {
     if (!ready) return;
@@ -89,7 +88,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 pb-24 sm:px-6 sm:pb-6">
-        <UnlockBanner />
         {children}
       </main>
       <PoweredBy />
@@ -101,10 +99,61 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 /** Bottom tab bar for phones; the header tabs are hidden there. */
 function MobileTabs({ pathname }: { pathname: string }) {
   const items = [
-    { href: "/app", label: "Moonlets", icon: <path d="M12 3a9 9 0 1 0 9 9" />, match: (p: string) => p === "/app" || (p.startsWith("/app") && !p.startsWith("/app/connections") && !p.startsWith("/app/new")) },
-    { href: "/app/new", label: "Launch", icon: <path d="M12 5v14M5 12h14" />, match: (p: string) => p.startsWith("/app/new") },
-    { href: "/app/connections", label: "Connections", icon: <path d="M8 12h8M10 8h-2a4 4 0 0 0 0 8h2M14 8h2a4 4 0 0 1 0 8h-2" />, match: (p: string) => p.startsWith("/app/connections") },
-    { href: "/sky", label: "The sky", icon: <path d="M3 17c3-6 6-9 9-9s6 3 9 9M7 20h10" />, match: (p: string) => p.startsWith("/sky") },
+    {
+      href: "/app",
+      label: "Moonlets",
+      icon: (
+        <>
+          <circle cx="12" cy="12" r="7.25" />
+          <path d="M9.4 13.2c.8 1 1.7 1.5 2.6 1.5s1.8-.5 2.6-1.5" />
+          <circle cx="9.6" cy="10.2" r=".6" fill="currentColor" stroke="none" />
+          <circle cx="14.4" cy="10.2" r=".6" fill="currentColor" stroke="none" />
+          <path d="M16.8 6.6l2.6-2.6" />
+          <circle cx="20" cy="3.4" r="1.1" fill="currentColor" stroke="none" />
+        </>
+      ),
+      match: (p: string) => p.startsWith("/app") && !p.startsWith("/app/connections") && !p.startsWith("/app/new"),
+    },
+    {
+      href: "/app/new",
+      label: "Launch",
+      icon: (
+        <>
+          <path d="M12 3.5c2.6 1.9 4 4.6 4 8.1v3.4H8v-3.4c0-3.5 1.4-6.2 4-8.1z" />
+          <path d="M8 12.5l-2.6 2.2V18l2.6-1.3M16 12.5l2.6 2.2V18L16 16.7" />
+          <path d="M10.6 17.4L12 20.5l1.4-3.1" />
+          <circle cx="12" cy="10" r="1.3" />
+        </>
+      ),
+      match: (p: string) => p.startsWith("/app/new"),
+    },
+    {
+      href: "/app/connections",
+      label: "Connections",
+      icon: (
+        <>
+          <circle cx="6" cy="12" r="2.6" />
+          <circle cx="18" cy="6.5" r="2.6" />
+          <circle cx="18" cy="17.5" r="2.6" />
+          <path d="M8.3 10.9l7.4-3.3M8.3 13.1l7.4 3.3" />
+        </>
+      ),
+      match: (p: string) => p.startsWith("/app/connections"),
+    },
+    {
+      href: "/sky",
+      label: "The sky",
+      icon: (
+        <>
+          <path d="M3.5 18.5c2.2-4.4 5-6.6 8.5-6.6s6.3 2.2 8.5 6.6" />
+          <path d="M3 21h18" />
+          <circle cx="7" cy="6" r=".7" fill="currentColor" stroke="none" />
+          <circle cx="12.5" cy="4" r=".7" fill="currentColor" stroke="none" />
+          <circle cx="17.5" cy="7.5" r=".7" fill="currentColor" stroke="none" />
+        </>
+      ),
+      match: (p: string) => p.startsWith("/sky"),
+    },
   ];
   return (
     <nav aria-label="App" className="fixed inset-x-0 bottom-0 z-30 border-t border-ink/10 bg-cream/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
@@ -113,8 +162,9 @@ function MobileTabs({ pathname }: { pathname: string }) {
           const active = it.match(pathname);
           return (
             <li key={it.href}>
-              <Link href={it.href} className={`flex flex-col items-center gap-1 py-2.5 font-mono text-[10.5px] ${active ? "text-ink" : "text-ink-soft"}`}>
-                <svg viewBox="0 0 24 24" className={`h-5 w-5 ${active ? "stroke-ink" : "stroke-ink-soft"}`} fill="none" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{it.icon}</svg>
+              <Link href={it.href} aria-current={active ? "page" : undefined} className={`relative flex flex-col items-center gap-1 py-2.5 font-mono text-[10.5px] ${active ? "text-ink" : "text-ink-soft"}`}>
+                {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-ink" />}
+                <svg viewBox="0 0 24 24" className={`h-[22px] w-[22px] transition-colors ${active ? "text-ink" : "text-ink-soft"}`} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{it.icon}</svg>
                 {it.label}
               </Link>
             </li>

@@ -2,17 +2,17 @@ import { NextResponse } from "next/server";
 import { sessionFrom } from "./session";
 
 /**
- * Owner resolution. A signed session cookie (SIWE) is authoritative. The
- * `x-owner` header is accepted only when the address holds no session and the
- * route is read-only, or when ALLOW_HEADER_AUTH=1 (local dev / tests).
+ * Owner resolution. A signed session cookie (SIWE) is the only credential in
+ * production: an address alone proves nothing. The `x-owner` header is
+ * honoured only in local dev / tests (ALLOW_HEADER_AUTH=1 or non-production).
  */
-export function ownerFrom(req: Request, opts: { write?: boolean } = {}): string | null {
+export function ownerFrom(req: Request, _opts: { write?: boolean } = {}): string | null {
+  void _opts;
   const session = sessionFrom(req);
   if (session) return session;
+  if (process.env.ALLOW_HEADER_AUTH !== "1" && process.env.NODE_ENV === "production") return null;
   const h = req.headers.get("x-owner")?.trim().toLowerCase();
-  if (!h || !/^0x[0-9a-f]{40}$/.test(h)) return null;
-  if (opts.write && process.env.ALLOW_HEADER_AUTH !== "1" && process.env.NODE_ENV === "production") return null;
-  return h;
+  return h && /^0x[0-9a-f]{40}$/.test(h) ? h : null;
 }
 
 export const bad = (msg: string, status = 400) => NextResponse.json({ error: msg }, { status });

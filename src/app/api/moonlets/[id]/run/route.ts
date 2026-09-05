@@ -6,7 +6,7 @@ import * as store from "@/moonlet/store";
 /** Run now. Owner-only. */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const owner = ownerFrom(req, { write: true });
-  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
+  if (!owner) return bad("sign in with your wallet first", 401);
   const { id } = await params;
   const m = await store.getMoonlet(id);
   if (!m || m.owner !== owner) return bad("not found", 404);

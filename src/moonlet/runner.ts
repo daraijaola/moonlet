@@ -165,10 +165,25 @@ async function ensureFunded(key: KeyState, p: Plan, orbio: OrbioClient, events: 
   const want = keyClaimAmount(p);
   if (!key) {
     const bal = await orbio.getBalance();
-    if (bal.availableUsd < Math.max(p.perRunCapUsd, 0.05)) return null;
-    const claimed = await orbio.claimKey(Math.min(want, bal.availableUsd));
-    events.push({ kind: "claimed", detail: `claimed a funded key from Orbio balance`, amountUsd: claimed.limitUsd });
-    return { key: claimed.key, limitUsd: claimed.limitUsd, spentUsd: 0 };
+    const floor = Math.max(p.perRunCapUsd, 0.05);
+    if (bal.availableUsd >= floor) {
+      try {
+        const claimed = await orbio.claimKey(Math.min(want, bal.availableUsd));
+        events.push({ kind: "claimed", detail: `claimed a funded key from Orbio balance`, amountUsd: claimed.limitUsd });
+        return { key: claimed.key, limitUsd: claimed.limitUsd, spentUsd: 0 };
+      } catch (e) {
+        // Orbio issues one key per wallet; if the holder already claimed theirs, fall through and adopt it.
+        if (!/already|exists|active key/i.test(String((e as Error).message))) throw e;
+      }
+    }
+    // The holder may have moved their credits into a key themselves. Orbio never
+    // returns an existing secret, so rotate it: same balance, fresh secret that
+    // only the moonlet holds. Their old key string stops working.
+    const existing = await orbio.getKeyStatus().catch(() => null);
+    if (!existing || existing.limitUsd <= 0 || existing.remainingUsd < floor) return null;
+    const rotated = await orbio.rotateKey();
+    events.push({ kind: "rotated", detail: `adopted the wallet's existing Orbio key ($${existing.remainingUsd.toFixed(2)} left) by rotating it`, amountUsd: rotated.limitUsd });
+    return { key: rotated.key, limitUsd: rotated.limitUsd, spentUsd: 0 };
   }
   const status = await orbio.getKeyStatus();
   if (!status.active) {

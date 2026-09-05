@@ -1,105 +1,98 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHmac, randomBytes } from "node:crypto";
 import * as store from "../store";
 
 /**
- * X (Twitter). Two modes:
+ * X (Twitter), through the holder's OWN developer app.
  *
- *  - "hand" (default, free): the holder tells us their @handle. Drafts wait as
- *    proposals; approving one opens X's own compose window with the text
- *    pre-filled and they post it from their account. No developer app, no
- *    per-post fee. Autopilot is not possible in this mode.
- *  - OAuth 2.0 PKCE on the holder's account, when X_CLIENT_ID is set (X's API
- *    is pay-per-use since Feb 2026, billed to the developer account).
+ * X's API is pay-per-use (no free tier since Feb 2026) and bills the developer
+ * account, so each holder creates a free app on developer.x.com, adds a card
+ * there, and pastes the four keys from "Keys and tokens" here: API Key, API
+ * Key Secret, Access Token, Access Token Secret (the last two must be
+ * generated with Read and Write permissions). We sign requests with OAuth 1.0a
+ * user context, verify the keys live on connect, and post through POST
+ * /2/tweets. No redirect, nothing for the platform to configure.
  */
 
-export type XConn =
-  | { mode: "hand"; username: string }
-  | { mode?: "oauth"; accessToken: string; refreshToken?: string; expiresAt?: number; username: string; userId: string };
+export type XKeys = { apiKey: string; apiSecret: string; accessToken: string; accessSecret: string };
+export type XConn = XKeys & { username: string; userId: string };
 
-export function intentUrl(text: string) {
-  return `https://x.com/intent/post?text=${encodeURIComponent(text.slice(0, 280))}`;
+const API = "https://api.x.com/2";
+
+const enc = (s: string) => encodeURIComponent(s).replace(/[!'()*]/g, (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`);
+
+/** OAuth 1.0a Authorization header (HMAC-SHA1). `nonce`/`timestamp` are injectable for tests. */
+export function oauthHeader(
+  keys: XKeys,
+  method: "GET" | "POST",
+  url: string,
+  query: Record<string, string> = {},
+  fixed?: { nonce: string; timestamp: string },
+) {
+  const oauth: Record<string, string> = {
+    oauth_consumer_key: keys.apiKey,
+    oauth_nonce: fixed?.nonce ?? randomBytes(16).toString("hex"),
+    oauth_signature_method: "HMAC-SHA1",
+    oauth_timestamp: fixed?.timestamp ?? String(Math.floor(Date.now() / 1000)),
+    oauth_token: keys.accessToken,
+    oauth_version: "1.0",
+  };
+  const all = { ...query, ...oauth };
+  const params = Object.keys(all)
+    .sort()
+    .map((k) => `${enc(k)}=${enc(all[k])}`)
+    .join("&");
+  const base = `${method}&${enc(url)}&${enc(params)}`;
+  const key = `${enc(keys.apiSecret)}&${enc(keys.accessSecret)}`;
+  oauth.oauth_signature = createHmac("sha1", key).update(base).digest("base64");
+  return (
+    "OAuth " +
+    Object.keys(oauth)
+      .sort()
+      .map((k) => `${enc(k)}="${enc(oauth[k])}"`)
+      .join(", ")
+  );
 }
 
-/** Free path: remember the handle so drafts can be routed to the compose window. */
-export async function connectByHandle(owner: string, handle: string) {
-  const username = handle.trim().replace(/^@/, "").replace(/^https?:\/\/(x|twitter)\.com\//i, "").split(/[/?]/)[0];
-  if (!/^[A-Za-z0-9_]{1,15}$/.test(username)) throw new Error("That doesn't look like an X handle.");
-  await store.setConnection(owner, "x", `@${username}`, { mode: "hand", username } satisfies XConn);
-  return { username };
+function looksLikeKeys(k: Partial<XKeys>): k is XKeys {
+  return [k.apiKey, k.apiSecret, k.accessToken, k.accessSecret].every((v) => typeof v === "string" && v.trim().length >= 10);
 }
 
-export async function xMode(owner: string): Promise<"hand" | "oauth" | null> {
-  const c = await store.getConnection<XConn>(owner, "x");
-  return c ? (c.data.mode === "hand" ? "hand" : "oauth") : null;
+async function xError(res: Response) {
+  const j = (await res.json().catch(() => ({}))) as { detail?: string; title?: string; errors?: Array<{ message?: string }>; reason?: string };
+  const msg = j.detail ?? j.errors?.[0]?.message ?? j.title ?? `HTTP ${res.status}`;
+  if (res.status === 401) return "X rejected the keys (401). Check all four values, and that the Access Token was generated after setting Read and Write.";
+  if (res.status === 402 || /credit|billing|payment/i.test(msg)) return "X says the developer account has no credits. Add a card and buy credits on developer.x.com, then try again.";
+  if (res.status === 403) return `X refused (403): ${msg}. Usually the app's permissions are Read-only, or the Access Token predates the permission change. Regenerate it.`;
+  if (res.status === 429) return "X rate limit hit. Wait a few minutes and try again.";
+  return `X error: ${msg}`;
 }
 
-const AUTH = "https://twitter.com/i/oauth2/authorize";
-const TOKEN = "https://api.twitter.com/2/oauth2/token";
-const API = "https://api.twitter.com/2";
-const SCOPES = ["tweet.read", "tweet.write", "users.read", "offline.access"];
-
-export function xConfigured() {
-  return !!process.env.X_CLIENT_ID;
-}
-
-function basicAuth(): Record<string, string> {
-  const id = process.env.X_CLIENT_ID, secret = process.env.X_CLIENT_SECRET;
-  return secret ? { authorization: `Basic ${Buffer.from(`${id}:${secret}`).toString("base64")}` } : {};
-}
-
-export async function beginOAuth(owner: string, redirectUri: string, redirectTo: string) {
-  const clientId = process.env.X_CLIENT_ID;
-  if (!clientId) throw new Error("X isn't configured (X_CLIENT_ID)");
-  const verifier = randomBytes(32).toString("base64url");
-  const challenge = createHash("sha256").update(verifier).digest("base64url");
-  const state = `x_${randomBytes(12).toString("base64url")}`;
-  await store.saveOauthState({ state, address: owner, verifier, clientId, redirectTo, redirectUri });
-  const u = new URL(AUTH);
-  u.search = new URLSearchParams({ response_type: "code", client_id: clientId, redirect_uri: redirectUri, scope: SCOPES.join(" "), state, code_challenge: challenge, code_challenge_method: "S256" }).toString();
-  return u.toString();
-}
-
-export async function finishOAuth(code: string, state: string, fetchImpl: typeof fetch = fetch) {
-  const saved = await store.takeOauthState(state);
-  if (!saved) throw new Error("state expired");
-  const res = await fetchImpl(TOKEN, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", ...basicAuth() },
-    body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: saved.redirectUri, client_id: saved.clientId, code_verifier: saved.verifier }),
-  });
-  if (!res.ok) throw new Error(`X token exchange failed: ${res.status}`);
-  const t = (await res.json()) as { access_token: string; refresh_token?: string; expires_in?: number };
-  const me = await fetchImpl(`${API}/users/me`, { headers: { authorization: `Bearer ${t.access_token}` } });
-  const u = ((await me.json()) as { data?: { id: string; username: string } }).data;
-  if (!u) throw new Error("X: couldn't read the account");
-  const conn: XConn = { mode: "oauth", accessToken: t.access_token, refreshToken: t.refresh_token, expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined, username: u.username, userId: u.id };
-  await store.setConnection(saved.address, "x", `@${u.username}`, conn);
-  return { owner: saved.address, redirectTo: saved.redirectTo, username: u.username };
-}
-
-type OAuthConn = Extract<XConn, { accessToken: string }>;
-
-async function freshToken(owner: string, conn: OAuthConn, fetchImpl: typeof fetch): Promise<string> {
-  if (!conn.expiresAt || conn.expiresAt - Date.now() > 60_000 || !conn.refreshToken) return conn.accessToken;
-  const res = await fetchImpl(TOKEN, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded", ...basicAuth() },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: conn.refreshToken, client_id: process.env.X_CLIENT_ID ?? "" }),
-  });
-  if (!res.ok) throw new Error(`X refresh failed: ${res.status}`);
-  const t = (await res.json()) as { access_token: string; refresh_token?: string; expires_in?: number };
-  const next: OAuthConn = { ...conn, accessToken: t.access_token, refreshToken: t.refresh_token ?? conn.refreshToken, expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined };
-  await store.setConnection(owner, "x", `@${conn.username}`, next);
-  return next.accessToken;
+/** Verify the four keys against GET /2/users/me and store them. Costs one User read on the holder's X account. */
+export async function connectWithKeys(owner: string, input: Partial<XKeys>, fetchImpl: typeof fetch = fetch) {
+  const keys: Partial<XKeys> = { apiKey: input.apiKey?.trim(), apiSecret: input.apiSecret?.trim(), accessToken: input.accessToken?.trim(), accessSecret: input.accessSecret?.trim() };
+  if (!looksLikeKeys(keys)) throw new Error("All four keys are needed: API Key, API Key Secret, Access Token, Access Token Secret.");
+  const url = `${API}/users/me`;
+  const res = await fetchImpl(url, { headers: { authorization: oauthHeader(keys, "GET", url) }, signal: AbortSignal.timeout(15_000) });
+  if (!res.ok) throw new Error(await xError(res));
+  const u = ((await res.json()) as { data?: { id: string; username: string } }).data;
+  if (!u) throw new Error("X: couldn't read the account behind these keys.");
+  const conn: XConn = { ...keys, username: u.username, userId: u.id };
+  await store.setConnection(owner, "x", `@${u.username}`, conn);
+  return { username: u.username };
 }
 
 export async function postTweet(owner: string, text: string, fetchImpl: typeof fetch = fetch) {
   const conn = await store.getConnection<XConn>(owner, "x");
   if (!conn) throw new Error("X not connected");
-  if (conn.data.mode === "hand") return { id: null, url: intentUrl(text), handPost: true as const };
-  const token = await freshToken(owner, conn.data, fetchImpl);
-  const res = await fetchImpl(`${API}/tweets`, { method: "POST", headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, body: JSON.stringify({ text: text.slice(0, 280) }) });
-  const j = (await res.json()) as { data?: { id: string }; detail?: string; title?: string };
-  if (!res.ok || !j.data) throw new Error(`X post failed: ${j.detail ?? j.title ?? res.status}`);
+  const url = `${API}/tweets`;
+  const res = await fetchImpl(url, {
+    method: "POST",
+    headers: { authorization: oauthHeader(conn.data, "POST", url), "content-type": "application/json" },
+    body: JSON.stringify({ text: text.slice(0, 280) }),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!res.ok) throw new Error(`X post failed: ${await xError(res)}`);
+  const j = (await res.json()) as { data?: { id: string } };
+  if (!j.data) throw new Error("X post failed: no id returned");
   return { id: j.data.id, url: `https://x.com/${conn.data.username}/status/${j.data.id}` };
 }

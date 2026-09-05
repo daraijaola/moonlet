@@ -3,6 +3,7 @@ import { rmSync } from "node:fs";
 import * as store from "@/moonlet/store";
 import * as tg from "@/moonlet/connections/telegram";
 import * as gh from "@/moonlet/connections/github";
+import * as x from "@/moonlet/connections/x";
 import { decide, propose, telegramCallback } from "@/moonlet/proposals";
 import { buildTools } from "@/moonlet/tools";
 
@@ -13,6 +14,7 @@ const OTHER = "0x00000000000000000000000000000000000000bb";
 function fakeTelegram() {
   const sent: Array<{ chat_id: string; text: string; buttons?: string[] }> = [];
   const edited: Array<{ message_id: number; text: string }> = [];
+  const configured: string[] = [];
   let queue: unknown[] = [];
   let nextId = 100;
   const fetchImpl: typeof fetch = async (input, init) => {
@@ -33,20 +35,70 @@ function fakeTelegram() {
       return ok(out);
     }
     if (url.endsWith("/answerCallbackQuery")) return ok(true);
+    if (/\/setMy(Commands|Description|ShortDescription)$/.test(url)) {
+      configured.push(url.split("/").pop()!);
+      return ok(true);
+    }
     return new Response("not found", { status: 404 });
   };
-  return { fetchImpl, sent, edited, push: (u: unknown) => queue.push(u) };
+  return { fetchImpl, sent, edited, configured, push: (u: unknown) => queue.push(u) };
 }
 
-describe("connections + proposals", () => {
-  beforeAll(async () => {
-    process.env.TELEGRAM_BOT_TOKEN = "test-token";
-    process.env.TELEGRAM_BOT_USERNAME = "moonlet_test_bot";
-    rmSync("/tmp/moonlet-conn.db", { force: true });
-    process.env.DATABASE_URL = "file:/tmp/moonlet-conn.db";
-    await store.migrate();
+// Reference vector from X's "Creating a signature" guide.
+const KEYS: x.XKeys = {
+  apiKey: "xvz1evFS4wEEPTGEFPHBog",
+  apiSecret: "kAcSOqF21Fu85e7zjz7ZN2U4ZRhfV3WpwPAoE3Z7kBw",
+  accessToken: "370773112-GmHxMAgYyLbNEtIKZeRNFsMKPR9EyMZeS9weJAEb",
+  accessSecret: "LswwdoUaIvS8ltyTt5jkRh4J50vUPVVHtR2YPi5kE",
+};
+
+beforeAll(async () => {
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  process.env.TELEGRAM_BOT_USERNAME = "moonlet_test_bot";
+  rmSync("/tmp/moonlet-conn.db", { force: true });
+  process.env.DATABASE_URL = "file:/tmp/moonlet-conn.db";
+  await store.migrate();
+});
+
+describe("x: own developer app keys (OAuth 1.0a)", () => {
+  it("signs exactly like X's reference example", () => {
+    const h = x.oauthHeader(
+      KEYS,
+      "POST",
+      "https://api.twitter.com/1.1/statuses/update.json",
+      { include_entities: "true", status: "Hello Ladies + Gentlemen, a signed OAuth request!" },
+      { nonce: "kYjzVBB8Y0ZFabxSWbWovY3uYSQ2pTgmZeNu2VS4cg", timestamp: "1318622958" },
+    );
+    expect(h).toContain('oauth_signature="hCtSmYh%2BiHYCEqBWrE7C7hYmtUk%3D"');
+    expect(h.startsWith("OAuth ")).toBe(true);
   });
 
+  it("connect verifies the keys against /2/users/me, maps X's failures to plain-English reasons, and stores the account", async () => {
+    let auth: string | null = null;
+    const okFetch: typeof fetch = async (input, init) => {
+      expect(String(input)).toBe("https://api.x.com/2/users/me");
+      auth = new Headers(init?.headers).get("authorization");
+      return new Response(JSON.stringify({ data: { id: "42", username: "dara" } }), { status: 200 });
+    };
+    await expect(x.connectWithKeys(OTHER, { ...KEYS, accessSecret: "short" }, okFetch)).rejects.toThrow(/All four keys/);
+    const r = await x.connectWithKeys(OTHER, KEYS, okFetch);
+    expect(r.username).toBe("dara");
+    expect(auth).toMatch(/oauth_signature_method="HMAC-SHA1"/);
+    const c = await store.getConnection<x.XConn>(OTHER, "x");
+    expect(c?.label).toBe("@dara");
+    expect(c?.data.apiSecret).toBe(KEYS.apiSecret);
+    await store.deleteConnection(OTHER, "x");
+
+    const status = (code: number, body: unknown) => (async () => new Response(JSON.stringify(body), { status: code })) as typeof fetch;
+    await expect(x.connectWithKeys(OTHER, KEYS, status(401, { title: "Unauthorized" }))).rejects.toThrow(/rejected the keys/);
+    await expect(x.connectWithKeys(OTHER, KEYS, status(403, { detail: "Your client app is not configured with the appropriate oauth1 app permissions" }))).rejects.toThrow(/Read and Write|Read-only/);
+    await expect(x.connectWithKeys(OTHER, KEYS, status(402, { detail: "Insufficient credits" }))).rejects.toThrow(/credits/);
+    await expect(x.connectWithKeys(OTHER, KEYS, status(429, {}))).rejects.toThrow(/rate limit/);
+    expect(await store.getConnection(OTHER, "x")).toBeNull();
+  });
+});
+
+describe("connections + proposals", () => {
   it("links a Telegram chat to a wallet via /start <code>, and rejects unknown codes", async () => {
     const t = fakeTelegram();
     const { code, url } = await tg.beginLink(OWNER);
@@ -64,14 +116,39 @@ describe("connections + proposals", () => {
     expect((await tg.processUpdates(telegramCallback, t.fetchImpl)).linked).toBe(0);
   });
 
+  it("bot profile is configured once per token; /start without a code, /status and /stop answer sensibly", async () => {
+    const t = fakeTelegram();
+    expect(await tg.configureBot(t.fetchImpl)).toBe(true);
+    expect(await tg.configureBot(t.fetchImpl)).toBe(false);
+    expect(t.configured.sort()).toEqual(["setMyCommands", "setMyDescription", "setMyShortDescription"]);
+
+    t.push({ update_id: 10, message: { message_id: 1, text: "/start", chat: { id: 5555, type: "private" } } });
+    t.push({ update_id: 11, message: { message_id: 2, text: "/status", chat: { id: 4242, type: "private" } } });
+    t.push({ update_id: 12, message: { message_id: 3, text: "/status@moonletbbot", chat: { id: 5555, type: "private" } } });
+    await tg.processUpdates(telegramCallback, t.fetchImpl);
+    expect(t.sent[0].text).toMatch(/To link this chat/);
+    expect(t.sent[1].text).toMatch(/No moonlets yet|Your moonlets/);
+    expect(t.sent[2].text).toMatch(/isn't linked yet/);
+
+    t.push({ update_id: 13, message: { message_id: 4, text: "/stop", chat: { id: 4242, type: "private" } } });
+    await tg.processUpdates(telegramCallback, t.fetchImpl);
+    expect(t.sent[3].text).toMatch(/Unlinked/);
+    expect(await store.getConnection(OWNER, "telegram")).toBeNull();
+    // relink for the tests that follow
+    const { code } = await tg.beginLink(OWNER);
+    t.push({ update_id: 14, message: { message_id: 5, text: `/start ${code}`, chat: { id: 4242, type: "private", username: "dara" } } });
+    expect((await tg.processUpdates(telegramCallback, t.fetchImpl)).linked).toBe(1);
+  });
+
   it("a tweet proposal goes to Telegram with buttons, approve executes it, and a second tap is a no-op", async () => {
     const t = fakeTelegram();
     let posted: string | null = null;
     // X is exercised through a fake fetch: token + post endpoints
-    await store.setConnection(OWNER, "x", "@dara", { accessToken: "xt", username: "dara", userId: "1" });
+    await store.setConnection(OWNER, "x", "@dara", { ...KEYS, username: "dara", userId: "1" });
     const xFetch: typeof fetch = async (input, init) => {
       const url = String(input);
       if (url.endsWith("/2/tweets")) {
+        expect(new Headers(init?.headers).get("authorization")).toMatch(/^OAuth oauth_consumer_key="xvz1evFS4wEEPTGEFPHBog"/);
         posted = JSON.parse(String(init?.body)).text;
         return new Response(JSON.stringify({ data: { id: "777" } }), { status: 201 });
       }
@@ -138,7 +215,7 @@ describe("connections + proposals", () => {
     const xFetch: typeof fetch = async () => new Response(JSON.stringify({ detail: "Forbidden" }), { status: 403 });
     const r = await propose({ kind: "tweet", text: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: true, fetch: xFetch });
     expect(r.status).toBe("failed");
-    expect((await store.getProposal(r.proposalId!))?.result).toEqual({ error: "X post failed: Forbidden" });
+    expect(String((await store.getProposal(r.proposalId!))?.result?.error)).toMatch(/^X post failed: X refused \(403\): Forbidden/);
   });
 
   it("proposing without the connection fails fast instead of queueing a doomed draft", async () => {

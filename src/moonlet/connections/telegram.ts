@@ -58,6 +58,48 @@ export function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+const APP = () => process.env.APP_URL ?? "https://16labs.xyz";
+
+/**
+ * One-time bot profile: commands menu, descriptions. Re-applied whenever the
+ * token changes (keyed in kv), so a fresh bot from BotFather is ready on the
+ * first tick without anyone touching the Telegram UI.
+ */
+export async function configureBot(fetchImpl: typeof fetch = fetch) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) return false;
+  const stamp = `v2:${token.slice(0, 12)}`;
+  if ((await store.kvGet("telegram.configured")) === stamp) return false;
+  await call("setMyCommands", {
+    commands: [
+      { command: "status", description: "Your moonlets, fuel and next runs" },
+      { command: "help", description: "What this bot does" },
+      { command: "stop", description: "Unlink this chat from your wallet" },
+    ],
+  }, fetchImpl);
+  await call("setMyShortDescription", { short_description: "Your moonlets report here. Approve or reject what they want to do with one tap." }, fetchImpl);
+  await call("setMyDescription", {
+    description: "Moonlet runs small AI agents paid for by the credits your $ORBIO earns. Link this chat from Moonlet → Connections and your moonlets will send you briefs, alerts and anything that needs your OK, with Approve / Reject buttons.",
+  }, fetchImpl);
+  await store.kvSet("telegram.configured", stamp);
+  return true;
+}
+
+export async function ownerOfChat(chatId: string) {
+  const all = await store.connectionsOfKind<TelegramConn>("telegram");
+  return all.find((c) => c.data.chatId === chatId)?.owner ?? null;
+}
+
+async function statusText(owner: string) {
+  const ms = await store.listMoonlets(owner);
+  if (!ms.length) return `No moonlets yet for <b>${esc(owner.slice(0, 6))}…${esc(owner.slice(-4))}</b>. Launch one at ${esc(APP())}/app/new`;
+  const lines = ms.map((m) => {
+    const when = m.status === "running" ? "running now" : m.status === "paused" ? "paused" : m.status === "quiet" ? "quiet (no fuel)" : m.nextRunAt ? `next in ${Math.max(0, Math.round((m.nextRunAt - Date.now()) / 60_000))} min` : "scheduled";
+    return `• <b>${esc(m.name)}</b> — ${esc(when)} · ${m.runsTotal} run${m.runsTotal === 1 ? "" : "s"} · $${m.spentTotalUsd.toFixed(3)} spent`;
+  });
+  return `<b>Your moonlets</b>\n${lines.join("\n")}\n\n${esc(APP())}/app`;
+}
+
 /** Start a link: returns the deep link the holder taps. */
 export async function beginLink(owner: string) {
   const code = `ml_${Math.random().toString(36).slice(2, 10)}`;
@@ -110,16 +152,35 @@ async function processUpdatesInner(onCallback: CallbackHandler, fetchImpl: typeo
   for (const u of updates) {
     last = Math.max(last, u.update_id);
     try {
-      if (u.message?.text?.startsWith("/start") && u.message.chat.type === "private") {
-        const code = u.message.text.split(/\s+/)[1];
+      if (u.message?.text && u.message.chat.type === "private") {
         const chatId = String(u.message.chat.id);
-        const hit = code ? await store.takeLinkCode(code) : null;
-        if (hit && hit.kind === "telegram") {
-          await store.setConnection(hit.owner, "telegram", u.message.chat.username ? `@${u.message.chat.username}` : (u.message.chat.first_name ?? "Telegram"), { chatId, username: u.message.chat.username, firstName: u.message.chat.first_name } satisfies TelegramConn);
-          await sendMessage(chatId, `Linked to <b>${esc(hit.owner.slice(0, 6))}…${esc(hit.owner.slice(-4))}</b>. Your moonlets can reach you here, and anything that needs your OK will show up with buttons.`, { fetch: fetchImpl });
-          linked++;
+        const [cmd, arg] = u.message.text.trim().split(/\s+/);
+        const command = cmd.replace(/@\w+$/, "").toLowerCase();
+        if (command === "/start" && arg) {
+          const hit = await store.takeLinkCode(arg);
+          if (hit && hit.kind === "telegram") {
+            await store.setConnection(hit.owner, "telegram", u.message.chat.username ? `@${u.message.chat.username}` : (u.message.chat.first_name ?? "Telegram"), { chatId, username: u.message.chat.username, firstName: u.message.chat.first_name } satisfies TelegramConn);
+            await sendMessage(chatId, `✓ Linked to <b>${esc(hit.owner.slice(0, 6))}…${esc(hit.owner.slice(-4))}</b>.\n\nYour moonlets will report here. When one wants to post or open a pull request, you'll get it with Approve / Reject buttons. Send /status any time.`, { fetch: fetchImpl });
+            linked++;
+          } else {
+            await sendMessage(chatId, `That link has expired. Open ${esc(APP())}/app/connections and tap <b>Link Telegram</b> again.`, { fetch: fetchImpl });
+          }
+        } else if (command === "/status") {
+          const owner = await ownerOfChat(chatId);
+          await sendMessage(chatId, owner ? await statusText(owner) : `This chat isn't linked yet. Open ${esc(APP())}/app/connections and tap <b>Link Telegram</b>.`, { fetch: fetchImpl });
+        } else if (command === "/stop") {
+          const owner = await ownerOfChat(chatId);
+          if (owner) await store.deleteConnection(owner, "telegram");
+          await sendMessage(chatId, owner ? "Unlinked. Your moonlets will stop messaging this chat; pending drafts stay on the dashboard." : "This chat wasn't linked to anything.", { fetch: fetchImpl });
         } else {
-          await sendMessage(chatId, "Open Moonlet → Connections → Telegram and tap the link there. Codes expire after 30 minutes.", { fetch: fetchImpl });
+          const owner = await ownerOfChat(chatId);
+          await sendMessage(
+            chatId,
+            owner
+              ? `This chat is linked to <b>${esc(owner.slice(0, 6))}…${esc(owner.slice(-4))}</b>. Your moonlets post their results here and ask before acting on your behalf.\n\n/status — your moonlets\n/stop — unlink\n\nManage them at ${esc(APP())}/app`
+              : `Moonlet runs small AI agents paid for by the credits your $ORBIO earns.\n\nTo link this chat: open ${esc(APP())}/app/connections, tap <b>Link Telegram</b>, then press Start here.`,
+            { fetch: fetchImpl },
+          );
         }
       } else if (u.callback_query?.data && u.callback_query.message) {
         const [action, id] = u.callback_query.data.split(":");

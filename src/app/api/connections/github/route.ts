@@ -7,7 +7,7 @@ import { verifyToken } from "@/moonlet/connections/github";
 /** Save a fine-grained PAT after verifying it. Stored sealed; never returned. */
 export async function POST(req: Request) {
   const owner = ownerFrom(req, { write: true });
-  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
+  if (!owner) return bad("sign in with your wallet first", 401);
   const body = z.object({ token: z.string().min(20).max(400) }).safeParse(await req.json().catch(() => null));
   if (!body.success) return bad("token required");
   try {

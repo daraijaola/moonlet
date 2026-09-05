@@ -75,6 +75,10 @@ async function req<T>(owner: string | null, path: string, init?: RequestInit): P
     headers: { "content-type": "application/json", ...(owner ? { "x-owner": owner } : {}), ...(init?.headers ?? {}) },
   });
   const json = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (res.status === 401 && owner && typeof window !== "undefined") {
+    // Session cookie gone (expired or another device signed out): drop the local login and re-sign.
+    window.dispatchEvent(new Event("moonlet:unauthorized"));
+  }
   if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
   return json;
 }
@@ -101,8 +105,7 @@ export const api = {
   telegramPoll: (owner: string) => req<{ linked: boolean; label: string | null }>(owner, "/api/connections/telegram"),
   githubStart: (owner: string) => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
   githubConnect: (owner: string, token: string) => req<{ ok: boolean; login: string }>(owner, "/api/connections/github", { method: "POST", body: JSON.stringify({ token }) }),
-  xConnectHandle: (owner: string, handle: string) => req<{ ok: boolean; username: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify({ handle }) }),
-  xConnect: (owner: string) => req<{ url: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
+  xConnect: (owner: string, keys: { apiKey: string; apiSecret: string; accessToken: string; accessSecret: string }) => req<{ ok: boolean; username: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify(keys) }),
   proposals: (owner: string, status?: Proposal["status"]) => req<{ proposals: Proposal[] }>(owner, `/api/proposals${status ? `?status=${status}` : ""}`),
   decide: (owner: string, id: string, action: "approve" | "reject") => req<{ ok: boolean; status: string; result?: Record<string, unknown> }>(owner, `/api/proposals/${id}`, { method: "POST", body: JSON.stringify({ action }) }),
   sky: () => req<{ alive: number; total: number; creditsPerDay: number; burnPerDay: number; spentTotalUsd: number; runsToday: number; anchoredToday: number }>(null, "/api/sky/stats"),
