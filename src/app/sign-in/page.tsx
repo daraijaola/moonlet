@@ -116,7 +116,7 @@ function SignInInner() {
               n={2}
               state={step > 2 ? "done" : step === 2 ? "active" : "todo"}
               title="Let moonlet manage your Orbio credits"
-              hint="Opens orbio.so. Approve once. Moonlet can claim, top up, rotate, and revoke keys, and nothing else."
+              hint="Opens orbio.so, where you connect the same wallet and approve once. On a phone, Orbio’s page needs your wallet app’s browser (MetaMask → Browser → 16labs.xyz). Moonlet can claim, top up, rotate and revoke keys, nothing else."
             >
               {address && !orbioChecked && !skipOrbio && (
                 <p className="mt-3 font-mono text-[12px] text-ink-soft">Checking Orbio…</p>

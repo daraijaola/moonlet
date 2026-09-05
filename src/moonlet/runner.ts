@@ -100,7 +100,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
     const result = callModel(client, {
       model,
       models: fallbackModels(model),
-      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString() }),
+      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login }),
       input: `Run your job now. Finish with the structured output.`,
       tools,
       stopWhen: [maxCost(p.perRunCapUsd), stepCountIs(8)],
@@ -141,7 +141,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
     }
   }
 
-  const parsed = safeParseOutput(text);
+  const parsed = safeParseOutput(text) ?? salvageOutput(text, m.spec.name);
   if (!parsed) return fail(new Error("model did not return valid RunOutput"), "output", { t0, model, p, keyEvents, trace, key, cost, calls });
 
   key = { ...key, spentUsd: key.spentUsd + cost };
@@ -235,6 +235,22 @@ function safeParseOutput(text: string): RunOutput | null {
       return null;
     }
   }
+}
+
+/** The model answered in prose instead of the schema. Keep the work; the owner reads it as a note. */
+function salvageOutput(text: string, name: string): RunOutput | null {
+  const t = text.replace(/```[a-z]*\n?|```/g, "").trim();
+  if (t.length < 20) return null;
+  const firstLine = t.split("\n").find((l) => l.trim())?.replace(/^#+\s*/, "").trim() ?? `${name} note`;
+  const r = RunOutput.safeParse({
+    title: firstLine.slice(0, 90).padEnd(3, "."),
+    summary: t.replace(/\s+/g, " ").slice(0, 600),
+    body: t.slice(0, 4000),
+    sources: [...t.matchAll(/https?:\/\/[^\s)>"']+/g)].map((x) => x[0]).slice(0, 12),
+    signal: "low",
+    nothingHappened: false,
+  });
+  return r.success ? r.data : null;
 }
 
 export function hashOutput(o: RunOutput) {

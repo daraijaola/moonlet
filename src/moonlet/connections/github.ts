@@ -71,17 +71,32 @@ export async function connectionFor(owner: string) {
 }
 
 export type RepoRead =
+  | { action: "repos"; repo?: string; limit?: number }
+  | { action: "readme"; repo: string; ref?: string }
   | { action: "issues"; repo: string; state?: "open" | "closed" | "all"; limit?: number }
   | { action: "pulls"; repo: string; state?: "open" | "closed" | "all"; limit?: number }
   | { action: "commits"; repo: string; limit?: number }
   | { action: "file"; repo: string; path: string; ref?: string }
   | { action: "tree"; repo: string; path?: string; ref?: string };
 
+/** The owner's own repositories, most recently pushed first. */
+export async function listRepos(token: string, limit = 30, fetchImpl?: typeof fetch) {
+  const items = await gh<Array<Record<string, unknown>>>(token, `/user/repos?sort=pushed&per_page=${Math.min(100, limit)}&affiliation=owner,collaborator,organization_member`, {}, fetchImpl);
+  return items.map((r) => ({ repo: r.full_name as string, private: !!r.private, description: String(r.description ?? "").slice(0, 160), language: r.language as string | null, pushed: r.pushed_at as string, stars: r.stargazers_count as number, url: r.html_url as string, defaultBranch: r.default_branch as string }));
+}
+
 export async function readRepo(token: string, q: RepoRead, fetchImpl?: typeof fetch) {
+  if (q.action === "repos") return { repos: await listRepos(token, q.limit ?? 30, fetchImpl) };
   const [o, r] = q.repo.split("/");
   if (!o || !r) return { error: "repo must be owner/name" };
   const lim = Math.min(30, Math.max(1, ("limit" in q && q.limit) || 15));
   switch (q.action) {
+    case "readme": {
+      const f = await gh<{ content?: string; encoding?: string; path?: string; html_url?: string }>(token, `/repos/${o}/${r}/readme${q.ref ? `?ref=${q.ref}` : ""}`, {}, fetchImpl).catch(() => null);
+      if (!f) return { error: "no README in this repo" };
+      const text = f.content && f.encoding === "base64" ? Buffer.from(f.content, "base64").toString("utf8") : "";
+      return { path: f.path, url: f.html_url, content: text.slice(0, 12_000), truncated: text.length > 12_000 };
+    }
     case "issues": {
       const items = await gh<Array<Record<string, unknown>>>(token, `/repos/${o}/${r}/issues?state=${q.state ?? "open"}&per_page=${lim}`, {}, fetchImpl);
       return { issues: items.filter((i) => !i.pull_request).map((i) => ({ number: i.number, title: i.title, state: i.state, labels: (i.labels as Array<{ name: string }>)?.map((l) => l.name), updated: i.updated_at, url: i.html_url, body: String(i.body ?? "").slice(0, 600) })) };
