@@ -12,7 +12,8 @@ import { MetaMaskMark, OpenRouterMark, OrbioMark, RabbyMark, RobinhoodMark, Wall
 import { detectWallets, type WalletId } from "@/lib/auth";
 
 function SignInInner() {
-  const { ready, address, signed, signError, orbioApproved, orbioChecked, connect, sign, approveOrbio, hasInjected } = useAuth();
+  const { ready, address, orbioApproved, orbioChecked, connect, approveOrbio } = useAuth();
+  const host = typeof window !== "undefined" ? window.location.host : "16labs.xyz";
   const [wallets, setWallets] = useState<WalletId[]>([]);
   useEffect(() => {
     const t = setTimeout(() => setWallets(detectWallets()), 0);
@@ -23,7 +24,6 @@ function SignInInner() {
   const next = params.get("next") || "/app";
   const orbioResult = params.get("orbio");
   const [busy, setBusy] = useState<"wallet" | "orbio" | null>(null);
-  const [manual, setManual] = useState("");
   const [err, setErr] = useState<string | null>(
     orbioResult && orbioResult !== "ok" ? `Orbio approval ${orbioResult.replace("_", " ")}. Try again.` : null,
   );
@@ -63,31 +63,8 @@ function SignInInner() {
               n={1}
               state={step > 1 ? "done" : "active"}
               title={address ? `Connected ${shortAddr(address)}` : "Connect the wallet that holds $ORBIO"}
-              hint={address && !signed ? (signError ? "Connected without a signature. Approving Orbio in step 2 unlocks you too." : "Address only. Approve Orbio in step 2 to unlock launching.") : "Robinhood Chain · needs 1,000+ $ORBIO to earn"}
+              hint={address ? "Signed in. This signature is your login; it never moves tokens." : "Robinhood Chain · needs 1,000+ $ORBIO to earn · you sign one message, no gas"}
             >
-              {address && !signed && signError && (
-                <div className="mt-3 rounded-md border border-gold/60 bg-gold/10 px-3 py-2 font-mono text-[11.5px] text-ink">
-                  {signError}
-                  {hasInjected && (
-                    <button
-                      disabled={busy !== null}
-                      onClick={async () => {
-                        setBusy("wallet");
-                        setErr(null);
-                        try {
-                          await sign();
-                        } catch (e) {
-                          setErr((e as Error).message);
-                        }
-                        setBusy(null);
-                      }}
-                      className="ml-2 underline decoration-ink/30 hover:decoration-ink disabled:opacity-50"
-                    >
-                      {busy === "wallet" ? "check your wallet…" : "sign again"}
-                    </button>
-                  )}
-                </div>
-              )}
               {!address && (
                 <>
                   <div className="mt-3 grid gap-2">
@@ -105,7 +82,7 @@ function SignInInner() {
                             setBusy("wallet");
                             setErr(null);
                             try {
-                              await connect(undefined, w);
+                              await connect(w);
                             } catch (e) {
                               setErr((e as Error).message);
                             }
@@ -121,43 +98,16 @@ function SignInInner() {
                       );
                     })}
                   </div>
-                  <div className="mt-3 flex items-center gap-2 text-[11px] text-ink-faint">
-                    <span className="h-px flex-1 bg-ink/10" />
-                    or paste your 0x address
-                    <span className="h-px flex-1 bg-ink/10" />
-                  </div>
-                  <p className="mt-2 text-[11.5px] leading-[1.5] text-ink-faint sm:hidden">
-                    On a phone, wallet buttons only work inside your wallet app’s browser. Pasting your address works anywhere; approving Orbio then unlocks the account.
-                  </p>
-                  <form
-                    className="mt-2 flex gap-2"
-                    onSubmit={async (e) => {
-                      e.preventDefault();
-                      setBusy("wallet");
-                      setErr(null);
-                      try {
-                        await connect(manual);
-                      } catch (e2) {
-                        setErr((e2 as Error).message);
-                      }
-                      setBusy(null);
-                    }}
-                  >
-                    <input
-                      value={manual}
-                      onChange={(e) => setManual(e.target.value)}
-                      placeholder="0x…"
-                      spellCheck={false}
-                      className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 font-mono text-[12.5px] text-ink outline-none focus:border-ink"
-                    />
-                    <button
-                      type="submit"
-                      disabled={busy !== null || !/^0x[0-9a-fA-F]{40}$/.test(manual.trim())}
-                      className="btn-hard rounded-md border-2 border-ink bg-gold px-3 py-2 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-40"
-                    >
-                      Use
-                    </button>
-                  </form>
+                  {wallets.length === 0 && (
+                    <div className="mt-3 rounded-md border border-ink/10 bg-paper px-3 py-2.5 text-[11.5px] leading-[1.55] text-ink-soft">
+                      <p className="font-medium text-ink">No wallet extension here?</p>
+                      <p className="mt-0.5">On a phone, open this page inside your wallet app’s browser and tap its button above:</p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <a href={`https://metamask.app.link/dapp/${host}/sign-in`} className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-white px-2.5 py-1.5 font-mono text-[11.5px] text-ink hover:border-ink"><MetaMaskMark size={13} /> Open in MetaMask</a>
+                        <a href={`https://rabby.io/`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-white px-2.5 py-1.5 font-mono text-[11.5px] text-ink hover:border-ink"><RabbyMark size={13} /> Get Rabby</a>
+                      </div>
+                    </div>
+                  )}
                 </>
               )}
             </Step>

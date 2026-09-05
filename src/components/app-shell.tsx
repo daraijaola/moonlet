@@ -7,7 +7,6 @@ import { useAuth } from "@/lib/auth";
 import { shortAddr } from "@/lib/api";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
-import { UnlockBanner } from "./unlock-banner";
 
 const TABS = [
   { href: "/app", label: "Moonlets" },
@@ -17,12 +16,12 @@ const TABS = [
 
 /** Quiet top bar for signed-in surfaces. Gates on a connected wallet. */
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { ready, address, disconnect } = useAuth();
+  const { ready, address, signed, disconnect } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
 
-  // A wallet is enough to enter; Orbio approval is prompted inside the app.
-  const allowed = !!address;
+  // A signed wallet is the account; Orbio approval is prompted inside the app.
+  const allowed = !!address && signed;
 
   useEffect(() => {
     if (!ready) return;
@@ -89,7 +88,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
       <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 pb-24 sm:px-6 sm:pb-6">
-        <UnlockBanner />
         {children}
       </main>
       <PoweredBy />

@@ -75,6 +75,10 @@ async function req<T>(owner: string | null, path: string, init?: RequestInit): P
     headers: { "content-type": "application/json", ...(owner ? { "x-owner": owner } : {}), ...(init?.headers ?? {}) },
   });
   const json = (await res.json().catch(() => ({}))) as T & { error?: string };
+  if (res.status === 401 && owner && typeof window !== "undefined") {
+    // Session cookie gone (expired or another device signed out): drop the local login and re-sign.
+    window.dispatchEvent(new Event("moonlet:unauthorized"));
+  }
   if (!res.ok) throw new Error(json.error ?? `HTTP ${res.status}`);
   return json;
 }

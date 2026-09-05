@@ -332,7 +332,7 @@ function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange
 
       <div className="mt-8">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">What it did · newest first</h2>
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">What it did</h2>
           <span className="font-mono text-[11px] text-ink-faint">{runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain</span>
         </div>
         {runs === null ? (

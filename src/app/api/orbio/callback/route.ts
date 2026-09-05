@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { ORBIO } from "@/moonlet/orbio";
 import { publicOrigin } from "@/moonlet/http";
 import * as store from "@/moonlet/store";
-import { sealSession, sessionCookie } from "@/moonlet/session";
 
 export async function GET(req: Request) {
   const u = new URL(req.url);
@@ -42,7 +41,5 @@ export async function GET(req: Request) {
     expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined,
   });
   const to = saved.redirectTo.startsWith("/") ? saved.redirectTo : "/app";
-  const done = NextResponse.redirect(`${back}${to}${to.includes("?") ? "&" : "?"}orbio=ok`);
-  done.headers.set("set-cookie", sessionCookie(sealSession(saved.address)));
-  return done;
+  return NextResponse.redirect(`${back}${to}${to.includes("?") ? "&" : "?"}orbio=ok`);
 }

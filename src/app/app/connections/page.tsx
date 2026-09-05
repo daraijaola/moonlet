@@ -67,7 +67,7 @@ function ConnectionsInner() {
           )}
           {orbio?.orbio.error && <p className="font-mono text-[11.5px] text-red-700">{orbio.orbio.error}</p>}
         </Shell>
-        <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} />
+        <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} setErr={setErr} />
         <GitHubCard owner={address} conn={has("github")} oauth={data.available.githubOAuth} onChange={load} />
         <XCard owner={address} conn={has("x")} onChange={load} setErr={setErr} />
       </div>
@@ -109,9 +109,10 @@ function Shell({ mark, name, blurb, unlocks, conn, children, onDisconnect }: { m
   );
 }
 
-function TelegramCard({ owner, conn, available, bot, onChange }: CardProps & { owner: string; available: boolean; bot: string | null }) {
+function TelegramCard({ owner, conn, available, bot, onChange, setErr }: CardProps & { owner: string; available: boolean; bot: string | null; setErr: (s: string | null) => void }) {
   const [link, setLink] = useState<string | null>(null);
   const [waiting, setWaiting] = useState(false);
+  const [busy, setBusy] = useState(false);
   useEffect(() => {
     if (!waiting) return;
     const t = setInterval(async () => {
@@ -136,91 +137,59 @@ function TelegramCard({ owner, conn, available, bot, onChange }: CardProps & { o
             <span className="font-mono text-[11.5px] text-ink-soft">{waiting ? "waiting for you to press Start in Telegram…" : ""}</span>
           </div>
         ) : (
-          <button onClick={async () => { const r = await api.telegramLink(owner); setLink(r.url); setWaiting(true); }} className="btn-hard rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink">
-            Link Telegram
+          <button
+            disabled={busy}
+            onClick={async () => {
+              setBusy(true);
+              setErr(null);
+              try {
+                const r = await api.telegramLink(owner);
+                if (!r.url) throw new Error("The bot has no username set on this deployment.");
+                setLink(r.url);
+                setWaiting(true);
+              } catch (e) {
+                setErr((e as Error).message);
+              }
+              setBusy(false);
+            }}
+            className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink disabled:opacity-60"
+          >
+            <TelegramMark size={14} /> {busy ? "One moment…" : "Link Telegram"}
           </button>
         )
       ) : (
-        <span className="font-mono text-[11.5px] text-ink-faint">Not configured on this deployment (TELEGRAM_BOT_TOKEN).</span>
+        <span className="font-mono text-[11.5px] text-ink-faint">Telegram isn’t switched on for this deployment yet.</span>
       ))}
     </Shell>
   );
 }
 
-const GH_TOKEN_URL = "https://github.com/settings/personal-access-tokens/new?name=moonlet&description=Lets%20your%20moonlet%20read%20repos%20and%20propose%20pull%20requests%20you%20approve&contents=write&pull_requests=write&issues=write&metadata=read&expires_in=90";
-
 function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: string; oauth: boolean }) {
-  const [open, setOpen] = useState(false);
-  const [token, setToken] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
-    <Shell mark={<GitHubMark size={24} />} name="GitHub" blurb="Connect once and a moonlet can read your repos, then draft pull requests or comments. Every one waits for your approval before it lands." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
-      {!conn && !open && (
+    <Shell mark={<GitHubMark size={24} />} name="GitHub" blurb="Sign in with GitHub once. A moonlet can then read your repos and draft pull requests or comments; each one waits for your approval before it lands." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
+      {!conn && (oauth ? (
         <button
+          disabled={busy}
           onClick={async () => {
-            if (!oauth) return setOpen(true);
+            setBusy(true);
+            setErr(null);
             try {
               const { url } = await api.githubStart(owner);
               window.location.assign(url);
             } catch (e) {
               setErr((e as Error).message);
+              setBusy(false);
             }
           }}
-          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream"
+          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream disabled:opacity-60"
         >
-          <GitHubMark size={14} /> Connect GitHub
+          <GitHubMark size={14} /> {busy ? "Opening GitHub…" : "Connect GitHub"}
         </button>
-      )}
-      {!conn && open && (
-        <div className="rounded-lg border border-ink/10 bg-paper/60 p-4">
-          <p className="text-[13px] font-semibold text-ink">Two steps on GitHub, about a minute.</p>
-          <ol className="mt-3 space-y-3">
-            <li className="flex gap-3">
-              <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink font-mono text-[10.5px] text-cream">1</span>
-              <div>
-                <p className="text-[13px] font-medium text-ink">Create an access token</p>
-                <p className="mt-0.5 text-[12.5px] leading-[1.55] text-ink-soft">
-                  This link opens GitHub with the name and permissions already filled in (Contents, Pull requests, Issues). Pick the repos it may touch and press <em>Generate token</em>.
-                </p>
-                <a href={GH_TOKEN_URL} target="_blank" rel="noreferrer" className="btn-hard mt-2 inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3 py-1.5 font-mono text-[12.5px] font-medium text-ink">
-                  <GitHubMark size={13} /> Open GitHub ↗
-                </a>
-              </div>
-            </li>
-            <li className="flex gap-3">
-              <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink font-mono text-[10.5px] text-cream">2</span>
-              <div className="min-w-0 flex-1">
-                <p className="text-[13px] font-medium text-ink">Paste it here</p>
-                <form
-                  className="mt-2 flex flex-wrap items-center gap-2"
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    setBusy(true);
-                    setErr(null);
-                    try {
-                      await api.githubConnect(owner, token);
-                      setToken("");
-                      setOpen(false);
-                      await onChange();
-                    } catch (e2) {
-                      setErr((e2 as Error).message);
-                    }
-                    setBusy(false);
-                  }}
-                >
-                  <input value={token} onChange={(e) => setToken(e.target.value)} type="password" placeholder="github_pat_…" spellCheck={false} autoComplete="off" className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 font-mono text-[12.5px] text-ink outline-none focus:border-ink" />
-                  <button type="submit" disabled={busy || token.length < 20} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream disabled:opacity-40">
-                    {busy ? "Checking…" : "Verify and connect"}
-                  </button>
-                  <button type="button" onClick={() => setOpen(false)} className="font-mono text-[11.5px] text-ink-faint hover:text-ink">cancel</button>
-                </form>
-                <p className="mt-2 font-mono text-[11px] text-ink-faint">We check it against GitHub once, then store it encrypted. Revoke it any time from GitHub settings.</p>
-              </div>
-            </li>
-          </ol>
-        </div>
-      )}
+      ) : (
+        <span className="font-mono text-[11.5px] text-ink-faint">GitHub sign-in isn’t switched on for this deployment yet.</span>
+      ))}
       {err && <p className="mt-2 font-mono text-[11.5px] text-red-700">{err}</p>}
     </Shell>
   );
