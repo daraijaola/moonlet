@@ -115,6 +115,12 @@ type Update = {
 };
 
 export type CallbackHandler = (action: "approve" | "reject", proposalId: string, ctx: { chatId: string; messageId: number }) => Promise<string>;
+/** Free text from a linked chat. Returns the reply (HTML-escaped by the caller). */
+export type ChatHandler = (owner: string, text: string) => Promise<string>;
+let chatHandler: ChatHandler | null = null;
+export function setChatHandler(h: ChatHandler | null) {
+  chatHandler = h;
+}
 
 export async function chatOwns(chatId: string, owner: string) {
   const c = await store.getConnection<TelegramConn>(owner, "telegram");
@@ -174,13 +180,19 @@ async function processUpdatesInner(onCallback: CallbackHandler, fetchImpl: typeo
           await sendMessage(chatId, owner ? "Unlinked. Your moonlets will stop messaging this chat; pending drafts stay on the dashboard." : "This chat wasn't linked to anything.", { fetch: fetchImpl });
         } else {
           const owner = await ownerOfChat(chatId);
-          await sendMessage(
-            chatId,
-            owner
-              ? `This chat is linked to <b>${esc(owner.slice(0, 6))}…${esc(owner.slice(-4))}</b>. Your moonlets post their results here and ask before acting on your behalf.\n\n/status — your moonlets\n/stop — unlink\n\nManage them at ${esc(APP())}/app`
-              : `Moonlet runs small AI agents paid for by the credits your $ORBIO earns.\n\nTo link this chat: open ${esc(APP())}/app/connections, tap <b>Link Telegram</b>, then press Start here.`,
-            { fetch: fetchImpl },
-          );
+          if (!owner) {
+            await sendMessage(chatId, `Moonlet runs small AI agents paid for by the credits your $ORBIO earns.\n\nTo link this chat: open ${esc(APP())}/app/connections, tap <b>Link Telegram</b>, then press Start here.`, { fetch: fetchImpl });
+          } else if (command === "/help" || command === "/start" || !chatHandler) {
+            await sendMessage(
+              chatId,
+              `This chat is linked to <b>${esc(owner.slice(0, 6))}…${esc(owner.slice(-4))}</b>. Your moonlets report here and ask before acting on your behalf. Just talk to me: "what did Tide find?", "run Micheal now", "make it daily", "pause it".\n\n/status — your moonlets\n/stop — unlink\n\n${esc(APP())}/app`,
+              { fetch: fetchImpl },
+            );
+          } else {
+            await call("sendChatAction", { chat_id: chatId, action: "typing" }, fetchImpl).catch(() => undefined);
+            const reply = await chatHandler(owner, u.message.text).catch((e) => `I couldn't think just now (${(e as Error).message.slice(0, 80)}). Try again in a minute, or use ${APP()}/app.`);
+            await sendMessage(chatId, esc(reply), { fetch: fetchImpl });
+          }
         }
       } else if (u.callback_query?.data && u.callback_query.message) {
         const [action, id] = u.callback_query.data.split(":");

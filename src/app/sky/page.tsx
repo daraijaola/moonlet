@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PublicHeader } from "@/components/public-header";
-import { PoweredBy } from "@/components/app-shell";
+import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
 import { StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { CADENCE_LABEL, TEMPLATE_LABEL } from "@/components/labels";
 import type { Cadence } from "@/moonlet/spec";
@@ -74,6 +74,7 @@ export default async function SkyPage() {
         )}
       </main>
       <PoweredBy />
+      <PublicMobileTabs />
     </div>
   );
 }

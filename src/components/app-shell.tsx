@@ -96,8 +96,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Bottom tab bar for phones; the header tabs are hidden there. */
-function MobileTabs({ pathname }: { pathname: string }) {
+/** Bottom tab bar for phones; the header tabs are hidden there. Also used on public pages when signed in. */
+export function MobileTabs({ pathname }: { pathname: string }) {
   const items = [
     {
       href: "/app",
@@ -187,5 +187,18 @@ export function PoweredBy() {
         </span>
       </div>
     </footer>
+  );
+}
+
+/** For public pages (/sky, /s/[id]): shows the phone tab bar only to signed-in owners. */
+export function PublicMobileTabs() {
+  const { address, signed } = useAuth();
+  const pathname = usePathname();
+  if (!address || !signed) return null;
+  return (
+    <>
+      <div className="h-16 sm:hidden" />
+      <MobileTabs pathname={pathname} />
+    </>
   );
 }

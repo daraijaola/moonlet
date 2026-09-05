@@ -90,7 +90,7 @@ export const api = {
     req<{ url: string }>(owner, "/api/orbio/start", { method: "POST", body: JSON.stringify({ redirectTo, origin: typeof window !== "undefined" ? window.location.origin : undefined }) }),
   listMoonlets: (owner: string) => req<{ moonlets: ApiMoonlet[] }>(owner, "/api/moonlets"),
   getMoonlet: (id: string) => req<{ moonlet: ApiMoonlet }>(null, `/api/moonlets/${id}`),
-  runs: (id: string) => req<{ runs: ApiRun[] }>(null, `/api/moonlets/${id}/runs`),
+  runs: (id: string) => req<{ runs: ApiRun[]; anchoring?: boolean }>(null, `/api/moonlets/${id}/runs`),
   compile: (owner: string, body: { sentence: string; template: JobSpec["template"]; name?: string }) =>
     req<{ spec: JobSpec; compiled: boolean }>(owner, "/api/moonlets/compile", { method: "POST", body: JSON.stringify(body) }),
   launch: (owner: string, body: { spec: JobSpec; delivery: { telegram?: string; x?: string }; autopilot?: boolean; runNow?: boolean }) =>

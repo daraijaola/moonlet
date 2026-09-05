@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { notFound } from "next/navigation";
 import { PublicHeader } from "@/components/public-header";
-import { PoweredBy } from "@/components/app-shell";
+import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
 import { CADENCE_LABEL, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
@@ -39,6 +39,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
   const quiet = m.status === "quiet" || m.status === "paused";
   const tone = fuelTone(m.earnPerDayUsd, m.burnPerDayUsd, quiet);
   const anchored = runs.filter((r) => r.txHash).length;
+  const anchoring = !!process.env.ANCHOR_PRIVATE_KEY;
   const keyRemaining = m.key ? Math.max(0, m.key.limitUsd - m.key.spentUsd) : 0;
 
   return (
@@ -72,7 +73,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : "none failed"} />
-            <Stat label="anchored" value={String(anchored)} hint="Robinhood Chain" />
+            <Stat label={anchoring ? "anchored" : "hashed"} value={String(anchoring ? anchored : runs.filter((r) => r.outputHash).length)} hint={anchoring ? "Robinhood Chain" : "anchoring soon"} />
             <Stat label="keys rotated" value={String(m.keysRotated)} hint="no human involved" />
             <Stat label="cadence" value={CADENCE_LABEL[m.cadence as Cadence] ?? m.cadence} />
             <Stat label="earns" value={fmtUsd(m.earnPerDayUsd)} hint="per day" />
@@ -88,7 +89,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
             <a href={`/api/moonlets/${m.id}/runs`} className="font-mono text-[11px] text-ink-faint hover:text-ink">JSON ↗</a>
           </div>
           {runs.length ? (
-            <div className="space-y-2.5">{runs.map((r) => <RunCard key={r.id} run={r} />)}</div>
+            <div className="space-y-2.5">{runs.map((r) => <RunCard key={r.id} run={r} anchoring={anchoring} />)}</div>
           ) : (
             <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center font-mono text-[13px] text-ink-soft">
               {quiet ? "Gone quiet. Bag dropped below 1,000 $ORBIO." : "No runs yet."}
@@ -101,6 +102,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
         </footer>
       </main>
       <PoweredBy />
+      <PublicMobileTabs />
     </div>
   );
 }
