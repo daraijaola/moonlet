@@ -5,7 +5,8 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { api, fmtBag, fmtUsd, timeAgo, timeUntil, type ApiMoonlet, type ApiRun, type OrbioStatus, type Proposal } from "@/lib/api";
+import { api, fmtBag, fmtUsd, timeAgo, timeUntil, type ApiMoonlet, type ApiRun, type Connections, type OrbioStatus, type Proposal } from "@/lib/api";
+import { OrbioMark, TelegramMark } from "@/components/marks";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
 import { TEMPLATE_LABEL } from "@/components/labels";
@@ -16,6 +17,7 @@ function DashboardInner() {
   const params = useSearchParams();
   const [moonlets, setMoonlets] = useState<ApiMoonlet[] | null>(null);
   const [status, setStatus] = useState<OrbioStatus | null>(null);
+  const [conns, setConns] = useState<Connections | null>(null);
 
   useEffect(() => {
     const job = params.get("job");
@@ -24,9 +26,10 @@ function DashboardInner() {
 
   const load = useCallback(async () => {
     if (!address) return;
-    const [m, s] = await Promise.all([api.listMoonlets(address), api.orbioStatus(address).catch(() => null)]);
+    const [m, s, c] = await Promise.all([api.listMoonlets(address), api.orbioStatus(address).catch(() => null), api.connections(address).catch(() => null)]);
     setMoonlets(m.moonlets);
     setStatus(s);
+    setConns(c);
   }, [address]);
 
   useEffect(() => {
@@ -45,21 +48,15 @@ function DashboardInner() {
     return (
       <>
         <Queue owner={address!} />
-        <EmptyState status={status} />
+        <EmptyState status={status} conns={conns} />
       </>
     );
 
-  const readOnly = status ? !status.canWrite : false;
   const selectedId = params.get("m") ?? moonlets[0].id;
   const selected = moonlets.find((m) => m.id === selectedId) ?? moonlets[0];
 
   return (
     <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
-      {readOnly && (
-        <p className="rounded-md border border-gold/60 bg-gold/10 px-3 py-2 font-mono text-[12px] text-ink lg:col-span-2">
-          Viewing as a pasted address. Connect the wallet and sign to launch or control moonlets.
-        </p>
-      )}
       <aside className="lg:sticky lg:top-20 lg:self-start">
         <h2 className="mb-2 px-1 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Your moonlets · {moonlets.length}</h2>
         <ul className="space-y-1.5">
@@ -131,8 +128,24 @@ function Queue({ owner }: { owner: string }) {
               <time className="shrink-0 font-mono text-[11px] text-ink-faint">{timeAgo(p.createdAt)}</time>
             </div>
             <div className="mt-3 flex gap-2">
-              <button disabled={!!busy} onClick={async () => { setBusy(p.id); await api.decide(owner, p.id, "approve").catch(() => undefined); await load(); setBusy(null); }} className="btn-hard rounded-md border-2 border-ink bg-gold px-3 py-1 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50">
-                {busy === p.id ? "Doing it…" : "✓ Approve"}
+              <button
+                disabled={!!busy}
+                onClick={async () => {
+                  setBusy(p.id);
+                  // Open synchronously so phone browsers don't block the X compose window.
+                  const win = p.kind === "tweet" ? window.open("", "_blank") : null;
+                  const r = await api.decide(owner, p.id, "approve").catch(() => null);
+                  const url = (r?.result as { url?: string; handPost?: boolean } | undefined)?.handPost ? (r?.result as { url: string }).url : null;
+                  if (win) {
+                    if (url) win.location.href = url;
+                    else win.close();
+                  }
+                  await load();
+                  setBusy(null);
+                }}
+                className="btn-hard rounded-md border-2 border-ink bg-gold px-3 py-1 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50"
+              >
+                {busy === p.id ? "Doing it…" : p.kind === "tweet" ? "✓ Approve & post on X" : "✓ Approve"}
               </button>
               <button disabled={!!busy} onClick={async () => { setBusy(p.id); await api.decide(owner, p.id, "reject").catch(() => undefined); await load(); setBusy(null); }} className="rounded-md border border-ink/15 bg-white px-3 py-1 font-mono text-[12.5px] text-ink-soft hover:border-ink/40 hover:text-ink disabled:opacity-50">
                 ✗ Reject
@@ -360,23 +373,63 @@ function Ctl({ children, onClick, danger, disabled }: { children: React.ReactNod
   );
 }
 
-function EmptyState({ status }: { status: OrbioStatus | null }) {
+function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Connections | null }) {
+  const { approveOrbio } = useAuth();
   const idle = status?.idleCreditsUsd;
+  const orbioOk = !!status?.approved;
+  const telegramOk = !!conns?.connections.some((c) => c.kind === "telegram");
+  const telegramAvailable = conns?.available.telegram ?? false;
   return (
-    <div className="mx-auto mt-10 max-w-[30rem] text-center">
-      <Image src="/mascot/moonlet-doze.png" alt="" width={520} height={357} className="mx-auto w-[240px]" />
-      <h1 className="mt-2 font-display text-[2.6rem] leading-[0.95] text-ink">Nothing in orbit yet</h1>
-      {idle !== null && idle !== undefined && idle > 0 ? (
-        <p className="mt-3 text-[14px] leading-[1.6] text-ink-soft">
-          You have <span className="font-mono text-ink">{fmtUsd(idle)}</span> of inference sitting idle from your bag. Type one sentence and it starts working for you.
-        </p>
-      ) : (
-        <p className="mt-3 text-[14px] leading-[1.6] text-ink-soft">Type one sentence and your bag starts paying for a worker that never asks you for a key.</p>
-      )}
-      <Link href="/app/new" className="btn-hard mt-6 inline-flex rounded-md border-2 border-ink bg-gold px-5 py-2.5 font-mono text-[14px] font-medium text-midnight">
-        Launch your first moonlet
-      </Link>
+    <div className="mx-auto mt-6 max-w-[34rem] sm:mt-10">
+      <div className="text-center">
+        <Image src="/mascot/moonlet-doze.png" alt="" width={520} height={357} className="mx-auto w-[200px] sm:w-[240px]" />
+        <h1 className="mt-2 font-display text-[2.3rem] leading-[0.95] text-ink sm:text-[2.6rem]">Nothing in orbit yet</h1>
+        {idle !== null && idle !== undefined && idle > 0 ? (
+          <p className="mt-3 text-[14px] leading-[1.6] text-ink-soft">
+            You have <span className="font-mono text-ink">{fmtUsd(idle)}</span> of inference sitting idle from your bag. Type one sentence and it starts working for you.
+          </p>
+        ) : (
+          <p className="mt-3 text-[14px] leading-[1.6] text-ink-soft">Three short steps and your bag is paying for a worker that never asks you for a key.</p>
+        )}
+      </div>
+
+      <ol className="mt-7 space-y-2.5">
+        <SetupStep n={1} done={orbioOk} title={orbioOk ? "Orbio approved" : "Approve Orbio"} hint={orbioOk ? "Your credits can fund runs." : "Once, on orbio.so. This is the budget."}>
+          {!orbioOk && (
+            <button onClick={() => void approveOrbio("/app").catch(() => undefined)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[12.5px] font-medium text-ink">
+              <OrbioMark size={14} /> Approve on Orbio
+            </button>
+          )}
+        </SetupStep>
+        <SetupStep n={2} done={telegramOk} title={telegramOk ? "Telegram linked" : "Link Telegram"} hint={telegramOk ? "Results and approvals reach you there." : telegramAvailable ? "So results and approvals reach your phone. Optional; the dashboard works without it." : "Optional. Not switched on for this deployment yet, results stay on this dashboard."}>
+          {!telegramOk && telegramAvailable && (
+            <Link href="/app/connections" className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[12.5px] font-medium text-ink">
+              <TelegramMark size={14} /> Link Telegram
+            </Link>
+          )}
+        </SetupStep>
+        <SetupStep n={3} done={false} title="Say the job" hint="One sentence. You review the plan and the price per run before anything starts.">
+          <Link href="/app/new" className="btn-hard inline-flex rounded-md border-2 border-ink bg-gold px-4 py-2 font-mono text-[13px] font-medium text-midnight">
+            Launch your first moonlet
+          </Link>
+        </SetupStep>
+      </ol>
     </div>
+  );
+}
+
+function SetupStep({ n, done, title, hint, children }: { n: number; done: boolean; title: string; hint: string; children?: React.ReactNode }) {
+  return (
+    <li className={`rounded-lg border bg-white p-4 ${done ? "border-moss/40" : "border-ink/10"}`}>
+      <div className="flex items-start gap-3">
+        <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[12px] ${done ? "bg-moss text-white" : "bg-ink text-cream"}`}>{done ? "✓" : n}</span>
+        <div className="min-w-0 flex-1">
+          <p className="text-[14px] font-semibold tracking-[-0.01em] text-ink">{title}</p>
+          <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft">{hint}</p>
+          {children && <div className="mt-3">{children}</div>}
+        </div>
+      </div>
+    </li>
   );
 }
 

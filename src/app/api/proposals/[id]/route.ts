@@ -6,7 +6,7 @@ import { decide } from "@/moonlet/proposals";
 /** Approve or reject from the dashboard. */
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const owner = ownerFrom(req, { write: true });
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
   const { id } = await params;
   const p = await store.getProposal(id);
   if (!p || p.owner !== owner) return bad("not found", 404);

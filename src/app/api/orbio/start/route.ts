@@ -8,10 +8,14 @@ import * as store from "@/moonlet/store";
  * Begin the Orbio OAuth approval (PKCE). Registers a public client once per
  * deployment (dynamic client registration, verified live), then redirects the
  * owner to orbio.so/mcp/authorize.
+ *
+ * A pasted (unsigned) address may start this: completing the Orbio approval is
+ * what unlocks the account, so the callback issues the session. Whoever
+ * approves pays for that address's moonlets with their own credits.
  */
 export async function POST(req: Request) {
-  const owner = ownerFrom(req, { write: true });
-  if (!owner) return bad("sign in with your wallet first", 401);
+  const owner = ownerFrom(req);
+  if (!owner) return bad("connect a wallet or paste your address first", 401);
   const { redirectTo = "/app", origin } = (await req.json().catch(() => ({}))) as { redirectTo?: string; origin?: string };
 
   // APP_URL wins; otherwise trust the origin the browser actually sees (it must

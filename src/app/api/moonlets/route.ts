@@ -8,7 +8,7 @@ import * as store from "@/moonlet/store";
 
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
   const rows = await store.listMoonlets(owner);
   return NextResponse.json({ moonlets: rows.map(publicMoonlet) });
 }
@@ -23,7 +23,7 @@ const Launch = z.object({
 /** Launch. Plans against the live bag, stores, and (by default) fires the first run immediately. */
 export async function POST(req: Request) {
   const owner = ownerFrom(req, { write: true });
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign with your wallet or approve Orbio to unlock this", 401);
   const body = Launch.safeParse(await req.json().catch(() => null));
   if (!body.success) return bad(body.error.message);
   const { spec, delivery, autopilot, runNow } = body.data;
