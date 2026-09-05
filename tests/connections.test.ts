@@ -14,6 +14,7 @@ const OTHER = "0x00000000000000000000000000000000000000bb";
 function fakeTelegram() {
   const sent: Array<{ chat_id: string; text: string; buttons?: string[] }> = [];
   const edited: Array<{ message_id: number; text: string }> = [];
+  const configured: string[] = [];
   let queue: unknown[] = [];
   let nextId = 100;
   const fetchImpl: typeof fetch = async (input, init) => {
@@ -34,9 +35,13 @@ function fakeTelegram() {
       return ok(out);
     }
     if (url.endsWith("/answerCallbackQuery")) return ok(true);
+    if (/\/setMy(Commands|Description|ShortDescription)$/.test(url)) {
+      configured.push(url.split("/").pop()!);
+      return ok(true);
+    }
     return new Response("not found", { status: 404 });
   };
-  return { fetchImpl, sent, edited, push: (u: unknown) => queue.push(u) };
+  return { fetchImpl, sent, edited, configured, push: (u: unknown) => queue.push(u) };
 }
 
 // Reference vector from X's "Creating a signature" guide.
@@ -109,6 +114,30 @@ describe("connections + proposals", () => {
     expect(await store.kvGet("telegram.offset")).toBe("3");
     // second call with nothing queued is a no-op
     expect((await tg.processUpdates(telegramCallback, t.fetchImpl)).linked).toBe(0);
+  });
+
+  it("bot profile is configured once per token; /start without a code, /status and /stop answer sensibly", async () => {
+    const t = fakeTelegram();
+    expect(await tg.configureBot(t.fetchImpl)).toBe(true);
+    expect(await tg.configureBot(t.fetchImpl)).toBe(false);
+    expect(t.configured.sort()).toEqual(["setMyCommands", "setMyDescription", "setMyShortDescription"]);
+
+    t.push({ update_id: 10, message: { message_id: 1, text: "/start", chat: { id: 5555, type: "private" } } });
+    t.push({ update_id: 11, message: { message_id: 2, text: "/status", chat: { id: 4242, type: "private" } } });
+    t.push({ update_id: 12, message: { message_id: 3, text: "/status@moonletbbot", chat: { id: 5555, type: "private" } } });
+    await tg.processUpdates(telegramCallback, t.fetchImpl);
+    expect(t.sent[0].text).toMatch(/To link this chat/);
+    expect(t.sent[1].text).toMatch(/No moonlets yet|Your moonlets/);
+    expect(t.sent[2].text).toMatch(/isn't linked yet/);
+
+    t.push({ update_id: 13, message: { message_id: 4, text: "/stop", chat: { id: 4242, type: "private" } } });
+    await tg.processUpdates(telegramCallback, t.fetchImpl);
+    expect(t.sent[3].text).toMatch(/Unlinked/);
+    expect(await store.getConnection(OWNER, "telegram")).toBeNull();
+    // relink for the tests that follow
+    const { code } = await tg.beginLink(OWNER);
+    t.push({ update_id: 14, message: { message_id: 5, text: `/start ${code}`, chat: { id: 4242, type: "private", username: "dara" } } });
+    expect((await tg.processUpdates(telegramCallback, t.fetchImpl)).linked).toBe(1);
   });
 
   it("a tweet proposal goes to Telegram with buttons, approve executes it, and a second tap is a no-op", async () => {

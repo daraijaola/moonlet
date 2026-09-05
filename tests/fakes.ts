@@ -15,6 +15,7 @@ export function fakeOrbio(opts: { realKey: string; balanceUsd?: number; badFirst
     },
     async claimKey(amount = 5) {
       state.calls.push("claim");
+      if (state.key) throw new Error("Orbio MCP orbio_claim_key: wallet already has an active key");
       const limit = Math.min(amount, state.balance);
       state.balance -= limit;
       state.key = { key: opts.badFirstKey && state.rotations === 0 ? "sk-or-v1-invalid" : opts.realKey, limit, spent: 0, active: !opts.inactive };
@@ -22,7 +23,8 @@ export function fakeOrbio(opts: { realKey: string; balanceUsd?: number; badFirst
     },
     async getKeyStatus() {
       state.calls.push("status");
-      const k = state.key!;
+      const k = state.key;
+      if (!k) throw new Error("Orbio MCP orbio_get_key_status: no key");
       return { spentUsd: k.spent, limitUsd: k.limit, remainingUsd: k.limit - k.spent, active: k.active, raw: {} };
     },
     async topUpKey(amount) {

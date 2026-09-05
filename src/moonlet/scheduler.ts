@@ -97,6 +97,7 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   };
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
   await anchorPending(deps).catch(() => undefined);
+  await tg.configureBot(deps.fetch).catch(() => undefined);
   await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
   return results;
 }

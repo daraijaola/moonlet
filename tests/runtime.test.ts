@@ -114,6 +114,17 @@ describe("runner", () => {
     expect(r.status).toBe("done");
   });
 
+  it("6b. holder already moved every credit into their own Orbio key → moonlet adopts it by rotating, never goes quiet", async () => {
+    const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 8 });
+    await orbio.client.claimKey(8); // the holder did this on orbio.so; balance is now $0
+    expect(orbio.state.balance).toBe(0);
+    const r = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: null }, { orbio: orbio.client });
+    expect(r.keyEvents.map((e) => e.kind)).toEqual(["rotated"]);
+    expect(orbio.state.calls.slice(0, 4)).toEqual(["claim", "balance", "status", "rotate"]);
+    expect(r.status).toBe("done");
+    expect(r.key?.key).toBe(KEY);
+  });
+
   it("delivery tool refuses channels the owner didn't configure, and uses the sink when they did", async () => {
     const orbio = fakeOrbio({ realKey: KEY });
     const sent: string[] = [];

@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, fmtBag, fmtUsd, timeAgo, timeUntil, type ApiMoonlet, type ApiRun, type Connections, type OrbioStatus, type Proposal } from "@/lib/api";
-import { OrbioMark, TelegramMark } from "@/components/marks";
+import { GitHubMark, OrbioMark, TelegramMark } from "@/components/marks";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
 import { TEMPLATE_LABEL } from "@/components/labels";
@@ -236,6 +236,7 @@ function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange
   const [runs, setRuns] = useState<ApiRun[] | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [more, setMore] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const quiet = m.status === "quiet" || m.status === "paused";
 
@@ -288,54 +289,72 @@ function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange
           <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={m.keyRemainingUsd} quiet={quiet} size="lg" />
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-2 lg:grid-cols-4">
-          <Stat label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : "none failed"} />
-          <Stat label="on key" value={fmtUsd(m.keyRemainingUsd)} hint={m.keyLimitUsd ? `of ${fmtUsd(m.keyLimitUsd)}` : "no key yet"} />
-          <Stat label="keys rotated" value={String(m.keysRotated)} hint="no human involved" />
-          <Stat label="next run" value={m.status === "paused" ? "—" : timeUntil(m.nextRunAt)} hint={m.cadence} />
-          <Stat label="spent total" value={fmtUsd(m.spentTotalUsd, 3)} />
-          <Stat label="cap / run" value={fmtUsd(m.perRunCapUsd, 3)} hint="maxCost" />
-          <Stat label="last run" value={m.lastRunAt ? timeAgo(m.lastRunAt) : "—"} />
-          <Stat label="delivery" value={[m.delivery.telegram && "TG", m.delivery.x && "X", "web"].filter(Boolean).join(" · ")} />
+          <Stat label="next run" value={m.status === "paused" ? "paused" : m.status === "running" ? "now" : timeUntil(m.nextRunAt)} hint={m.cadence} />
+          <Stat label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : m.lastRunAt ? `last ${timeAgo(m.lastRunAt)}` : "none yet"} />
+          <Stat label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)} / run`} />
+          <Stat label="fuel on key" value={fmtUsd(m.keyRemainingUsd)} hint={m.keyLimitUsd ? `of ${fmtUsd(m.keyLimitUsd)}` : "claims on first run"} />
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center gap-2">
-        <Ctl disabled={!!busy || m.status === "running"} onClick={() => act("run", () => api.runNow(owner, m.id), "Run finished.")}>
-          {busy === "run" ? "Running…" : "Run now"}
-        </Ctl>
+      <div className="mt-5 flex flex-wrap items-center gap-2">
+        <button
+          disabled={!!busy || m.status === "running"}
+          onClick={() => act("run", () => api.runNow(owner, m.id), "Run finished.")}
+          className="btn-hard rounded-md border-2 border-ink bg-gold px-3.5 py-1.5 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50"
+        >
+          {busy === "run" || m.status === "running" ? "Running…" : "Run now"}
+        </button>
         <Ctl disabled={!!busy} onClick={() => act("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")}>
           {m.status === "paused" ? "Resume" : "Pause"}
         </Ctl>
         <Link href={`/app/new?edit=${m.id}`} className="rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[12.5px] text-ink hover:border-ink/40">Edit job</Link>
-        <Ctl disabled={!!busy} onClick={() => act("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")}>Rotate key</Ctl>
-        <Ctl disabled={!!busy} onClick={() => act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: !m.autopilot }), m.autopilot ? "Autopilot off. Drafts wait for your OK." : "Autopilot on. It acts without asking.")}>
-          {m.autopilot ? "Autopilot: on" : "Autopilot: off"}
-        </Ctl>
-        {!confirmDelete ? (
-          <Ctl danger onClick={() => setConfirmDelete(true)}>Delete</Ctl>
-        ) : (
-          <span className="inline-flex flex-wrap items-center gap-2 rounded-md border border-ink bg-white px-2 py-1 font-mono text-[12.5px]">
-            Returns {fmtUsd(m.keyRemainingUsd)} unspent to your Orbio balance.
-            <button onClick={() => act("delete", () => api.remove(owner, m.id), "Deleted. Unspent credits returned.")} className="rounded bg-ink px-2 py-0.5 text-cream">Confirm</button>
-            <button onClick={() => setConfirmDelete(false)} className="text-ink-soft">Cancel</button>
-          </span>
-        )}
+        <Ctl onClick={() => setMore((v) => !v)}>{more ? "Less" : "More…"}</Ctl>
         {toast && <span className="ml-auto font-mono text-[12px] text-moss">{toast}</span>}
       </div>
+      {more && (
+        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-ink/10 bg-paper/60 p-3">
+          <Ctl disabled={!!busy} onClick={() => act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: !m.autopilot }), m.autopilot ? "Autopilot off. Drafts wait for your OK." : "Autopilot on. It acts without asking.")}>
+            {m.autopilot ? "Autopilot: on" : "Autopilot: off"}
+          </Ctl>
+          <Ctl disabled={!!busy} onClick={() => act("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")}>Rotate key</Ctl>
+          <span className="font-mono text-[11.5px] text-ink-faint">{m.keysRotated} rotation{m.keysRotated === 1 ? "" : "s"} so far · delivery: {[m.delivery.telegram && "Telegram", m.delivery.x && "X", "dashboard"].filter(Boolean).join(", ")}</span>
+          {!confirmDelete ? (
+            <Ctl danger onClick={() => setConfirmDelete(true)}>Delete</Ctl>
+          ) : (
+            <span className="inline-flex flex-wrap items-center gap-2 rounded-md border border-ink bg-white px-2 py-1 font-mono text-[12.5px]">
+              Returns {fmtUsd(m.keyRemainingUsd)} unspent to your Orbio balance.
+              <button onClick={() => act("delete", () => api.remove(owner, m.id), "Deleted. Unspent credits returned.")} className="rounded bg-ink px-2 py-0.5 text-cream">Confirm</button>
+              <button onClick={() => setConfirmDelete(false)} className="text-ink-soft">Cancel</button>
+            </span>
+          )}
+        </div>
+      )}
 
       <div className="mt-8">
         <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Runs · newest first</h2>
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">What it did · newest first</h2>
           <span className="font-mono text-[11px] text-ink-faint">{runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain</span>
         </div>
         {runs === null ? (
           <p className="font-mono text-[13px] text-ink-soft">Loading…</p>
-        ) : runs.length ? (
-          <div className="space-y-2.5">{runs.map((r) => <RunCard key={r.id} run={r} />)}</div>
         ) : (
-          <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center font-mono text-[13px] text-ink-soft">
-            {m.status === "running" ? "First run in progress…" : "No runs yet. First one lands on schedule."}
-          </p>
+          <div className="space-y-2.5">
+            {m.status === "running" && (
+              <div className="flex items-center gap-3 rounded-lg border border-gold bg-gold/10 p-4">
+                <StatusDot tone="green" pulse />
+                <div>
+                  <p className="text-[14px] font-semibold text-ink">Working now</p>
+                  <p className="font-mono text-[12px] text-ink-soft">Reading sources, calling tools, writing the brief. The result lands here in under a minute.</p>
+                </div>
+              </div>
+            )}
+            {runs.map((r) => <RunCard key={r.id} run={r} />)}
+            {!runs.length && m.status !== "running" && (
+              <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center font-mono text-[13px] text-ink-soft">
+                No runs yet. The first one starts {timeUntil(m.nextRunAt)}, or press Run now.
+              </p>
+            )}
+          </div>
         )}
       </div>
     </section>
@@ -371,7 +390,9 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
   const idle = status?.idleCreditsUsd;
   const orbioOk = !!status?.approved;
   const telegramOk = !!conns?.connections.some((c) => c.kind === "telegram");
+  const githubOk = !!conns?.connections.some((c) => c.kind === "github");
   const telegramAvailable = conns?.available.telegram ?? false;
+  const ready = orbioOk && (telegramOk || !telegramAvailable);
   return (
     <div className="mx-auto mt-6 max-w-[34rem] sm:mt-10">
       <div className="text-center">
@@ -382,27 +403,34 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
             You have <span className="font-mono text-ink">{fmtUsd(idle)}</span> of inference sitting idle from your bag. Type one sentence and it starts working for you.
           </p>
         ) : (
-          <p className="mt-3 text-[14px] leading-[1.6] text-ink-soft">Three short steps and your bag is paying for a worker that never asks you for a key.</p>
+          <p className="mt-3 text-[14px] leading-[1.6] text-ink-soft">Set up once, then say the job in one sentence.</p>
         )}
       </div>
 
       <ol className="mt-7 space-y-2.5">
-        <SetupStep n={1} done={orbioOk} title={orbioOk ? "Orbio approved" : "Approve Orbio"} hint={orbioOk ? "Your credits can fund runs." : "Once, on orbio.so. This is the budget."}>
+        <SetupStep n={1} done={orbioOk} title={orbioOk ? "Orbio approved" : "Approve Orbio"} hint={orbioOk ? "Your credits can fund runs." : "The budget. Once, on orbio.so; your $ORBIO credits pay for every run."}>
           {!orbioOk && (
-            <button onClick={() => void approveOrbio("/app").catch(() => undefined)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[12.5px] font-medium text-ink">
+            <button onClick={() => void approveOrbio("/app").catch(() => undefined)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[12.5px] font-medium text-midnight">
               <OrbioMark size={14} /> Approve on Orbio
             </button>
           )}
         </SetupStep>
-        <SetupStep n={2} done={telegramOk} title={telegramOk ? "Telegram linked" : "Link Telegram"} hint={telegramOk ? "Results and approvals reach you there." : telegramAvailable ? "So results and approvals reach your phone. Optional; the dashboard works without it." : "Optional. Not switched on for this deployment yet, results stay on this dashboard."}>
+        <SetupStep n={2} done={telegramOk} title={telegramOk ? "Telegram linked" : "Link Telegram"} hint={telegramOk ? "Results and approvals reach your phone." : telegramAvailable ? "Where results and approvals reach you. Two taps: open the bot, press Start." : "Not switched on for this deployment yet; results stay on this dashboard."}>
           {!telegramOk && telegramAvailable && (
             <Link href="/app/connections" className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[12.5px] font-medium text-ink">
               <TelegramMark size={14} /> Link Telegram
             </Link>
           )}
         </SetupStep>
-        <SetupStep n={3} done={false} title="Say the job" hint="One sentence. You review the plan and the price per run before anything starts.">
-          <Link href="/app/new" className="btn-hard inline-flex rounded-md border-2 border-ink bg-gold px-4 py-2 font-mono text-[13px] font-medium text-midnight">
+        <SetupStep n={3} done={githubOk} optional title={githubOk ? "GitHub connected" : "Connect GitHub or X"} hint={githubOk ? "Moonlets can read your repos and propose pull requests." : "Only if you want a moonlet to read repos, open pull requests or post on X. Skip otherwise."}>
+          {!githubOk && (
+            <Link href="/app/connections" className="inline-flex items-center gap-2 rounded-md border border-ink/15 bg-white px-3.5 py-2 font-mono text-[12.5px] text-ink hover:border-ink/40">
+              <GitHubMark size={14} /> Connections
+            </Link>
+          )}
+        </SetupStep>
+        <SetupStep n={4} done={false} title="Say the job" hint={ready ? "One sentence. You review the plan and the price per run before anything starts." : "You can start now; the moonlet waits for fuel until Orbio is approved."}>
+          <Link href="/app/new" className={`btn-hard inline-flex rounded-md border-2 border-ink px-4 py-2 font-mono text-[13px] font-medium ${ready ? "bg-gold text-midnight" : "bg-white text-ink"}`}>
             Launch your first moonlet
           </Link>
         </SetupStep>
@@ -411,13 +439,16 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
   );
 }
 
-function SetupStep({ n, done, title, hint, children }: { n: number; done: boolean; title: string; hint: string; children?: React.ReactNode }) {
+function SetupStep({ n, done, optional, title, hint, children }: { n: number; done: boolean; optional?: boolean; title: string; hint: string; children?: React.ReactNode }) {
   return (
     <li className={`rounded-lg border bg-white p-4 ${done ? "border-moss/40" : "border-ink/10"}`}>
       <div className="flex items-start gap-3">
-        <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[12px] ${done ? "bg-moss text-white" : "bg-ink text-cream"}`}>{done ? "✓" : n}</span>
+        <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[12px] ${done ? "bg-moss text-white" : optional ? "bg-ink/10 text-ink-soft" : "bg-ink text-cream"}`}>{done ? "✓" : n}</span>
         <div className="min-w-0 flex-1">
-          <p className="text-[14px] font-semibold tracking-[-0.01em] text-ink">{title}</p>
+          <p className="text-[14px] font-semibold tracking-[-0.01em] text-ink">
+            {title}
+            {optional && !done && <span className="ml-2 rounded-full bg-ink/5 px-1.5 py-0.5 font-mono text-[10px] font-normal text-ink-soft">optional</span>}
+          </p>
           <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft">{hint}</p>
           {children && <div className="mt-3">{children}</div>}
         </div>
