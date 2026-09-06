@@ -255,6 +255,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [more, setMore] = useState(false);
+  const [showAllRuns, setShowAllRuns] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const quiet = m.status === "quiet" || m.status === "paused";
 
@@ -352,58 +353,100 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         </div>
       )}
 
-      <div className={`mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border p-3.5 ${m.status === "running" ? "border-gold bg-gold/10" : "border-ink/10 bg-white"}`}>
-        <div className="flex items-center gap-2.5">
-          <StatusDot tone={m.status === "running" ? "green" : quiet ? "grey" : "green"} pulse={m.status === "running"} />
-          <p className="text-[13.5px] text-ink">
-            {m.status === "running"
-              ? <>Working on {m.runsTotal === 0 ? "its first report" : "a report"} now — about a minute.</>
-              : m.status === "paused"
-                ? <>Paused. Resume to pick the schedule back up.</>
-                : m.status === "quiet"
-                  ? <>Quiet: not enough fuel. It wakes up when the bag earns.</>
-                  : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>}
-          </p>
+      {/* 1. where it stands + the one action that matters */}
+      <div className={`mt-5 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-lg border p-3.5 ${m.status === "running" ? "border-gold bg-gold/10" : "border-ink/10 bg-white"}`}>
+        <div className="flex min-w-0 flex-1 items-start gap-2.5">
+          <span className="mt-[5px]"><StatusDot tone={m.status === "running" ? "green" : quiet ? "grey" : "green"} pulse={m.status === "running"} /></span>
+          <div className="min-w-0">
+            <p className="text-[13.5px] text-ink">
+              {m.status === "running"
+                ? <>Working on {m.runsTotal === 0 ? "its first report" : "a report"} now — about a minute.</>
+                : m.status === "paused"
+                  ? <>Paused. Resume to pick the schedule back up.</>
+                  : m.status === "quiet"
+                    ? <>Quiet: not enough fuel. It wakes up when the bag earns.</>
+                    : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>}
+            </p>
+            <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 font-mono text-[11.5px] text-ink-soft">
+              <span>delivered to</span>
+              {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 text-moss"><TelegramMark size={11} /> {tg.label}</span> : <Link href="/app/connections" className="underline decoration-ink/30 hover:text-ink">link Telegram</Link>}
+              <span>+ this page</span>
+            </p>
+          </div>
         </div>
-        <p className="flex items-center gap-2 font-mono text-[12px] text-ink-soft sm:ml-auto">
-          <span>delivered to</span>
-          {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 text-moss"><TelegramMark size={11} /> {tg.label}</span> : <Link href="/app/connections" className="underline decoration-ink/30 hover:text-ink">link Telegram</Link>}
-          <span>+ this page</span>
-        </p>
+        <div className="flex w-full items-center gap-2 sm:w-auto">
+          <button
+            disabled={!!busy || m.status === "running"}
+            onClick={() => act("run", () => api.runNow(owner, m.id), "Run finished.")}
+            className="btn-hard flex-1 rounded-md border-2 border-ink bg-gold px-3.5 py-1.5 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50 sm:flex-none"
+          >
+            {busy === "run" || m.status === "running" ? "Running…" : "Run now"}
+          </button>
+          <Ctl disabled={!!busy} onClick={() => act("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")}>
+            {m.status === "paused" ? "Resume" : "Pause"}
+          </Ctl>
+        </div>
+        {toast && <span className="w-full font-mono text-[12px] text-moss">{toast}</span>}
       </div>
 
-      <div className="mt-4 grid gap-4 md:grid-cols-[auto_1fr]">
-        <div className="rounded-lg border border-ink/10 bg-white p-5">
-          <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="lg" />
+      {/* 2. the work */}
+      <div className="mt-6">
+        <div className="mb-3 flex items-center justify-between">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">What it did</h2>
+          <span className="font-mono text-[11px] text-ink-faint">{anchoring ? `${runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain` : "every run hashed"}</span>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-2 lg:grid-cols-4">
-          <Stat label="next run" value={m.status === "paused" ? "paused" : m.status === "running" ? "now" : timeUntil(m.nextRunAt)} hint={m.cadence} />
-          <Stat label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : m.lastRunAt ? `last ${timeAgo(m.lastRunAt)}` : "none yet"} />
-          <Stat label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)}/run`} />
-          <Stat label="fuel" value={status?.idleCreditsUsd != null ? fmtUsd(status.idleCreditsUsd) : fmtUsd(m.keyRemainingUsd)} hint={status?.idleCreditsUsd != null ? "Orbio balance, shared by your moonlets" : m.keyLimitUsd ? "on its key" : "mints a key on first run"} />
+        {runs === null ? (
+          <p className="font-mono text-[13px] text-ink-soft">Loading…</p>
+        ) : (
+          <div className="space-y-2.5">
+            {m.status === "running" && (
+              <div className="flex items-center gap-3 rounded-lg border border-gold bg-gold/10 p-4">
+                <StatusDot tone="green" pulse />
+                <div>
+                  <p className="text-[14px] font-semibold text-ink">{launched && m.runsTotal === 0 ? "Launched. First report on the way." : "Working now"}</p>
+                  <p className="font-mono text-[12px] text-ink-soft">Reading sources, calling tools, writing the report. It lands here{tg ? ` and in Telegram (${tg.label})` : ""} in under a minute.</p>
+                </div>
+              </div>
+            )}
+            {runs.slice(0, showAllRuns ? undefined : 3).map((r) => <RunCard key={r.id} run={r} anchoring={anchoring} />)}
+            {runs.length > 3 && (
+              <button onClick={() => setShowAllRuns((v) => !v)} className="w-full rounded-lg border border-dashed border-ink/20 py-2 font-mono text-[12px] text-ink-soft hover:border-ink/40 hover:text-ink">
+                {showAllRuns ? "Show fewer" : `Show all ${runs.length} runs`}
+              </button>
+            )}
+            {!runs.length && m.status !== "running" && (
+              <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center font-mono text-[13px] text-ink-soft">
+                No runs yet. The first one starts {timeUntil(m.nextRunAt)}, or press Run now.
+              </p>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 3. the money and the numbers, one strip */}
+      <div className="mt-6">
+        <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Fuel</h2>
+        <div className="grid gap-3 rounded-lg border border-ink/10 bg-white p-4 sm:grid-cols-[auto_1fr] sm:items-center">
+          <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="md" />
+          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-ink/[0.07] pt-3 sm:grid-cols-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
+            <Vital label="next run" value={m.status === "paused" ? "paused" : m.status === "running" ? "now" : timeUntil(m.nextRunAt)} hint={m.cadence} />
+            <Vital label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : m.lastRunAt ? `last ${timeAgo(m.lastRunAt)}` : "none yet"} />
+            <Vital label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)}/run`} />
+            <Vital label="fuel" value={status?.idleCreditsUsd != null ? fmtUsd(status.idleCreditsUsd) : fmtUsd(m.keyRemainingUsd)} hint={status?.idleCreditsUsd != null ? "Orbio balance, shared" : m.keyLimitUsd ? "on its key" : "mints a key on first run"} />
+          </dl>
         </div>
       </div>
 
-      <div className="mt-5 flex flex-wrap items-center gap-2">
-        <button
-          disabled={!!busy || m.status === "running"}
-          onClick={() => act("run", () => api.runNow(owner, m.id), "Run finished.")}
-          className="btn-hard rounded-md border-2 border-ink bg-gold px-3.5 py-1.5 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50"
-        >
-          {busy === "run" || m.status === "running" ? "Running…" : "Run now"}
-        </button>
-        <Ctl disabled={!!busy} onClick={() => act("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")}>
-          {m.status === "paused" ? "Resume" : "Pause"}
-        </Ctl>
+      {/* 4. controls */}
+      <div className="mt-6 flex flex-wrap items-center gap-2">
         <Link href={`/app/new?edit=${m.id}`} className="rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[12.5px] text-ink hover:border-ink/40">Edit job</Link>
+        <Ctl disabled={!!busy} onClick={() => act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: !m.autopilot }), m.autopilot ? "Autopilot off. Drafts wait for your OK." : "Autopilot on. It acts without asking.")}>
+          {m.autopilot ? "Autopilot: on" : "Autopilot: off"}
+        </Ctl>
         <Ctl onClick={() => setMore((v) => !v)}>{more ? "Less" : "More…"}</Ctl>
-        {toast && <span className="ml-auto font-mono text-[12px] text-moss">{toast}</span>}
       </div>
       {more && (
         <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-ink/10 bg-paper/60 p-3">
-          <Ctl disabled={!!busy} onClick={() => act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: !m.autopilot }), m.autopilot ? "Autopilot off. Drafts wait for your OK." : "Autopilot on. It acts without asking.")}>
-            {m.autopilot ? "Autopilot: on" : "Autopilot: off"}
-          </Ctl>
           <Ctl disabled={!!busy} onClick={() => act("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")}>Rotate key</Ctl>
           <span className="font-mono text-[11.5px] text-ink-faint">{m.keysRotated} rotation{m.keysRotated === 1 ? "" : "s"} so far · delivery: {[m.delivery.telegram && "Telegram", m.delivery.x && "X", "dashboard"].filter(Boolean).join(", ")}</span>
           {!confirmDelete ? (
@@ -418,88 +461,65 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         </div>
       )}
 
-      <div className="mt-8">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">What it did</h2>
-          <span className="font-mono text-[11px] text-ink-faint">{anchoring ? `${runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain` : "every run hashed"}</span>
-        </div>
-        {runs === null ? (
-          <p className="font-mono text-[13px] text-ink-soft">Loading…</p>
-        ) : (
-          <div className="space-y-2.5">
-            {(runs.length > 0 || thread.length > 0) && (
-              <div className="rounded-lg border border-ink/10 bg-white p-3.5">
-                {thread.length > 0 && (
-                  <ul className="mb-3 space-y-3">
-                    {thread.map((t, i) => (
-                      <li key={i} className="space-y-1.5">
-                        <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] text-cream">{t.q}</p>
-                        <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-paper px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <form
-                  className="flex items-end gap-2"
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    const q = question.trim();
-                    if (!q || asking) return;
-                    setQuestion("");
-                    setAsking(true);
-                    const runId = runs[0]?.id;
-                    setThread((t) => [...t, { q, a: null, runId }]);
-                    try {
-                      const r = await api.ask(owner, m.id, q, runId);
-                      setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: r.reply } : x)));
-                      if (/\bnow reports\b/i.test(r.reply)) await onChange();
-                    } catch (err) {
-                      setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: `Couldn't answer: ${(err as Error).message}` } : x)));
-                    }
-                    setAsking(false);
-                  }}
-                >
-                  <input
-                    value={question}
-                    onChange={(e) => setQuestion(e.target.value)}
-                    placeholder={runs.length ? `Ask ${m.name} about its latest report, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
-                    className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
-                  />
-                  <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">
-                    {asking ? "…" : "Ask"}
-                  </button>
-                </form>
-                <p className="mt-2 font-mono text-[11px] text-ink-faint">Same brain, same tools, billed to its key. {tg ? "You can also reply to its Telegram messages." : ""}</p>
-              </div>
+      {/* 5. the fallback: ask here when you are not in Telegram */}
+      {runs !== null && (
+        <div className="mt-6">
+          <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Ask {m.name}</h2>
+          <div className="rounded-lg border border-ink/10 bg-white p-3.5">
+            {thread.length > 0 && (
+              <ul className="mb-3 space-y-3">
+                {thread.map((t, i) => (
+                  <li key={i} className="space-y-1.5">
+                    <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] text-cream">{t.q}</p>
+                    <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-paper px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
+                  </li>
+                ))}
+              </ul>
             )}
-            {m.status === "running" && (
-              <div className="flex items-center gap-3 rounded-lg border border-gold bg-gold/10 p-4">
-                <StatusDot tone="green" pulse />
-                <div>
-                  <p className="text-[14px] font-semibold text-ink">{launched && m.runsTotal === 0 ? "Launched. First report on the way." : "Working now"}</p>
-                  <p className="font-mono text-[12px] text-ink-soft">Reading sources, calling tools, writing the report. It lands here{tg ? ` and in Telegram (${tg.label})` : ""} in under a minute.</p>
-                </div>
-              </div>
-            )}
-            {runs.map((r) => <RunCard key={r.id} run={r} anchoring={anchoring} />)}
-            {!runs.length && m.status !== "running" && (
-              <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center font-mono text-[13px] text-ink-soft">
-                No runs yet. The first one starts {timeUntil(m.nextRunAt)}, or press Run now.
-              </p>
-            )}
+            <form
+              className="flex items-end gap-2"
+              onSubmit={async (e) => {
+                e.preventDefault();
+                const q = question.trim();
+                if (!q || asking) return;
+                setQuestion("");
+                setAsking(true);
+                const runId = runs[0]?.id;
+                setThread((t) => [...t, { q, a: null, runId }]);
+                try {
+                  const r = await api.ask(owner, m.id, q, runId);
+                  setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: r.reply } : x)));
+                  if (/\bnow reports\b/i.test(r.reply)) await onChange();
+                } catch (err) {
+                  setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: `Couldn't answer: ${(err as Error).message}` } : x)));
+                }
+                setAsking(false);
+              }}
+            >
+              <input
+                value={question}
+                onChange={(e) => setQuestion(e.target.value)}
+                placeholder={runs.length ? `Ask ${m.name} about its latest report, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
+                className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
+              />
+              <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">
+                {asking ? "…" : "Ask"}
+              </button>
+            </form>
+            <p className="mt-2 font-mono text-[11px] text-ink-faint">Same brain, same tools, billed to its key. {tg ? "You can also reply to its Telegram messages." : ""}</p>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 }
 
-function Stat({ label, value, hint }: { label: string; value: string; hint?: string }) {
+function Vital({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
-    <div className="rounded-lg border border-ink/10 bg-white px-3.5 py-3">
-      <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-soft">{label}</p>
-      <p className="mt-1 truncate font-display text-[1.6rem] leading-none text-ink">{value}</p>
-      {hint && <p className="mt-1 truncate font-mono text-[11px] text-ink-faint">{hint}</p>}
+    <div className="min-w-0">
+      <dt className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-soft">{label}</dt>
+      <dd className="mt-0.5 truncate font-display text-[1.35rem] leading-none text-ink">{value}</dd>
+      {hint && <dd className="mt-1 truncate font-mono text-[11px] text-ink-faint">{hint}</dd>}
     </div>
   );
 }
