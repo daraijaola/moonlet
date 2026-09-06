@@ -6,7 +6,7 @@ import { z } from "zod";
  * moonlet's behaviour lives outside this object plus its template's prompt.
  */
 
-export const TEMPLATE_IDS = ["market-watch", "repo-mechanic", "digest", "custom"] as const;
+export const TEMPLATE_IDS = ["market-watch", "repo-mechanic", "inbox", "digest", "custom"] as const;
 export type TemplateId = (typeof TEMPLATE_IDS)[number];
 
 export const TOOL_IDS = [
@@ -22,17 +22,25 @@ export const TOOL_IDS = [
   "post_tweet",
   "spawn_moonlet",
   "write_document",
+  "gmail_read",
+  "gmail_draft",
+  "gmail_send",
+  "gmail_organize",
 ] as const;
 
 /** Tools that need a connection on the owner's account before a moonlet may use them. */
-export const TOOL_REQUIRES: Partial<Record<ToolId, "telegram" | "github" | "x">> = {
+export const TOOL_REQUIRES: Partial<Record<ToolId, "telegram" | "github" | "x" | "gmail">> = {
   github_read: "github",
   open_pull_request: "github",
   comment_on_issue: "github",
   post_tweet: "x",
+  gmail_read: "gmail",
+  gmail_draft: "gmail",
+  gmail_send: "gmail",
+  gmail_organize: "gmail",
 };
 /** Tools that act on the owner's behalf; always go through draft → approve unless autopilot. */
-export const ACTING_TOOLS: ToolId[] = ["open_pull_request", "comment_on_issue", "post_tweet", "spawn_moonlet"];
+export const ACTING_TOOLS: ToolId[] = ["open_pull_request", "comment_on_issue", "post_tweet", "spawn_moonlet", "gmail_send", "gmail_organize"];
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export const MODEL_CHOICES = ["auto", "google/gemini-3.8-flash", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5"] as const;
@@ -105,6 +113,12 @@ export const TEMPLATE_DEFAULTS: Record<
     tools: ["github_read", "web_fetch", "deliver"],
     cadence: "24h",
     output: { kind: "digest", maxWords: 220, alwaysReport: false },
+    costPerRunUsd: 0.02,
+  },
+  inbox: {
+    tools: ["gmail_read", "gmail_draft", "deliver"],
+    cadence: "24h",
+    output: { kind: "digest", maxWords: 220, alwaysReport: true },
     costPerRunUsd: 0.02,
   },
   digest: {

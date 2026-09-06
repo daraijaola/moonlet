@@ -3,6 +3,7 @@ import { webFetchTool, type LocalTool } from "./llm";
 import { TEMPLATE_IDS, type JobSpec, type TemplateId, type ToolId } from "./spec";
 import { DOC_FORMATS, DOC_MIME, renderDocument, safeFilename, type DocFormat } from "./documents";
 import { readRepo, type GitHubConn } from "./connections/github";
+import * as gmail from "./connections/gmail";
 import { propose, type ProposeCtx } from "./proposals";
 
 /**
@@ -27,7 +28,7 @@ export type ToolDeps = {
   deliver?: DeliverySink;
   delivery: { telegram?: string; x?: string; discord?: string; email?: string };
   /** Connections the owner has made. A tool that needs one is simply not offered without it. */
-  connections?: { github?: GitHubConn; telegram?: boolean; x?: boolean; discord?: boolean; email?: boolean };
+  connections?: { github?: GitHubConn; telegram?: boolean; x?: boolean; discord?: boolean; gmail?: { owner: string; email: string } };
   propose?: ProposeCtx;
   /** Turns one sentence into a JobSpec (the launch compiler on the run's key). Without it, spawn_moonlet is not offered. */
   compile?: (input: { sentence: string; template: TemplateId; name?: string }) => Promise<JobSpec>;
@@ -275,10 +276,9 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
       if (!deps.propose) return { error: "acting tools are unavailable in this environment" };
       const input = toInput(a);
       const r = await propose(input, { ...deps.propose, fetch: f });
-      deps.trace?.({
-        tool: input.kind === "tweet" ? "post_tweet" : input.kind === "pull_request" ? "open_pull_request" : "comment_on_issue",
-        summary: `${r.status}${r.proposalId ? " · " + r.proposalId : ""} · ${brief(input.kind === "pull_request" ? input.plan.title : input.kind === "tweet" ? input.text : input.body, 90)}`,
-      });
+      const TOOL_OF = { tweet: "post_tweet", pull_request: "open_pull_request", issue_comment: "comment_on_issue", email_send: "gmail_send", email_organize: "gmail_organize" } as const;
+      const what = input.kind === "pull_request" ? input.plan.title : input.kind === "tweet" ? input.text : input.kind === "email_send" ? `${input.mail.to} · ${input.mail.subject}` : input.kind === "email_organize" ? `${input.organize.action} ×${input.organize.messageIds.length}` : input.body;
+      deps.trace?.({ tool: TOOL_OF[input.kind], summary: `${r.status}${r.proposalId ? " · " + r.proposalId : ""} · ${brief(what, 90)}` });
       if (r.status === "pending") return { proposed: true, proposalId: r.proposalId, note: "Drafted for the owner. Do not retry; tell them it is waiting for approval." };
       if (r.status === "failed") return { executed: false, error: (r.result as { error?: string })?.error ?? "failed", note: "Do not retry." };
       return { executed: true, proposalId: r.proposalId, result: r.result };
@@ -310,6 +310,77 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     execute: gate((a: { text: string }) => ({ kind: "tweet", text: a.text })),
   });
 
+  const gm = deps.connections?.gmail;
+  const gmailToken = async () => (await gmail.accessToken(gm!.owner, f)).token;
+  const gmailRead = tool({
+    name: "gmail_read",
+    description:
+      "Read the owner's Gmail. `overview`: unread count and the newest inbox mail (start here for 'what's going on in my email'). `search`: Gmail search syntax in q (is:unread, from:someone, newer_than:3d, has:attachment, subject:invoice, label:work). `message`: one email's full text by id. `thread`: a whole conversation by threadId, oldest first. `labels`: the owner's labels. Read-only; never quote passwords, codes or bank details back.",
+    inputSchema: z.object({
+      action: z.enum(["overview", "search", "message", "thread", "labels"]),
+      q: z.string().max(300).optional().describe("for search"),
+      id: z.string().max(64).optional().describe("message id (message) or thread id (thread)"),
+      limit: z.number().int().min(1).max(50).optional(),
+    }),
+    execute: traced("gmail_read", (a: { action: string; q?: string; id?: string; limit?: number }, r: unknown) => `${a.action}${a.q ? " " + a.q : ""}${a.id ? " " + a.id : ""} · ${brief(r, 90)}`, async ({ action, q, id, limit }) => {
+      if (!gm) return { error: "Gmail not connected" };
+      try {
+        const token = await gmailToken();
+        if (action === "overview") return await gmail.overview(token, f);
+        if (action === "search") return await gmail.search(token, q ?? "in:inbox", limit ?? 15, f);
+        if (action === "labels") return { labels: await gmail.labels(token, f) };
+        if (!id) return { error: "id required" };
+        return action === "message" ? await gmail.readMessage(token, id, f) : await gmail.readThread(token, id, f);
+      } catch (e) {
+        const msg = (e as Error).message;
+        return { error: msg === "revoked" ? "Gmail access was revoked; the owner must reconnect it under Connections" : msg };
+      }
+    }),
+  });
+
+  const Outgoing = z.object({
+    to: z.string().min(3).max(300).describe("recipient address(es), comma separated"),
+    subject: z.string().min(1).max(200),
+    body: z.string().min(1).max(8000).describe("plain text, written as the owner would write it; no markdown"),
+    cc: z.string().max(300).optional(),
+    threadId: z.string().max(64).optional().describe("to reply inside an existing conversation: the thread id"),
+    inReplyTo: z.string().max(300).optional().describe("the Message-ID header of the email being answered (from gmail_read message/thread)"),
+  });
+
+  const gmailDraft = tool({
+    name: "gmail_draft",
+    description: "Save a draft in the owner's Gmail without sending it: they finish and send from Gmail. Use for replies or new mail the owner asked you to prepare. To reply in-thread pass threadId and inReplyTo from gmail_read, keep the subject as 'Re: …'.",
+    inputSchema: Outgoing,
+    execute: traced("gmail_draft", (a: gmail.Outgoing, r: unknown) => `${a.to} · ${brief(a.subject, 60)} · ${brief(r, 60)}`, async (o) => {
+      if (!gm) return { error: "Gmail not connected" };
+      try {
+        const token = await gmailToken();
+        return { drafted: true, ...(await gmail.createDraft(token, gm.email, o, f)), note: "Saved in the owner's Gmail drafts; tell them it's there to finish and send." };
+      } catch (e) {
+        return { drafted: false, error: (e as Error).message.slice(0, 200) };
+      }
+    }),
+  });
+
+  const gmailSend = tool({
+    name: "gmail_send",
+    description: "Send an email from the owner's Gmail, or reply in a thread (threadId + inReplyTo, subject 'Re: …'). The owner approves before it goes out unless the moonlet is on autopilot. Write as the owner, plainly, sign with their first name only if you know it. Never send anything with money, credentials or commitments the owner didn't ask for.",
+    inputSchema: Outgoing,
+    execute: gate((a: gmail.Outgoing) => ({ kind: "email_send", mail: a })),
+  });
+
+  const gmailOrganize = tool({
+    name: "gmail_organize",
+    description: "Tidy the owner's inbox: archive, mark read/unread, star, trash (reversible for 30 days) or apply a label (created if new) to specific messages by id. The owner approves before it happens unless the moonlet is on autopilot. Only touch messages you have actually read the summary of in this run.",
+    inputSchema: z.object({
+      messageIds: z.array(z.string().max(64)).min(1).max(100),
+      action: z.enum(["archive", "mark_read", "mark_unread", "star", "trash", "label"]),
+      label: z.string().max(80).optional().describe("for action=label"),
+      why: z.string().min(4).max(300).describe("one line for the owner: what these are and why"),
+    }),
+    execute: gate((a: { messageIds: string[]; action: gmail.Organize["action"]; label?: string; why: string }) => ({ kind: "email_organize", organize: { messageIds: a.messageIds, action: a.action, label: a.label }, why: a.why })),
+  });
+
   let spawned = false;
   const spawnMoonlet = tool({
     name: "spawn_moonlet",
@@ -317,7 +388,7 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
       "Propose a new, separate moonlet for the owner when the job you are doing reveals something that deserves its own ongoing watch (a wallet that keeps moving, a repo that needs a nightly digest, a pool worth tracking). Describe the child's job in one plain sentence; it is compiled into a job, and the owner approves before it exists. At most once per run. Never spawn a copy of your own job or of a moonlet the owner already has.",
     inputSchema: z.object({
       sentence: z.string().min(12).max(400).describe("What the new moonlet should do, in one sentence, as the owner would say it"),
-      template: z.enum(TEMPLATE_IDS).describe("market-watch for tokens/pools/wallets on Robinhood Chain, repo-mechanic for a GitHub repo, digest for reading sources, custom otherwise"),
+      template: z.enum(TEMPLATE_IDS).describe("market-watch for tokens/pools/wallets on Robinhood Chain, repo-mechanic for a GitHub repo, inbox for the owner's Gmail, digest for reading sources, custom otherwise"),
       name: z.string().min(2).max(24).optional().describe("A short name for it"),
       reason: z.string().min(8).max(300).describe("One sentence for the owner: why this deserves its own moonlet, citing what you saw"),
     }),
@@ -374,11 +445,16 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     post_tweet: postTweet,
     spawn_moonlet: spawnMoonlet,
     write_document: writeDocument,
+    gmail_read: gmailRead,
+    gmail_draft: gmailDraft,
+    gmail_send: gmailSend,
+    gmail_organize: gmailOrganize,
   };
 
   const available = (id: ToolId) => {
     if (id === "github_read" || id === "open_pull_request" || id === "comment_on_issue") return !!ghToken;
     if (id === "post_tweet") return !!deps.connections?.x;
+    if (id.startsWith("gmail_")) return !!gm;
     if (id === "spawn_moonlet") return !!deps.compile && !!deps.propose;
     if (id === "write_document") return !!deps.files;
     return true;

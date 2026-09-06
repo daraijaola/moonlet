@@ -44,7 +44,7 @@ sentence ──compile──▶ JobSpec (you review) ──launch──▶ plan 
 
 ## Connections and approvals
 
-Holders connect what their moonlets may touch on **/app/connections**: Telegram (tap the bot, done), GitHub (sign in with GitHub; token paste as fallback), X (OAuth). Each connection unlocks a tool: `deliver`, `github_read`, `open_pull_request`, `comment_on_issue`, `post_tweet`.
+Holders connect what their moonlets may touch on **/app/connections**: Telegram (tap the bot, done), Discord (paste a channel webhook), GitHub (sign in with GitHub; token paste as fallback), Gmail (sign in with Google), X (OAuth). Each connection unlocks a tool: `deliver`, `github_read`, `open_pull_request`, `comment_on_issue`, `post_tweet`, `gmail_read`, `gmail_draft`, `gmail_send`, `gmail_organize`. Gmail is a workspace, not a mailbox to post into: an inbox moonlet reads what came in, briefs on what needs an answer, saves drafts in-thread, and sends or tidies only behind the same draft → approve card as PRs and posts.
 
 Anything that acts on the owner's behalf is **drafted first**. The draft shows up on the dashboard under "Waiting for your OK" and, if Telegram is linked, as a message with Approve / Reject buttons. Approve executes it once; reject discards it; both are recorded. Flip **Autopilot** on a moonlet to let it act without asking.
 

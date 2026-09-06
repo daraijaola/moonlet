@@ -3,6 +3,7 @@ import type { TemplateId, ToolId, Cadence, ModelChoice } from "@/moonlet/spec";
 export const TEMPLATE_LABEL: Record<TemplateId, string> = {
   "market-watch": "ORBIO / RH watch",
   "repo-mechanic": "Repo watch",
+  inbox: "Inbox",
   digest: "Digest",
   custom: "Custom",
 };
@@ -10,6 +11,7 @@ export const TEMPLATE_LABEL: Record<TemplateId, string> = {
 export const TEMPLATE_BLURB: Record<TemplateId, string> = {
   "market-watch": "Liquidity, whales, new pools on Robinhood Chain. Briefs you when something actually moved.",
   "repo-mechanic": "Reads your repos on a schedule: commits, issues, PRs, files. Can open pull requests and comments; you approve the first, then it acts on its own.",
+  inbox: "Works in your Gmail: briefs you on what came in, drafts replies, tidies up. Sending or archiving waits for your OK the first time.",
   digest: "Reads the pages you name and sends one short brief. No guessing unread sources.",
   custom: "One sentence. Tools we actually have: search, fetch, chain, market, sandbox.",
 };
@@ -17,6 +19,7 @@ export const TEMPLATE_BLURB: Record<TemplateId, string> = {
 export const TEMPLATE_EXAMPLE: Record<TemplateId, string> = {
   "market-watch": "Ping me if $ORBIO liquidity moves 10%.",
   "repo-mechanic": "Every night, summarise the day's commits and open issues in my repo.",
+  inbox: "Every morning, tell me what came into my email that needs an answer, and draft replies.",
   digest: "At 9pm, five bullets from https://www.orbio.so/build.",
   custom: "Every 12 hours, check my repo for new issues and message me a plan for each.",
 };
@@ -34,6 +37,10 @@ export const TOOL_LABEL: Record<ToolId, string> = {
   open_pull_request: "Open pull request",
   comment_on_issue: "Comment on issue",
   post_tweet: "Post on X",
+  gmail_read: "Read Gmail",
+  gmail_draft: "Draft in Gmail",
+  gmail_send: "Send email",
+  gmail_organize: "Tidy inbox",
 };
 
 export const CADENCE_LABEL: Record<Cadence, string> = {

@@ -440,7 +440,7 @@ export async function skyStats() {
 
 // ---- connections -----------------------------------------------------------
 
-export type ConnectionKind = "telegram" | "github" | "x" | "discord" | "email";
+export type ConnectionKind = "telegram" | "github" | "x" | "discord" | "gmail";
 export type ConnectionRow<T = Record<string, unknown>> = { owner: string; kind: ConnectionKind; label: string; data: T; createdAt: number };
 
 export async function setConnection(owner: string, kind: ConnectionKind, label: string, data: Record<string, unknown>) {
@@ -491,7 +491,7 @@ export async function takeLinkCode(code: string) {
 
 // ---- proposals (draft → approve → act) --------------------------------------
 
-export type ProposalKind = "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet";
+export type ProposalKind = "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize";
 export type ProposalStatus = "pending" | "approved" | "rejected" | "executed" | "failed";
 export type ProposalRow = {
   id: string;

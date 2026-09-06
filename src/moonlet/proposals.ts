@@ -2,6 +2,7 @@ import * as store from "./store";
 import * as tg from "./connections/telegram";
 import * as gh from "./connections/github";
 import * as x from "./connections/x";
+import * as gmail from "./connections/gmail";
 import { describeSpec, launchMoonlet } from "./launch";
 import type { JobSpec } from "./spec";
 
@@ -18,7 +19,9 @@ export type ProposalInput =
   | { kind: "tweet"; text: string }
   | { kind: "pull_request"; plan: gh.PullRequestPlan }
   | { kind: "issue_comment"; repo: string; number: number; body: string }
-  | { kind: "spawn_moonlet"; spec: JobSpec; reason: string };
+  | { kind: "spawn_moonlet"; spec: JobSpec; reason: string }
+  | { kind: "email_send"; mail: gmail.Outgoing }
+  | { kind: "email_organize"; organize: gmail.Organize; why: string };
 
 export type ProposeCtx = { owner: string; moonletId: string; moonletName: string; runId: string | null; autopilot: boolean; fetch?: typeof fetch };
 
@@ -32,16 +35,30 @@ export function describe(kind: store.ProposalKind, payload: Record<string, unkno
     const { spec, reason } = payload as { spec: JobSpec; reason: string };
     return { title: `Spawn a moonlet: ${spec.name}`, body: `${reason}\n\n${describeSpec(spec)}` };
   }
+  if (kind === "email_send") {
+    const m = payload.mail as gmail.Outgoing;
+    return { title: m.threadId ? `Reply to ${m.to}` : `Email ${m.to}`, body: `Subject: ${m.subject}\n\n${m.body}` };
+  }
+  if (kind === "email_organize") {
+    const { organize: o, why } = payload as { organize: gmail.Organize; why: string };
+    const verb = { archive: "Archive", mark_read: "Mark as read", mark_unread: "Mark as unread", star: "Star", trash: "Move to trash", label: `Label "${o.label ?? ""}"` }[o.action];
+    return { title: `${verb} ${o.messageIds.length} email${o.messageIds.length === 1 ? "" : "s"}`, body: why };
+  }
   const c = payload as { repo: string; number: number; body: string };
   return { title: `Comment on ${c.repo}#${c.number}`, body: c.body };
 }
 
 /** Create the proposal (or act immediately on autopilot). Returns what the tool should tell the model. */
 export async function propose(input: ProposalInput, ctx: ProposeCtx) {
-  const needs = input.kind === "tweet" ? "x" : input.kind === "spawn_moonlet" ? null : "github";
-  if (needs && !(await store.getConnection(ctx.owner, needs))) return { proposalId: null, status: "failed" as const, result: { error: `${needs === "x" ? "X" : "GitHub"} is not connected` } };
+  const needs = input.kind === "tweet" ? "x" : input.kind === "spawn_moonlet" ? null : input.kind === "email_send" || input.kind === "email_organize" ? "gmail" : "github";
+  if (needs && !(await store.getConnection(ctx.owner, needs))) return { proposalId: null, status: "failed" as const, result: { error: `${needs === "x" ? "X" : needs === "gmail" ? "Gmail" : "GitHub"} is not connected` } };
   const payload: Record<string, unknown> =
-    input.kind === "tweet" ? { text: input.text } : input.kind === "pull_request" ? { plan: input.plan } : input.kind === "spawn_moonlet" ? { spec: input.spec, reason: input.reason } : { repo: input.repo, number: input.number, body: input.body };
+    input.kind === "tweet" ? { text: input.text }
+    : input.kind === "pull_request" ? { plan: input.plan }
+    : input.kind === "spawn_moonlet" ? { spec: input.spec, reason: input.reason }
+    : input.kind === "email_send" ? { mail: input.mail }
+    : input.kind === "email_organize" ? { organize: input.organize, why: input.why }
+    : { repo: input.repo, number: input.number, body: input.body };
   const id = store.newId("p");
   await store.insertProposal({ id, owner: ctx.owner, moonletId: ctx.moonletId, runId: ctx.runId, kind: input.kind, payload });
 
@@ -103,6 +120,12 @@ async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ s
       const r = await launchMoonlet(p.owner, p.payload.spec as JobSpec, { parentId: p.moonletId, fetch: fetchImpl });
       if (!r.ok) throw new Error(r.error);
       result = { moonletId: r.moonlet.id, name: r.moonlet.name, url: `${process.env.APP_URL ?? "https://16labs.xyz"}/app?m=${r.moonlet.id}`, familyNote: r.familyNote };
+    } else if (p.kind === "email_send") {
+      const { token, email } = await gmail.accessToken(p.owner, fetchImpl);
+      result = await gmail.sendMail(token, email, p.payload.mail as gmail.Outgoing, fetchImpl);
+    } else if (p.kind === "email_organize") {
+      const { token } = await gmail.accessToken(p.owner, fetchImpl);
+      result = await gmail.organize(token, p.payload.organize as gmail.Organize, fetchImpl);
     } else if (p.kind === "pull_request") {
       const c = await gh.connectionFor(p.owner);
       if (!c) throw new Error("GitHub not connected");
@@ -130,12 +153,14 @@ export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   if (!(await tg.chatOwns(ctx.chatId, p.owner))) return "This chat isn't linked to the wallet that owns this draft.";
   const r = await decide(id, action);
   if (!r.ok) return `<b>${tg.esc(d.title)}</b>\n\n${tg.esc(r.error)}.`;
-  if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : "was posted"}.`;
+  if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : p.kind === "email_send" ? "was sent" : p.kind === "email_organize" ? "changed in your inbox" : "was posted"}.`;
   if (r.status === "executed") {
     const { url, name, familyNote } = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string };
     if (p.kind === "spawn_moonlet") return `<b>${tg.esc(d.title)}</b>\n\n✓ <b>${tg.esc(name ?? "")}</b> is live and running its first check now; its reports will land here too.${familyNote ? `\n\n${tg.esc(familyNote)}` : ""}\n${tg.esc(url ?? "")}`;
     const m = await store.getMoonlet(p.moonletId);
     const note = r.autopilotOn && m ? `\n\n<i>${tg.esc(m.name)} is on autopilot now: it acts on its own without asking. Switch it off under More… on its page.</i>` : "";
+    if (p.kind === "email_send") return `<b>${tg.esc(d.title)}</b>\n\n✓ Sent from your Gmail.${url ? ` ${tg.esc(url)}` : ""}${note}`;
+    if (p.kind === "email_organize") return `<b>${tg.esc(d.title)}</b>\n\n✓ Done in your Gmail.${note}`;
     return `<b>${tg.esc(d.title)}</b>\n\n✓ Done.${url ? ` ${tg.esc(url)}` : ""}${note}`;
   }
   return `<b>${tg.esc(d.title)}</b>\n\n⚠ Approved, but it failed: ${tg.esc(String((r.result as { error?: string })?.error ?? "unknown"))}`;

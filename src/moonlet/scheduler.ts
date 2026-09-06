@@ -14,8 +14,8 @@ import * as tg from "./connections/telegram";
 import type { GitHubConn } from "./connections/github";
 import * as discord from "./connections/discord";
 import type { DiscordConn } from "./connections/discord";
-import * as email from "./connections/email";
-import type { EmailConn } from "./connections/email";
+import * as gmail from "./connections/gmail";
+import type { GmailConn } from "./connections/gmail";
 import { telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
 import { followup } from "./followup";
@@ -202,14 +202,13 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
         return minted;
       }),
   };
-  const [ghConnStored, tgConn, xConn, dcConn, emConnStored] = await Promise.all([
+  const [ghConnStored, tgConn, xConn, dcConn, gmConn] = await Promise.all([
     store.getConnection<GitHubConn>(m.owner, "github"),
     store.getConnection<tg.TelegramConn>(m.owner, "telegram"),
     store.getConnection(m.owner, "x"),
     store.getConnection<DiscordConn>(m.owner, "discord"),
-    store.getConnection<EmailConn>(m.owner, "email"),
+    store.getConnection<GmailConn>(m.owner, "gmail"),
   ]);
-  const emConn = email.emailConfigured() ? emConnStored : null;
   let ghConn = ghConnStored;
   // A revoked GitHub token would make every repo job fail quietly; check it before the run and tell the owner once.
   if (ghConn && m.spec.tools.some((t) => t.startsWith("github") || t === "open_pull_request" || t === "comment_on_issue")) {
@@ -228,23 +227,33 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     await recordRun(m.id, now(), { status: "quiet", error: "GitHub isn't connected; reconnect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "GitHub isn't connected. Reconnect it under Connections and this moonlet resumes on its own." }] });
     return { status: "quiet" };
   }
+  if (!gmConn && m.spec.tools.some((t) => t.startsWith("gmail_")) && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read" || t === "web_fetch" || t === "web_search")) {
+    await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
+    await recordRun(m.id, now(), { status: "quiet", error: "Gmail isn't connected; connect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "Gmail isn't connected. Connect it under Connections and this moonlet resumes on its own." }] });
+    return { status: "quiet" };
+  }
   const deliver: DeliverySink | undefined =
     deps.deliver ??
-    ((tgConn && tg.telegramConfigured()) || dcConn || emConn
+    ((tgConn && tg.telegramConfigured()) || dcConn || gmConn
       ? async ({ channel, text }) => {
           if (channel === "telegram" && tgConn && tg.telegramConfigured()) return tg.sendMessage(tgConn.data.chatId, tg.esc(text), { fetch: deps.fetch });
           if (channel === "discord" && dcConn) return discord.postText(dcConn.data.webhookUrl, text, deps.fetch);
-          if (channel === "email" && emConn) return email.send(email.textMail(emConn.data.address, m.spec.name, text), deps.fetch);
+          if (channel === "email" && gmConn) {
+            const { token, email } = await gmail.accessToken(m.owner, deps.fetch);
+            const firstLine = text.split("\n").find((l) => l.trim())?.trim() ?? "update";
+            const r = await gmail.sendMail(token, email, { to: email, subject: `${m.spec.name}: ${firstLine.slice(0, 80)}`, body: text }, deps.fetch);
+            return { ok: true, id: r.messageId };
+          }
           return { ok: false };
         }
       : undefined);
   const runId = store.newId("run");
-  const files = fileSink({ owner: m.owner, moonletId: m.id, runId, chatId: tgConn?.data.chatId, discordWebhook: dcConn?.data.webhookUrl, email: emConn ? { address: emConn.data.address, moonletName: m.spec.name } : undefined, fetch: deps.fetch });
+  const files = fileSink({ owner: m.owner, moonletId: m.id, runId, chatId: tgConn?.data.chatId, discordWebhook: dcConn?.data.webhookUrl, fetch: deps.fetch });
   const result = await run(
     {
       id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
-      delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: emConn ? "connected" : undefined },
-      connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, email: !!emConn },
+      delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: gmConn ? "connected" : undefined },
+      connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
     },
     { orbio: guardedOrbio, fetch: deps.fetch, deliver, files, bagOf: async () => bag },
   );
@@ -314,14 +323,6 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     await discord
       .postEmbed(dcConn.data.webhookUrl, discord.reportEmbed({ moonletName: m.spec.name, title: o.title, summary: o.summary, sections: o.sections, sources: o.sources, costUsd: result.costUsd, hashed: !!result.outputHash, publicUrl: `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}`, at: now(), signal: o.signal }), deps.fetch)
       .catch((e) => console.error("discord delivery failed", m.id, (e as Error).message));
-  }
-  // Email too: the same report, readable in any inbox.
-  const mailed = result.trace.some((t) => t.tool === "deliver" && t.summary.startsWith("email"));
-  if (result.status === "done" && result.output && !result.output.nothingHappened && emConn && !deps.deliver && !mailed) {
-    const o = result.output;
-    await email
-      .send(email.reportMail(emConn.data.address, { moonletName: m.spec.name, title: o.title, summary: o.summary, body: o.body, sections: o.sections, sources: o.sources, costUsd: result.costUsd, hashed: !!result.outputHash, publicUrl: `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}` }), deps.fetch)
-      .catch((e) => console.error("email delivery failed", m.id, (e as Error).message));
   }
 
   if ((result.error ?? "").includes("authorization expired")) {

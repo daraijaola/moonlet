@@ -105,7 +105,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       key: k.key,
       model,
       models: fallbackModels(model),
-      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, memory: m.memory ?? undefined }),
+      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, gmailAddress: m.connections?.gmail?.email, memory: m.memory ?? undefined }),
       input: "Run your job now. Finish with the structured output.",
       tools: built.tools,
       webSearch: built.webSearch,

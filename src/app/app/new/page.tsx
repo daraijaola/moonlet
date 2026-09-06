@@ -11,7 +11,7 @@ import { FuelGauge } from "@/components/fuel-gauge";
 import { CADENCE_LABEL, MODEL_LABEL, TEMPLATE_BLURB, TEMPLATE_EXAMPLE, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
 import { GitHubMark, OpenRouterMark, TelegramMark, VENDOR_MARK, XMark, DiscordMark, GmailMark } from "@/components/marks";
 
-const ORDER: TemplateId[] = ["market-watch", "repo-mechanic", "digest", "custom"];
+const ORDER: TemplateId[] = ["market-watch", "repo-mechanic", "inbox", "digest", "custom"];
 const CADENCES: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
 const STEPS = ["The job", "Review", "Delivery", "Confirm"] as const;
 
@@ -55,7 +55,7 @@ function NewInner() {
 
   const bag = status?.bag ?? 0;
   const p = useMemo(() => (spec ? plan(spec, bag) : null), [spec, bag]);
-  const linked = (k: "telegram" | "x" | "github" | "discord" | "email") => conns?.connections.find((c) => c.kind === k) ?? null;
+  const linked = (k: "telegram" | "x" | "github" | "discord" | "gmail") => conns?.connections.find((c) => c.kind === k) ?? null;
 
   const compile = async () => {
     if (!address) return;
@@ -194,32 +194,20 @@ function NewInner() {
                   <span className="shrink-0 rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">on</span>
                 </li>
               )}
-              {linked("email") && (
-                <li className="flex items-center justify-between gap-3 rounded-lg border border-moss/40 bg-white p-3.5">
-                  <div className="flex min-w-0 items-start gap-3">
-                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink"><GmailMark size={18} /></span>
-                    <div className="min-w-0">
-                      <p className="text-[14px] font-semibold text-ink">Email <span className="ml-1 font-mono text-[11px] font-normal text-ink-faint">{linked("email")!.label}</span></p>
-                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">Every report arrives as a readable email, files attached. Free to send.</p>
-                    </div>
-                  </div>
-                  <span className="shrink-0 rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">on</span>
-                </li>
-              )}
-              {(["x", "github"] as const).filter((k) => linked(k)).map((k) => (
+              {(["x", "github", "gmail"] as const).filter((k) => linked(k)).map((k) => (
                 <li key={k} className="flex items-center justify-between gap-3 rounded-lg border border-moss/40 bg-white p-3.5">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink">{k === "x" ? <XMark size={16} /> : <GitHubMark size={18} />}</span>
+                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink">{k === "x" ? <XMark size={16} /> : k === "gmail" ? <GmailMark size={18} /> : <GitHubMark size={18} />}</span>
                     <div className="min-w-0">
-                      <p className="text-[14px] font-semibold text-ink">{k === "x" ? "X" : "GitHub"} <span className="ml-1 font-mono text-[11px] font-normal text-ink-faint">{linked(k)!.label}</span></p>
-                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">{k === "x" ? (autopilot ? "It may post on its own, the moment it decides to." : "It drafts its first post for your approval; once you approve, it posts on its own.") : autopilot ? "It may read repos and open pull requests or comments on its own." : "It drafts its first pull request or comment for your approval; once you approve, it acts on its own."}</p>
+                      <p className="text-[14px] font-semibold text-ink">{k === "x" ? "X" : k === "gmail" ? "Gmail" : "GitHub"} <span className="ml-1 font-mono text-[11px] font-normal text-ink-faint">{linked(k)!.label}</span></p>
+                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">{k === "x" ? (autopilot ? "It may post on its own, the moment it decides to." : "It drafts its first post for your approval; once you approve, it posts on its own.") : k === "gmail" ? (autopilot ? "It may read your inbox, draft, send and tidy on its own." : "It reads and drafts freely; the first send or archive waits for your approval, then it acts on its own.") : autopilot ? "It may read repos and open pull requests or comments on its own." : "It drafts its first pull request or comment for your approval; once you approve, it acts on its own."}</p>
                     </div>
                   </div>
                   <span className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[11px] ${autopilot ? "bg-ink text-cream" : "bg-moss/10 text-moss"}`}>{autopilot ? "acts on its own" : "asks once"}</span>
                 </li>
               ))}
             </ul>
-            {(linked("x") || linked("github")) && (
+            {(linked("x") || linked("github") || linked("gmail")) && (
               <div className="mt-4 flex items-start justify-between gap-3 rounded-lg border border-ink/10 bg-paper p-3.5">
                 <div className="min-w-0">
                   <p className="text-[13.5px] font-semibold text-ink">{autopilot ? "Autopilot: on" : "Autopilot: off"}</p>
@@ -240,8 +228,11 @@ function NewInner() {
                 </button>
               </div>
             )}
-            {!linked("x") && !linked("github") && (
-              <p className="mt-3 font-mono text-[11.5px] text-ink-faint">Want it to post on X or open pull requests? Connect those under <Link href="/app/connections" className="underline">Connections</Link>; it asks once, then acts on its own.</p>
+            {template === "inbox" && !linked("gmail") && (
+              <p className="mt-3 rounded-md border border-gold bg-gold/10 px-3 py-2 font-mono text-[11.5px] text-ink">This is an inbox job, but Gmail isn&apos;t connected, so it would have nothing to read. <Link href="/app/connections" className="underline">Connect Gmail</Link> first; the moonlet waits quietly until you do.</p>
+            )}
+            {!linked("x") && !linked("github") && !linked("gmail") && (
+              <p className="mt-3 font-mono text-[11.5px] text-ink-faint">Want it to post on X, open pull requests or work in your Gmail? Connect those under <Link href="/app/connections" className="underline">Connections</Link>; it asks once, then acts on its own.</p>
             )}
           </>
         )}

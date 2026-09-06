@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, timeAgo, type ConnectionKind, type Connections, type OrbioStatus } from "@/lib/api";
-import { DiscordMark, EmailMark, GitHubMark, GmailMark, OrbioMark, TelegramMark, XMark } from "@/components/marks";
+import { DiscordMark, GitHubMark, GmailMark, OrbioMark, TelegramMark, XMark } from "@/components/marks";
 
 function ConnectionsInner() {
   const { address, approveOrbio } = useAuth();
@@ -17,6 +17,8 @@ function ConnectionsInner() {
       ? "X didn't complete the connection. Try again."
       : params.get("github") === "failed"
         ? "GitHub didn't complete the connection. Try again."
+        : params.get("gmail") === "failed" || params.get("gmail") === "denied"
+          ? `Google didn't complete the connection. ${params.get("reason") ?? "Try again."}`
         : params.get("orbio") && params.get("orbio") !== "ok"
           ? `Orbio approval ${params.get("orbio")!.replace("_", " ")}. Try again.`
           : null,
@@ -69,7 +71,7 @@ function ConnectionsInner() {
         </Shell>
         <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} setErr={setErr} />
         <DiscordCard owner={address} conn={has("discord")} onChange={load} setErr={setErr} />
-        <EmailCard owner={address} conn={has("email")} available={data.available.email} onChange={load} setErr={setErr} />
+        <GmailCard owner={address} conn={has("gmail")} oauth={data.available.gmailOAuth} onChange={load} />
         <GitHubCard owner={address} conn={has("github")} oauth={data.available.githubOAuth} onChange={load} />
         <XCard owner={address} conn={has("x")} onChange={load} setErr={setErr} />
       </div>
@@ -371,80 +373,40 @@ function DiscordCard({ owner, conn, onChange, setErr }: CardProps & { owner: str
   );
 }
 
-function EmailCard({ owner, conn, available, onChange, setErr }: CardProps & { owner: string; available: boolean; setErr: (s: string | null) => void }) {
-  const [step, setStep] = useState<"idle" | "address" | "code">("idle");
-  const [address, setAddress] = useState("");
-  const [code, setCode] = useState("");
+function GmailCard({ owner, conn, oauth, onChange }: CardProps & { owner: string; oauth: boolean }) {
   const [busy, setBusy] = useState(false);
-  const [localErr, setLocalErr] = useState<string | null>(null);
-  const looksRight = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(address.trim());
-  const reset = () => { setStep("idle"); setAddress(""); setCode(""); setLocalErr(null); };
+  const [err, setErr] = useState<string | null>(null);
   return (
     <Shell
       mark={<GmailMark size={26} />}
-      name="Email"
-      blurb="Gmail or any inbox, verified once with a six-digit code. Every report your moonlets finish lands there as a readable email, files as attachments, so it works with whatever you already read. Sending is free. Approvals stay in Telegram and here."
-      unlocks="deliver"
+      name="Gmail"
+      blurb="Sign in with Google once. A moonlet can then work in your inbox: tell you what came in and what needs an answer, find things, draft replies, and, with your OK, send mail or tidy up (archive, label, mark read). It never deletes permanently. Revoke it any time from your Google account."
+      unlocks="gmail_read, gmail_draft, gmail_send, gmail_organize"
       conn={conn}
-      onDisconnect={async () => { await api.disconnect(owner, "email"); await onChange(); }}
+      onDisconnect={async () => { await api.disconnect(owner, "gmail"); await onChange(); }}
     >
-      {!conn && !available && <p className="font-mono text-[11.5px] text-ink-faint">Email isn&apos;t switched on for this server yet.</p>}
-      {!conn && available && step === "idle" && (
-        <button onClick={() => setStep("address")} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink">
-          <EmailMark size={14} /> Connect an inbox
-        </button>
-      )}
-      {!conn && available && step !== "idle" && (
-        <form
-          className="flex flex-col gap-3 rounded-lg border border-ink/10 bg-paper/60 p-4"
-          onSubmit={async (e) => {
-            e.preventDefault();
+      {!conn && (oauth ? (
+        <button
+          disabled={busy}
+          onClick={async () => {
             setBusy(true);
             setErr(null);
-            setLocalErr(null);
             try {
-              if (step === "address") {
-                await api.emailBegin(owner, address.trim());
-                setStep("code");
-              } else {
-                await api.emailFinish(owner, code);
-                reset();
-                await onChange();
-              }
-            } catch (e2) {
-              setLocalErr((e2 as Error).message);
+              const { url } = await api.gmailStart(owner);
+              window.location.assign(url);
+            } catch (e) {
+              setErr((e as Error).message);
+              setBusy(false);
             }
-            setBusy(false);
           }}
+          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink disabled:opacity-60"
         >
-          {step === "address" ? (
-            <>
-              <p className="text-[13px] font-semibold text-ink">Where should reports go?</p>
-              <label className="block">
-                <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">Email address</span>
-                <input value={address} onChange={(e) => setAddress(e.target.value)} type="email" inputMode="email" placeholder="you@example.com" autoComplete="email" className="mt-1 w-full rounded-md border border-ink/15 bg-paper px-3 py-2 font-mono text-[12.5px] text-ink outline-none focus:border-ink" />
-              </label>
-            </>
-          ) : (
-            <>
-              <p className="text-[13px] font-semibold text-ink">We mailed a six-digit code to <span className="font-mono">{address.trim()}</span>.</p>
-              <label className="block">
-                <span className="block font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">Code</span>
-                <input value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" className="mt-1 w-40 rounded-md border border-ink/15 bg-paper px-3 py-2 font-mono text-[16px] tracking-[0.25em] text-ink outline-none focus:border-ink" />
-              </label>
-            </>
-          )}
-          <div className="flex flex-wrap items-center gap-3">
-            <button type="submit" disabled={busy || (step === "address" ? !looksRight : code.length !== 6)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream disabled:opacity-40">
-              <EmailMark size={14} /> {busy ? (step === "address" ? "Sending the code…" : "Checking…") : step === "address" ? "Send me a code" : "Connect"}
-            </button>
-            {step === "code" && <button type="button" onClick={() => { setStep("address"); setCode(""); setLocalErr(null); }} className="font-mono text-[11.5px] text-ink-faint hover:text-ink">different address</button>}
-            <button type="button" onClick={reset} className="font-mono text-[11.5px] text-ink-faint hover:text-ink">cancel</button>
-            <span className="font-mono text-[11px] text-ink-faint">{step === "address" ? "Nothing is stored until the code comes back." : "Check spam if it hasn't arrived in a minute."}</span>
-          </div>
-          {localErr && <p className="rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{localErr}</p>}
-        </form>
-      )}
+          <GmailMark size={14} /> {busy ? "Opening Google…" : "Connect Gmail"}
+        </button>
+      ) : (
+        <span className="font-mono text-[11.5px] text-ink-faint">Google sign-in isn&apos;t switched on for this deployment yet.</span>
+      ))}
+      {err && <p className="mt-2 font-mono text-[11.5px] text-red-700">{err}</p>}
     </Shell>
   );
 }
