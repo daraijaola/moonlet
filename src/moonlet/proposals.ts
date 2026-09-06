@@ -132,7 +132,7 @@ async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ s
     } else if (p.kind === "spawn_moonlet") {
       const r = await launchMoonlet(p.owner, p.payload.spec as JobSpec, { parentId: p.moonletId, fetch: fetchImpl });
       if (!r.ok) throw new Error(r.error);
-      result = { moonletId: r.moonlet.id, name: r.moonlet.name, url: `${process.env.APP_URL ?? "https://16labs.xyz"}/app?m=${r.moonlet.id}`, familyNote: r.familyNote };
+      result = { moonletId: r.moonlet.id, name: r.moonlet.name, url: `${process.env.APP_URL ?? "https://moonlet.16labs.xyz"}/app?m=${r.moonlet.id}`, familyNote: r.familyNote };
     } else if (p.kind === "email_send") {
       const { token, email } = await gmail.accessToken(p.owner, fetchImpl);
       result = await gmail.sendMail(token, email, p.payload.mail as gmail.Outgoing, fetchImpl);

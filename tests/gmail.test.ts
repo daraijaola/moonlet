@@ -26,7 +26,7 @@ describe("gmail connection", () => {
 
   it("sign-in asks for offline gmail.modify; the callback stores the account sealed", async () => {
     const g = fakeGoogle();
-    const url = new URL(await gmail.beginOAuth(OWNER, "https://16labs.xyz/api/connections/gmail/callback", "/app/connections"));
+    const url = new URL(await gmail.beginOAuth(OWNER, "https://moonlet.16labs.xyz/api/connections/gmail/callback", "/app/connections"));
     expect(url.origin + url.pathname).toBe("https://accounts.google.com/o/oauth2/v2/auth");
     expect(url.searchParams.get("scope")).toContain("gmail.modify");
     expect(url.searchParams.get("access_type")).toBe("offline");
@@ -41,7 +41,7 @@ describe("gmail connection", () => {
 
   it("a consent without the Gmail box ticked is refused with advice", async () => {
     const g = fakeGoogle();
-    const url = new URL(await gmail.beginOAuth("0x00000000000000000000000000000000000000f2", "https://16labs.xyz/cb", "/app"));
+    const url = new URL(await gmail.beginOAuth("0x00000000000000000000000000000000000000f2", "https://moonlet.16labs.xyz/cb", "/app"));
     await expect(gmail.finishOAuth("nogmail", url.searchParams.get("state")!, g.fetchImpl)).rejects.toThrow(/Tick the Gmail box/);
     expect(await store.getConnection("0x00000000000000000000000000000000000000f2", "gmail")).toBeNull();
   });

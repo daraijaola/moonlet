@@ -79,7 +79,7 @@ export function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
-const APP = () => process.env.APP_URL ?? "https://16labs.xyz";
+const APP = () => process.env.APP_URL ?? "https://moonlet.16labs.xyz";
 
 /**
  * One-time bot profile: commands menu, descriptions. Re-applied whenever the

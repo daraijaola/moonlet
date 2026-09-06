@@ -100,7 +100,7 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
 
     const res = await f(url, {
       method: "POST",
-      headers: { authorization: `Bearer ${o.key}`, "content-type": "application/json", "http-referer": o.appUrl ?? "https://16labs.xyz", "x-title": "Moonlet" },
+      headers: { authorization: `Bearer ${o.key}`, "content-type": "application/json", "http-referer": o.appUrl ?? "https://moonlet.16labs.xyz", "x-title": "Moonlet" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(120_000),
     });
@@ -168,7 +168,7 @@ export function webFetchTool(f: typeof fetch = fetch): LocalTool {
     description: "Fetch a web page or JSON API by URL and return its readable text (HTML tags stripped, capped at ~12k chars). Use for pages you already know the address of.",
     schema: z.object({ url: z.string().url(), maxChars: z.number().int().min(500).max(20_000).default(12_000) }),
     execute: (async ({ url, maxChars }: { url: string; maxChars: number }) => {
-      const r = await f(url, { headers: { "user-agent": "Mozilla/5.0 (compatible; moonlet/1.0; +https://16labs.xyz)", accept: "text/html,application/json,text/plain,*/*" }, redirect: "follow", signal: AbortSignal.timeout(15_000) });
+      const r = await f(url, { headers: { "user-agent": "Mozilla/5.0 (compatible; moonlet/1.0; +https://moonlet.16labs.xyz)", accept: "text/html,application/json,text/plain,*/*" }, redirect: "follow", signal: AbortSignal.timeout(15_000) });
       const ct = r.headers.get("content-type") ?? "";
       const raw = await r.text();
       const text = /json/.test(ct)

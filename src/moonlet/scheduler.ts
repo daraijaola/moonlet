@@ -104,7 +104,7 @@ export function installChatHandler(deps: SchedulerDeps = {}) {
       const last = await store.lastTelegramRef(ctx.chatId);
       if (last) return followup({ moonletId: last.moonletId, owner, text, runId: last.runId, imageUrl: ctx.imageUrl, fetch: deps.fetch });
     }
-    return concierge(owner, text, { appUrl: process.env.APP_URL ?? "https://16labs.xyz", fetch: deps.fetch });
+    return concierge(owner, text, { appUrl: process.env.APP_URL ?? "https://moonlet.16labs.xyz", fetch: deps.fetch });
   });
 }
 
@@ -216,7 +216,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     if (probe?.status === 401) {
       await store.deleteConnection(m.owner, "github");
       if (tgConn && tg.telegramConfigured()) {
-        await tg.sendMessage(tgConn.data.chatId, `GitHub disconnected: the access you granted (@${tg.esc(ghConn.data.login)}) was revoked or expired. Reconnect at ${tg.esc(process.env.APP_URL ?? "https://16labs.xyz")}/app/connections so <b>${tg.esc(m.spec.name)}</b> can read your repos again.`, { fetch: deps.fetch }).catch(() => undefined);
+        await tg.sendMessage(tgConn.data.chatId, `GitHub disconnected: the access you granted (@${tg.esc(ghConn.data.login)}) was revoked or expired. Reconnect at ${tg.esc(process.env.APP_URL ?? "https://moonlet.16labs.xyz")}/app/connections so <b>${tg.esc(m.spec.name)}</b> can read your repos again.`, { fetch: deps.fetch }).catch(() => undefined);
       }
       ghConn = null;
     }
@@ -301,7 +301,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const alreadyDelivered = result.trace.some((t) => t.tool === "deliver" && t.summary.startsWith("telegram"));
   if (result.status === "done" && result.output && !result.output.nothingHappened && tgConn && tg.telegramConfigured() && !deps.deliver && !alreadyDelivered) {
     const o = result.output;
-    const page = `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}`;
+    const page = `${process.env.APP_URL ?? "https://moonlet.16labs.xyz"}/s/${m.id}`;
     const sections = (o.sections ?? []).length
       ? "\n\n" + o.sections.map((sec) => `${sec.changed ? "●" : "○"} <b>${tg.esc(sec.check)}</b>\n${tg.esc(sec.finding)}`).join("\n\n")
       : o.body.trim() && o.body.trim() !== o.summary.trim()
@@ -321,7 +321,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   if (result.status === "done" && result.output && !result.output.nothingHappened && dcConn && !deps.deliver && !postedToDiscord) {
     const o = result.output;
     await discord
-      .postEmbed(dcConn.data.webhookUrl, discord.reportEmbed({ moonletName: m.spec.name, title: o.title, summary: o.summary, sections: o.sections, sources: o.sources, costUsd: result.costUsd, hashed: !!result.outputHash, publicUrl: `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}`, at: now(), signal: o.signal }), deps.fetch)
+      .postEmbed(dcConn.data.webhookUrl, discord.reportEmbed({ moonletName: m.spec.name, title: o.title, summary: o.summary, sections: o.sections, sources: o.sources, costUsd: result.costUsd, hashed: !!result.outputHash, publicUrl: `${process.env.APP_URL ?? "https://moonlet.16labs.xyz"}/s/${m.id}`, at: now(), signal: o.signal }), deps.fetch)
       .catch((e) => console.error("discord delivery failed", m.id, (e as Error).message));
   }
 

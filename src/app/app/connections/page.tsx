@@ -202,7 +202,7 @@ function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: strin
 const X_STEPS: Array<[string, React.ReactNode]> = [
   ["Create a developer account", <>Go to <a href="https://developer.x.com/en/portal/dashboard" target="_blank" rel="noreferrer" className="underline decoration-ink/30 hover:decoration-ink">developer.x.com</a> and sign in with the X account the moonlet should post from. It creates a default project and app for you.</>],
   ["Add a card on X", <>X&rsquo;s API is pay-per-use: about <span className="font-mono">$0.015</span> per post (more if it contains a link), billed by X to your developer account, never through moonlet. In <em>Billing</em>, add a card and buy a small amount of credits. $5 covers hundreds of posts.</>],
-  ["Set permissions to Read and Write", <>In your app → <em>Settings</em> → <em>User authentication settings</em>, pick <em>Read and write</em>, type <em>Web App</em>, and put <span className="font-mono">https://16labs.xyz</span> in both URL fields. Save.</>],
+  ["Set permissions to Read and Write", <>In your app → <em>Settings</em> → <em>User authentication settings</em>, pick <em>Read and write</em>, type <em>Web App</em>, and put <span className="font-mono">https://moonlet.16labs.xyz</span> in both URL fields. Save.</>],
   ["Copy the four keys", <>In <em>Keys and tokens</em>: regenerate <em>API Key and Secret</em>, then generate <em>Access Token and Secret</em>. The token must say <em>Read and Write</em>; if it says Read, regenerate it after step 3. Paste all four below.</>],
 ];
 

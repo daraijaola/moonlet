@@ -13,7 +13,7 @@ import { detectWallets, type WalletId } from "@/lib/auth";
 
 function SignInInner() {
   const { ready, address, orbioApproved, orbioChecked, connect, approveOrbio } = useAuth();
-  const host = typeof window !== "undefined" ? window.location.host : "16labs.xyz";
+  const host = typeof window !== "undefined" ? window.location.host : "moonlet.16labs.xyz";
   const [isPhone, setIsPhone] = useState(false);
   useEffect(() => {
     const t = setTimeout(() => setIsPhone(window.matchMedia("(max-width: 639px), (pointer: coarse)").matches), 0);
@@ -121,7 +121,7 @@ function SignInInner() {
               n={2}
               state={step > 2 ? "done" : step === 2 ? "active" : "todo"}
               title="Let moonlet manage your Orbio credits"
-              hint={`Opens orbio.so, where you connect the same wallet and approve once. Moonlet can read your balance, mint one capped key and revoke it, nothing else.${isPhone && wallets.length === 0 ? " On a phone this opens inside the MetaMask app’s browser, where your wallet is; other wallets: open 16labs.xyz from inside the wallet’s own browser." : ""}`}
+              hint={`Opens orbio.so, where you connect the same wallet and approve once. Moonlet can read your balance, mint one capped key and revoke it, nothing else.${isPhone && wallets.length === 0 ? " On a phone this opens inside the MetaMask app’s browser, where your wallet is; other wallets: open moonlet.16labs.xyz from inside the wallet’s own browser." : ""}`}
             >
               {address && !orbioChecked && !skipOrbio && (
                 <p className="mt-3 font-mono text-[12px] text-ink-soft">Checking Orbio…</p>

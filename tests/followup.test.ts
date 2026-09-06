@@ -39,7 +39,7 @@ describe("follow-up on a report (real model)", () => {
   }, 90_000);
 
   it("reads an image the owner sends", async () => {
-    const r = await followup({ moonletId: "m_f", owner: OWNER, text: "describe this image in one sentence", runId: "run_f1", imageUrl: "https://16labs.xyz/mascot/moonlet-rest.png" });
+    const r = await followup({ moonletId: "m_f", owner: OWNER, text: "describe this image in one sentence", runId: "run_f1", imageUrl: "https://moonlet.16labs.xyz/mascot/moonlet-rest.png" });
     console.log("followup4:", r);
     expect(r.length).toBeGreaterThan(20);
     expect(r.toLowerCase()).toMatch(/moon|cartoon|character|face|sleep|antenna|round/);
@@ -51,7 +51,7 @@ describe("follow-up on a report (real model)", () => {
       if (String(url).includes("/mascot/")) return new Response(await res.arrayBuffer(), { status: 200, headers: { "content-type": "application/octet-stream" } });
       return res;
     };
-    const r = await followup({ moonletId: "m_f", owner: OWNER, text: "describe this image in one sentence", runId: "run_f1", imageUrl: "https://16labs.xyz/mascot/moonlet-rest.png", fetch: octet });
+    const r = await followup({ moonletId: "m_f", owner: OWNER, text: "describe this image in one sentence", runId: "run_f1", imageUrl: "https://moonlet.16labs.xyz/mascot/moonlet-rest.png", fetch: octet });
     console.log("followup5:", r);
     expect(r.toLowerCase()).not.toMatch(/binary|raw data|cannot be rendered|pasted/);
     expect(r.toLowerCase()).toMatch(/moon|cartoon|character|face|sleep|antenna|round/);

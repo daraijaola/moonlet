@@ -66,7 +66,7 @@ describe("gmail on real models", () => {
 
   it("concierge: 'clear my spam' proposes one bulk trash by search, nothing happens before approval", async () => {
     const g = fakeGoogle();
-    const r = await concierge(OWNER, "check my spam folder and delete all of it", { appUrl: "https://16labs.xyz", fetch: split(g) });
+    const r = await concierge(OWNER, "check my spam folder and delete all of it", { appUrl: "https://moonlet.16labs.xyz", fetch: split(g) });
     console.log("concierge spam:", r);
     expect(g.log.some((l) => l.path.endsWith("/trash"))).toBe(false);
     const p = (await store.listProposals(OWNER, "pending")).find((x) => x.kind === "email_organize");
@@ -91,7 +91,7 @@ describe("gmail on real models", () => {
     };
     try {
       await store.setConnection(OWNER, "telegram", "@t", { chatId: "4242" });
-      const r = await concierge(OWNER, "send me a pdf report of what's in my inbox right now", { appUrl: "https://16labs.xyz", fetch: f });
+      const r = await concierge(OWNER, "send me a pdf report of what's in my inbox right now", { appUrl: "https://moonlet.16labs.xyz", fetch: f });
       console.log("concierge pdf:", r, uploads);
       expect(uploads.length).toBe(1);
       expect(uploads[0]).toMatch(/\.pdf$/);
@@ -103,7 +103,7 @@ describe("gmail on real models", () => {
 
   it("concierge: 'what's in my email?' reads the inbox and names what is actually there", async () => {
     const g = fakeGoogle();
-    const r = await concierge(OWNER, "what's been going on in my email?", { appUrl: "https://16labs.xyz", fetch: split(g) });
+    const r = await concierge(OWNER, "what's been going on in my email?", { appUrl: "https://moonlet.16labs.xyz", fetch: split(g) });
     console.log("concierge inbox:", r);
     expect(g.log.some((l) => l.path.endsWith("/messages") || l.path.endsWith("/labels/INBOX"))).toBe(true);
     expect(r.toLowerCase()).toMatch(/yash|demo|thursday/);
@@ -112,7 +112,7 @@ describe("gmail on real models", () => {
 
   it("concierge: 'reply to yash and say thursday works' reads the thread and asks before sending", async () => {
     const g = fakeGoogle();
-    const r = await concierge(OWNER, "reply to yash and tell him thursday works for me", { appUrl: "https://16labs.xyz", fetch: split(g) });
+    const r = await concierge(OWNER, "reply to yash and tell him thursday works for me", { appUrl: "https://moonlet.16labs.xyz", fetch: split(g) });
     console.log("concierge reply:", r);
     expect(g.log.some((l) => l.path.endsWith("/messages/send"))).toBe(false);
     const pending = await store.listProposals(OWNER, "pending");

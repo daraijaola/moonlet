@@ -26,7 +26,7 @@ export async function connectWebhook(owner: string, raw: string, fetchImpl: type
   if (!res.ok) throw new Error(`Discord answered ${res.status} while checking the webhook. Try again in a minute.`);
   const hook = (await res.json()) as { name?: string; channel_id?: string; guild_id?: string };
   const conn: DiscordConn = { webhookUrl, webhookName: hook.name || "Moonlet", channelId: hook.channel_id ?? "", guildId: hook.guild_id ?? "" };
-  await postEmbed(webhookUrl, { title: "Moonlet connected", description: "Your moonlets will post their reports in this channel. Alerts, briefs and files land here the moment a run finishes; approvals stay in Telegram.", color: 0xe6b64a, footer: "16labs.xyz" }, fetchImpl).catch(() => undefined);
+  await postEmbed(webhookUrl, { title: "Moonlet connected", description: "Your moonlets will post their reports in this channel. Alerts, briefs and files land here the moment a run finishes; approvals stay in Telegram.", color: 0xe6b64a, footer: "moonlet.16labs.xyz" }, fetchImpl).catch(() => undefined);
   const label = `#${conn.channelId.slice(-4)} via ${conn.webhookName}`;
   await store.setConnection(owner, "discord", label, conn);
   return { label, webhookName: conn.webhookName };

@@ -71,7 +71,7 @@ describe("discord webhook connection", () => {
       sources: ["a", "b"],
       costUsd: 0.0123,
       hashed: true,
-      publicUrl: "https://16labs.xyz/s/m_1",
+      publicUrl: "https://moonlet.16labs.xyz/s/m_1",
       at: 1_788_000_000_000,
       signal: "high",
     }));
