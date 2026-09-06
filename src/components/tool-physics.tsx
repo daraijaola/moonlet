@@ -40,17 +40,19 @@ export function ToolPhysics({ className }: { className?: string }) {
         },
       });
 
+      // Walls sit a little inside the panel so resting tiles clear its rounded corners instead of being clipped by them.
+      const PAD = 14;
       const wall = { isStatic: true, render: { visible: false } };
       const bounds = [
-        Bodies.rectangle(W / 2, H + 15, W + 30, 30, { ...wall, friction: 0.6 }),
-        Bodies.rectangle(-15, -H / 2, 30, 3 * H, wall),
-        Bodies.rectangle(W + 15, -H / 2, 30, 3 * H, wall),
+        Bodies.rectangle(W / 2, H - PAD + 15, W + 30, 30, { ...wall, friction: 0.6 }),
+        Bodies.rectangle(PAD - 15, -H / 2, 30, 3 * H, wall),
+        Bodies.rectangle(W - PAD + 15, -H / 2, 30, 3 * H, wall),
         Bodies.rectangle(W / 2, -2 * H - 15, 2 * W, 30, wall),
       ];
 
       const tiles = SPRITES.map((name, i) => {
         const x = W * 0.3 + (W * 0.4 * i) / (SPRITES.length - 1) + (Math.random() - 0.5) * 24;
-        const y = reduced ? H - TILE / 2 - 1 : -TILE - 60 - i * 110 - Math.random() * 40;
+        const y = reduced ? H - PAD - TILE / 2 - 1 : -TILE - 60 - i * 110 - Math.random() * 40;
         const body = Bodies.rectangle(x, y, TILE, TILE, {
           chamfer: { radius: 22 },
           restitution: 0.15,

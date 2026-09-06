@@ -115,6 +115,8 @@ export const api = {
 };
 
 export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+/** Display only: full 0x addresses and tx hashes in prose become 0x8366…0951 (the stored/hashed text is untouched). */
+export const shortenHexes = (s: string) => s.replace(/0x[0-9a-fA-F]{40,64}/g, shortAddr);
 export const fmtUsd = (n: number, digits = 2) => (n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : n >= 100 && digits >= 2 ? `$${n.toFixed(0)}` : `$${n.toFixed(digits)}`);
 export const fmtBag = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n % 1_000_000 ? 2 : 0)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(n % 1_000 ? 1 : 0)}K` : String(Math.round(n)));
 export function timeAgo(ms: number) {

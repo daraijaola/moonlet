@@ -55,8 +55,8 @@ function ConnectionsInner() {
         <Shell
           mark={<OrbioMark size={22} />}
           name="Orbio"
-          blurb="The budget. Once approved on orbio.so, your moonlets claim capped inference keys from the credits your $ORBIO earns. Moonlet can claim, top up, rotate and revoke keys, nothing else."
-          unlocks="claim_key, top_up, rotate, revoke"
+          blurb="The budget. Once approved on orbio.so, your moonlets mint one capped inference key for your wallet from the credits your $ORBIO earns. Moonlet can read the balance, mint and revoke that key, nothing else."
+          unlocks="get_balance, create_key, revoke_key"
           conn={orbio?.approved ? { label: orbio.orbio.dev ? "dev stub" : `${orbio.orbio.tools.length || "MCP"} tools`, createdAt: 0 } : undefined}
           onDisconnect={orbio?.approved ? async () => { await api.orbioDisconnect(address); await load(); } : undefined}
         >

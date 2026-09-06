@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { api, fmtBag, fmtUsd, timeAgo, timeUntil, type ApiMoonlet, type ApiRun, type Connections, type OrbioStatus, type Proposal } from "@/lib/api";
+import { api, fmtBag, fmtUsd, shortenHexes, timeAgo, timeUntil, type ApiMoonlet, type ApiRun, type Connections, type OrbioStatus, type Proposal } from "@/lib/api";
 import { GitHubMark, OrbioMark, TelegramMark } from "@/components/marks";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
@@ -295,7 +295,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
             {m.autopilot && <span className="rounded-full bg-ink text-cream px-2 py-0.5 font-mono text-[11px]" title="Acts without asking">autopilot</span>}
             {quiet && <span className="rounded-full bg-ink/5 px-2 py-0.5 font-mono text-[11px] text-ink-soft">{m.status}</span>}
           </div>
-          <p className="mt-1.5 max-w-[46rem] text-[14px] leading-[1.55] text-ink-soft">“{m.spec.objective}”</p>
+          <p className="mt-1.5 max-w-[46rem] text-[14px] leading-[1.55] text-ink-soft [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
           {(parent || children.length > 0) && (
             <p className="mt-1.5 font-mono text-[12px] text-ink-faint">
               {parent && <>spawned by <Link href={`/app?m=${parent.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{parent.name}</Link></>}
@@ -336,7 +336,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-2 lg:grid-cols-4">
           <Stat label="next run" value={m.status === "paused" ? "paused" : m.status === "running" ? "now" : timeUntil(m.nextRunAt)} hint={m.cadence} />
           <Stat label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : m.lastRunAt ? `last ${timeAgo(m.lastRunAt)}` : "none yet"} />
-          <Stat label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)} / run`} />
+          <Stat label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)}/run`} />
           <Stat label="fuel" value={status?.idleCreditsUsd != null ? fmtUsd(status.idleCreditsUsd) : fmtUsd(m.keyRemainingUsd)} hint={status?.idleCreditsUsd != null ? "Orbio balance, shared by your moonlets" : m.keyLimitUsd ? "on its key" : "mints a key on first run"} />
         </div>
       </div>

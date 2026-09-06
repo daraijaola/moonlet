@@ -9,7 +9,7 @@ import { CADENCE_LABEL, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
 import { explorerTx } from "@/moonlet/anchor";
 import type { Cadence } from "@/moonlet/spec";
 import * as store from "@/moonlet/store";
-import { fmtBag, fmtUsd, shortAddr, timeAgo, timeUntil } from "@/lib/api";
+import { fmtBag, fmtUsd, shortAddr, shortenHexes, timeAgo, timeUntil } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -57,7 +57,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
                 <span>launched {timeAgo(m.createdAt)}</span>
               </div>
               <h1 className="mt-2 font-display text-[3.4rem] leading-[0.9] text-ink sm:text-[4.2rem]">{m.name}</h1>
-              <p className="mt-3 max-w-[34rem] text-[15px] leading-[1.55] text-ink">“{m.spec.objective}”</p>
+              <p className="mt-3 max-w-[34rem] text-[15px] leading-[1.55] text-ink [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
               <p className="mt-3 font-mono text-[12px] text-ink-soft">
                 {TEMPLATE_LABEL[m.spec.template]} · orbits {shortAddr(m.owner)} · {owner ? `${fmtBag(owner.bag)} $ORBIO` : ""}
               </p>

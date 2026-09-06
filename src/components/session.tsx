@@ -41,7 +41,7 @@ const RUNS: Run[] = [
     hash: "0x5620d09ad69e02a0586c1c4a77aca22ba80506924b27fb7560b8aea7790261ca",
     steps: [
       { at: 0.0, kind: "sys", label: "read bag", detail: "1,240 $ORBIO · above the 1,000 floor" },
-      { at: 0.4, kind: "sys", label: "claimed key", detail: "$2.00 funded from Orbio credits · orbio.claim_key" },
+      { at: 0.4, kind: "sys", label: "claimed key", detail: "$2.00 funded from Orbio credits · orbio.create_key" },
       { at: 3.6, kind: "tool", label: "github_read", detail: "commits daraijaola/moonlet · 14 commits today, a0f4846 … 9e819f3" },
       { at: 6.8, kind: "tool", label: "github_read", detail: "file CHANGELOG.md · 404, no changelog yet" },
       { at: 20.0, kind: "act", label: "open_pull_request", detail: "drafted “Add CHANGELOG.md for 2026-09-04” · waiting for the owner" },
@@ -70,7 +70,7 @@ const RUNS: Run[] = [
     hash: "0x3f1b5d83ffb33e00f863ecb983230964eb64a9ab52621a31fed245225be8dbe3",
     steps: [
       { at: 0.0, kind: "sys", label: "read bag", detail: "1,240 $ORBIO · above the 1,000 floor" },
-      { at: 3.0, kind: "sys", label: "claimed key", detail: "$2.00 funded from Orbio credits · orbio.claim_key" },
+      { at: 3.0, kind: "sys", label: "claimed key", detail: "$2.00 funded from Orbio credits · orbio.create_key" },
       { at: 8.0, kind: "tool", label: "token_market", detail: "ORBIO/NVDA · $0.004646 · +8.26% · liq $188,440" },
       { at: 14.0, kind: "tool", label: "token_market", detail: "ORBIO/USDG · $0.004664 · +1.96% · liq $92,265" },
       { at: 21.0, kind: "tool", label: "chain_read", detail: "transfer 101,071.69 ORBIO · block 54329173" },
@@ -162,7 +162,7 @@ export function Session() {
                   setIdx(i);
                   setT(0);
                 }}
-                className={`relative rounded-full px-5 py-1.5 text-[13.5px] font-medium transition-colors ${i === idx ? "text-ink" : "text-ink-soft hover:text-ink"}`}
+                className={`relative whitespace-nowrap rounded-full px-4 py-1.5 text-[12.5px] font-medium transition-colors sm:px-5 sm:text-[13.5px] ${i === idx ? "text-ink" : "text-ink-soft hover:text-ink"}`}
               >
                 {i === idx && <motion.span layoutId="run-tab" transition={{ type: "spring", stiffness: 380, damping: 32 }} className="absolute inset-0 rounded-full bg-white shadow-[0_1px_2px_rgba(21,22,29,0.12)]" />}
                 <span className="relative">{r.name} · {r.template.split(" · ")[0]}</span>
@@ -259,9 +259,9 @@ export function Session() {
                   >
                     <span className="text-ink-faint">{clock(s.at)}</span>
                     <span className="mt-[5px] flex justify-center"><Glyph kind={s.kind} /></span>
-                    <span className="min-w-0">
-                      <span className={s.kind === "owner" ? "text-moss" : "text-ink"}>{s.label}</span>
-                      <span className="block truncate text-ink-soft sm:inline sm:pl-2">{s.detail}</span>
+                    <span className="flex min-w-0 flex-col sm:flex-row sm:gap-2">
+                      <span className={`shrink-0 ${s.kind === "owner" ? "text-moss" : "text-ink"}`}>{s.label}</span>
+                      <span className="min-w-0 truncate text-ink-soft" title={s.detail}>{s.detail}</span>
                     </span>
                   </motion.li>
                 ))}

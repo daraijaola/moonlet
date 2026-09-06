@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { fmtUsd, timeAgo, type ApiRun } from "@/lib/api";
+import { fmtUsd, shortenHexes, timeAgo, type ApiRun } from "@/lib/api";
 
 export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -17,27 +17,27 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
             {run.nothingHappened && run.status === "done" && <span className="rounded-full bg-ink/5 px-1.5 py-0.5 font-mono text-[10px] text-ink-soft">nothing new</span>}
             {run.status === "failed" && <span className="rounded-full bg-red-50 px-1.5 py-0.5 font-mono text-[10px] text-red-700">failed</span>}
           </div>
-          <h4 className="mt-1 text-[15.5px] font-semibold leading-[1.3] tracking-[-0.01em] text-ink">{run.title}</h4>
-          <p className={`mt-1.5 text-[13.5px] leading-[1.6] text-ink-soft ${open ? "" : "line-clamp-3"}`}>{run.summary}</p>
+          <h4 className="mt-1 text-[15.5px] font-semibold leading-[1.3] tracking-[-0.01em] text-ink [overflow-wrap:anywhere]" title={run.title}>{shortenHexes(run.title)}</h4>
+          <p className={`mt-1.5 text-[13.5px] leading-[1.6] text-ink-soft [overflow-wrap:anywhere] ${open ? "" : "line-clamp-3"}`}>{shortenHexes(run.summary)}</p>
           {(run.sections?.length ?? 0) > 0 && (
             <ul className="mt-3 space-y-2">
               {run.sections!.slice(0, open ? 6 : 3).map((sec, i) => (
-                <li key={i} className="flex gap-2.5 text-[13px] leading-[1.5]">
+                <li key={i} className="flex gap-2.5 text-[13px] leading-[1.5] [overflow-wrap:anywhere]">
                   <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${sec.changed ? "bg-gold" : "bg-ink/20"}`} title={sec.changed ? "changed since last run" : "unchanged"} />
                   <span className="min-w-0">
-                    <span className="font-medium text-ink">{sec.check}</span>
-                    <span className={`block text-ink-soft ${open ? "" : "line-clamp-2"}`}>{sec.finding}</span>
+                    <span className="font-medium text-ink">{shortenHexes(sec.check)}</span>
+                    <span className={`block text-ink-soft ${open ? "" : "line-clamp-2"}`}>{shortenHexes(sec.finding)}</span>
                   </span>
                 </li>
               ))}
               {!open && run.sections!.length > 3 && <li className="font-mono text-[11px] text-ink-faint">+{run.sections!.length - 3} more</li>}
             </ul>
           )}
-          {open && hasBody && <pre className="mt-3 whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-[13px] leading-[1.6] text-ink">{run.body}</pre>}
+          {open && hasBody && <pre className="mt-3 whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-[13px] leading-[1.6] text-ink [overflow-wrap:anywhere]">{run.body}</pre>}
           {open && run.sources.length > 0 && (
             <ul className="mt-2 space-y-0.5 font-mono text-[11.5px]">
               {run.sources.map((s) => (
-                <li key={s}>
+                <li key={s} className="truncate">
                   <a href={s} target="_blank" rel="noreferrer" className="text-ink-soft underline decoration-ink/20 hover:text-ink">{s}</a>
                 </li>
               ))}
