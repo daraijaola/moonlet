@@ -237,7 +237,7 @@ describe("connections + proposals", () => {
       await tg.processUpdates(telegramCallback, t.fetchImpl);
       expect(t.sent.at(-1)).toMatchObject({ chat_id: "4242", text: "<i>Reading that report…</i>", replyTo: 77 });
       expect(t.edited.at(-1)?.message_id).toBe(Number(t.sent.at(-1)!.id));
-      expect(t.edited.at(-1)?.text).toMatch(/^0x00 asked "what did it find\?" \(reply to 70\)\n\n<i>\d+s<\/i>$/);
+      expect(t.edited.at(-1)?.text).toMatch(/^0x00 asked "what did it find\?" \(reply to 70\)\n\n<i>answered in \d+s<\/i>$/);
 
       tg.setChatHandler(async () => {
         throw new Error("model down");
