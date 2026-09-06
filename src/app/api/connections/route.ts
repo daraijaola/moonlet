@@ -11,7 +11,7 @@ export async function GET(req: Request) {
   const list = await store.listConnections(owner);
   return NextResponse.json({
     connections: list,
-    available: { telegram: telegramConfigured(), telegramBot: botUsername(), github: true, githubOAuth: githubOAuthConfigured(), x: true },
+    available: { telegram: telegramConfigured(), telegramBot: botUsername(), github: true, githubOAuth: githubOAuthConfigured(), x: true, discord: true },
   });
 }
 
@@ -19,7 +19,7 @@ export async function DELETE(req: Request) {
   const owner = ownerFrom(req, { write: true });
   if (!owner) return bad("sign in with your wallet first", 401);
   const { kind } = (await req.json().catch(() => ({}))) as { kind?: store.ConnectionKind };
-  if (!kind || !["telegram", "github", "x"].includes(kind)) return bad("kind required");
+  if (!kind || !["telegram", "github", "x", "discord"].includes(kind)) return bad("kind required");
   await store.deleteConnection(owner, kind);
   return NextResponse.json({ ok: true });
 }

@@ -55,7 +55,7 @@ export type ApiRun = {
   files?: Array<{ id: string; name: string; mime: string; size: number; url: string }>;
 };
 
-export type ConnectionKind = "telegram" | "github" | "x";
+export type ConnectionKind = "telegram" | "github" | "x" | "discord";
 export type Connections = {
   connections: Array<{ kind: ConnectionKind; label: string; createdAt: number }>;
   available: { telegram: boolean; telegramBot: string | null; github: boolean; githubOAuth: boolean; x: boolean };
@@ -111,6 +111,7 @@ export const api = {
   telegramPoll: (owner: string) => req<{ linked: boolean; label: string | null }>(owner, "/api/connections/telegram"),
   githubStart: (owner: string) => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
   githubConnect: (owner: string, token: string) => req<{ ok: boolean; login: string }>(owner, "/api/connections/github", { method: "POST", body: JSON.stringify({ token }) }),
+  discordConnect: (owner: string, webhookUrl: string) => req<{ ok: boolean; label: string }>(owner, "/api/connections/discord", { method: "POST", body: JSON.stringify({ webhookUrl }) }),
   xConnect: (owner: string, keys: { apiKey: string; apiSecret: string; accessToken: string; accessSecret: string }) => req<{ ok: boolean; username: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify(keys) }),
   ask: (owner: string, id: string, text: string, runId?: string) => req<{ reply: string }>(owner, `/api/moonlets/${id}/ask`, { method: "POST", body: JSON.stringify({ text, runId }) }),
   proposals: (owner: string, status?: Proposal["status"]) => req<{ proposals: Proposal[] }>(owner, `/api/proposals${status ? `?status=${status}` : ""}`),

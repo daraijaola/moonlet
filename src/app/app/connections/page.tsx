@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, timeAgo, type ConnectionKind, type Connections, type OrbioStatus } from "@/lib/api";
-import { GitHubMark, OrbioMark, TelegramMark, XMark } from "@/components/marks";
+import { DiscordMark, GitHubMark, OrbioMark, TelegramMark, XMark } from "@/components/marks";
 
 function ConnectionsInner() {
   const { address, approveOrbio } = useAuth();
@@ -68,6 +68,7 @@ function ConnectionsInner() {
           {orbio?.orbio.error && <p className="font-mono text-[11.5px] text-red-700">{orbio.orbio.error}</p>}
         </Shell>
         <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} setErr={setErr} />
+        <DiscordCard owner={address} conn={has("discord")} onChange={load} setErr={setErr} />
         <GitHubCard owner={address} conn={has("github")} oauth={data.available.githubOAuth} onChange={load} />
         <XCard owner={address} conn={has("x")} onChange={load} setErr={setErr} />
       </div>
@@ -277,6 +278,91 @@ function XCard({ owner, conn, onChange, setErr }: CardProps & { owner: string; s
               <button type="button" onClick={() => setOpen(false)} className="font-mono text-[11.5px] text-ink-faint hover:text-ink">cancel</button>
               <span className="font-mono text-[11px] text-ink-faint">We call X once to confirm the account, then store the keys encrypted.</span>
             </div>
+          </form>
+        </div>
+      )}
+    </Shell>
+  );
+}
+
+const DISCORD_STEPS: Array<[string, React.ReactNode]> = [
+  ["Open the channel's settings", <>In Discord, hover the channel your moonlets should post in, click the gear (<em>Edit Channel</em>), then <em>Integrations</em>. You need <em>Manage Webhooks</em> on that server; on your own server you have it.</>],
+  ["Make a webhook", <><em>Webhooks</em> → <em>New Webhook</em>. Name it <span className="font-mono">Moonlet</span> if you like (that name shows as the sender). You can give it the moonlet avatar too.</>],
+  ["Copy the URL and paste it here", <><em>Copy Webhook URL</em>, paste below. We check it with Discord, post a one-line hello in the channel, and store it encrypted. Delete the webhook in Discord any time and it stops instantly.</>],
+];
+
+function DiscordCard({ owner, conn, onChange, setErr }: CardProps & { owner: string; setErr: (s: string | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [localErr, setLocalErr] = useState<string | null>(null);
+  const looksRight = /discord(app)?\.com\/api\/webhooks\//.test(url);
+  return (
+    <Shell
+      mark={<DiscordMark size={24} />}
+      name="Discord"
+      blurb="A channel webhook, pasted once. Every report your moonlets finish is posted there as a card, files as attachments, so a whole community reads what one moonlet found. Posting is free; only the thinking costs credits. Approvals stay in Telegram and here."
+      unlocks="deliver"
+      conn={conn}
+      onDisconnect={async () => { await api.disconnect(owner, "discord"); await onChange(); }}
+    >
+      {!conn && !open && (
+        <button onClick={() => setOpen(true)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink">
+          <DiscordMark size={14} /> Connect a channel
+        </button>
+      )}
+      {!conn && open && (
+        <div className="rounded-lg border border-ink/10 bg-paper/60 p-4">
+          <p className="text-[13px] font-semibold text-ink">Three steps in Discord, about a minute.</p>
+          <ol className="mt-3 space-y-3">
+            {DISCORD_STEPS.map(([title, body], i) => (
+              <li key={title} className="flex gap-3">
+                <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ink font-mono text-[10.5px] text-cream">{i + 1}</span>
+                <div>
+                  <p className="text-[13px] font-medium text-ink">{title}</p>
+                  <p className="mt-0.5 text-[12.5px] leading-[1.55] text-ink-soft">{body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <form
+            className="mt-4 flex flex-col gap-3"
+            onSubmit={async (e) => {
+              e.preventDefault();
+              setBusy(true);
+              setErr(null);
+              setLocalErr(null);
+              try {
+                await api.discordConnect(owner, url.trim());
+                setUrl("");
+                setOpen(false);
+                await onChange();
+              } catch (e2) {
+                setLocalErr((e2 as Error).message);
+              }
+              setBusy(false);
+            }}
+          >
+            <label className="block">
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">Webhook URL</span>
+              <input
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                type="password"
+                placeholder="https://discord.com/api/webhooks/…"
+                spellCheck={false}
+                autoComplete="off"
+                className="mt-1 w-full rounded-md border border-ink/15 bg-paper px-3 py-2 font-mono text-[12.5px] text-ink outline-none focus:border-ink"
+              />
+            </label>
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="submit" disabled={busy || !looksRight} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream disabled:opacity-40">
+                <DiscordMark size={14} /> {busy ? "Checking with Discord…" : "Verify and connect"}
+              </button>
+              <button type="button" onClick={() => setOpen(false)} className="font-mono text-[11.5px] text-ink-faint hover:text-ink">cancel</button>
+              <span className="font-mono text-[11px] text-ink-faint">The URL is a secret: anyone holding it can post in that channel. We keep it encrypted.</span>
+            </div>
+            {localErr && <p className="rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{localErr}</p>}
           </form>
         </div>
       )}

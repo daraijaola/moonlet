@@ -6,6 +6,7 @@ import Image from "next/image";
  *   openrouter, robinhood, anthropic: simple-icons (CC0), recoloured to currentColor
  *   google, openai: official vector logos
  *   orbio: orbio.so/icon.png
+ *   discord, telegram, x, github: simple-icons (CC0)
  * Monochrome marks inherit text colour; brand-coloured ones render as-is.
  */
 
@@ -39,6 +40,7 @@ export const AnthropicMark = (p: P) => <Mono src="/brands/anthropic.svg" label="
 export const GitHubMark = (p: P) => <Mono src="/brands/github.svg" label="GitHub" {...p} />;
 export const TelegramMark = (p: P) => <Mono src="/brands/telegram.svg" label="Telegram" {...p} />;
 export const XMark = (p: P) => <Mono src="/brands/x.svg" label="X" {...p} />;
+export const DiscordMark = (p: P) => <Mono src="/brands/discord.svg" label="Discord" {...p} />;
 
 /** Auto routing is OpenRouter picking the model, so it wears OpenRouter's mark. */
 export const AutoMark = OpenRouterMark;

@@ -12,6 +12,8 @@ import { bagOf } from "./bag";
 export { bagOf } from "./bag";
 import * as tg from "./connections/telegram";
 import type { GitHubConn } from "./connections/github";
+import * as discord from "./connections/discord";
+import type { DiscordConn } from "./connections/discord";
 import { telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
 import { followup } from "./followup";
@@ -198,10 +200,11 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
         return minted;
       }),
   };
-  const [ghConnStored, tgConn, xConn] = await Promise.all([
+  const [ghConnStored, tgConn, xConn, dcConn] = await Promise.all([
     store.getConnection<GitHubConn>(m.owner, "github"),
     store.getConnection<tg.TelegramConn>(m.owner, "telegram"),
     store.getConnection(m.owner, "x"),
+    store.getConnection<DiscordConn>(m.owner, "discord"),
   ]);
   let ghConn = ghConnStored;
   // A revoked GitHub token would make every repo job fail quietly; check it before the run and tell the owner once.
@@ -223,16 +226,20 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   }
   const deliver: DeliverySink | undefined =
     deps.deliver ??
-    (tgConn && tg.telegramConfigured()
-      ? async ({ channel, text }) => (channel === "telegram" ? tg.sendMessage(tgConn.data.chatId, tg.esc(text), { fetch: deps.fetch }) : { ok: false })
+    ((tgConn && tg.telegramConfigured()) || dcConn
+      ? async ({ channel, text }) => {
+          if (channel === "telegram" && tgConn && tg.telegramConfigured()) return tg.sendMessage(tgConn.data.chatId, tg.esc(text), { fetch: deps.fetch });
+          if (channel === "discord" && dcConn) return discord.postText(dcConn.data.webhookUrl, text, deps.fetch);
+          return { ok: false };
+        }
       : undefined);
   const runId = store.newId("run");
-  const files = fileSink({ owner: m.owner, moonletId: m.id, runId, chatId: tgConn?.data.chatId, fetch: deps.fetch });
+  const files = fileSink({ owner: m.owner, moonletId: m.id, runId, chatId: tgConn?.data.chatId, discordWebhook: dcConn?.data.webhookUrl, fetch: deps.fetch });
   const result = await run(
     {
       id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
-      delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined },
-      connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn },
+      delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined },
+      connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn },
     },
     { orbio: guardedOrbio, fetch: deps.fetch, deliver, files, bagOf: async () => bag },
   );
@@ -294,6 +301,14 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     if (sent) await store.rememberTelegramMessage(tgConn.data.chatId, Number(sent.id), m.id, runId).catch((e) => console.error("tg_messages insert failed", (e as Error).message));
   } else if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && !alreadyDelivered) {
     await deliver({ channel: "telegram", text: `${result.output.title}\n\n${result.output.summary}` }).catch(() => undefined);
+  }
+  // Discord gets the same report as an embed. Free to send, so every connected channel gets a copy.
+  const postedToDiscord = result.trace.some((t) => t.tool === "deliver" && t.summary.startsWith("discord"));
+  if (result.status === "done" && result.output && !result.output.nothingHappened && dcConn && !deps.deliver && !postedToDiscord) {
+    const o = result.output;
+    await discord
+      .postEmbed(dcConn.data.webhookUrl, discord.reportEmbed({ moonletName: m.spec.name, title: o.title, summary: o.summary, sections: o.sections, sources: o.sources, costUsd: result.costUsd, hashed: !!result.outputHash, publicUrl: `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}`, at: now(), signal: o.signal }), deps.fetch)
+      .catch((e) => console.error("discord delivery failed", m.id, (e as Error).message));
   }
 
   if ((result.error ?? "").includes("authorization expired")) {
