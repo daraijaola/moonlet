@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import * as store from "../store";
 
 /**
@@ -6,8 +7,9 @@ import * as store from "../store";
  * id to their wallet. From then on the moonlet can message them, and proposals
  * arrive with Approve / Reject buttons.
  *
- * Updates are pulled with getUpdates on the cron tick (no webhook to set up),
- * so this works on any host. `processUpdates` is the single entry point.
+ * Updates arrive on the webhook (POST /api/telegram/webhook) when APP_URL is
+ * public https, which is what makes replies feel instant; otherwise they are
+ * pulled with getUpdates on the cron tick. Both paths end in `handleUpdate`.
  */
 
 export type TelegramConn = { chatId: string; username?: string; firstName?: string };
@@ -68,8 +70,11 @@ const APP = () => process.env.APP_URL ?? "https://16labs.xyz";
 export async function configureBot(fetchImpl: typeof fetch = fetch) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   if (!token) return false;
-  const stamp = `v2:${token.slice(0, 12)}`;
+  const webhook = webhookUrl();
+  const stamp = `v3:${token.slice(0, 12)}:${webhook ?? "poll"}`;
   if ((await store.kvGet("telegram.configured")) === stamp) return false;
+  if (webhook) await call("setWebhook", { url: webhook, secret_token: webhookSecret(), allowed_updates: ["message", "callback_query"], max_connections: 10 }, fetchImpl);
+  else await call("deleteWebhook", { drop_pending_updates: false }, fetchImpl);
   await call("setMyCommands", {
     commands: [
       { command: "status", description: "Your moonlets, fuel and next runs" },
@@ -83,6 +88,18 @@ export async function configureBot(fetchImpl: typeof fetch = fetch) {
   }, fetchImpl);
   await store.kvSet("telegram.configured", stamp);
   return true;
+}
+
+/** Where Telegram pushes updates; null on hosts without a public https origin (then we poll). */
+export function webhookUrl() {
+  const app = process.env.APP_URL;
+  if (!app || !/^https:\/\//.test(app) || process.env.TELEGRAM_POLL === "1") return null;
+  return `${app.replace(/\/$/, "")}/api/telegram/webhook`;
+}
+
+/** Telegram echoes this in X-Telegram-Bot-Api-Secret-Token so the route can reject anyone else. */
+export function webhookSecret() {
+  return createHash("sha256").update(`telegram-webhook:${process.env.SECRET_KEY ?? ""}:${process.env.TELEGRAM_BOT_TOKEN ?? ""}`).digest("hex");
 }
 
 export async function ownerOfChat(chatId: string) {
@@ -108,7 +125,7 @@ export async function beginLink(owner: string) {
   return { code, url: bot ? `https://t.me/${bot}?start=${code}` : null };
 }
 
-type Update = {
+export type Update = {
   update_id: number;
   message?: {
     message_id: number;
@@ -157,7 +174,7 @@ export function processUpdates(onCallback: CallbackHandler, fetchImpl: typeof fe
 }
 
 async function processUpdatesInner(onCallback: CallbackHandler, fetchImpl: typeof fetch) {
-  if (!telegramConfigured()) return { linked: 0, decided: 0, skipped: true };
+  if (!telegramConfigured() || webhookUrl()) return { linked: 0, decided: 0, skipped: true };
   const offset = Number((await store.kvGet("telegram.offset")) ?? 0);
   let updates: Update[];
   try {
@@ -170,61 +187,69 @@ async function processUpdatesInner(onCallback: CallbackHandler, fetchImpl: typeo
   let linked = 0, decided = 0, last = offset - 1;
   for (const u of updates) {
     last = Math.max(last, u.update_id);
-    try {
-      if ((u.message?.text || u.message?.photo?.length) && u.message.chat.type === "private") {
-        const chatId = String(u.message.chat.id);
-        const text = u.message.text ?? u.message.caption ?? "";
-        const [cmd, arg] = text.trim().split(/\s+/);
-        const command = (cmd ?? "").replace(/@\w+$/, "").toLowerCase();
-        if (command === "/start" && arg) {
-          const hit = await store.takeLinkCode(arg);
-          if (hit && hit.kind === "telegram") {
-            await store.setConnection(hit.owner, "telegram", u.message.chat.username ? `@${u.message.chat.username}` : (u.message.chat.first_name ?? "Telegram"), { chatId, username: u.message.chat.username, firstName: u.message.chat.first_name } satisfies TelegramConn);
-            await sendMessage(chatId, `✓ Linked to <b>${esc(hit.owner.slice(0, 6))}…${esc(hit.owner.slice(-4))}</b>.\n\nYour moonlets will report here. Reply to any report to dig into it, send a screenshot, or just talk to me: "what did Tide find?", "run it now", "make it every 6 hours". Anything that needs your OK comes with Approve / Reject buttons.`, { fetch: fetchImpl });
-            linked++;
-          } else {
-            await sendMessage(chatId, `That link has expired. Open ${esc(APP())}/app/connections and tap <b>Link Telegram</b> again.`, { fetch: fetchImpl });
-          }
-        } else if (command === "/status") {
-          const owner = await ownerOfChat(chatId);
-          await sendMessage(chatId, owner ? await statusText(owner) : `This chat isn't linked yet. Open ${esc(APP())}/app/connections and tap <b>Link Telegram</b>.`, { fetch: fetchImpl });
-        } else if (command === "/stop") {
-          const owner = await ownerOfChat(chatId);
-          if (owner) await store.deleteConnection(owner, "telegram");
-          await sendMessage(chatId, owner ? "Unlinked. Your moonlets will stop messaging this chat; pending drafts stay on the dashboard." : "This chat wasn't linked to anything.", { fetch: fetchImpl });
-        } else {
-          const owner = await ownerOfChat(chatId);
-          if (!owner) {
-            await sendMessage(chatId, `Moonlet runs small AI agents paid for by the credits your $ORBIO earns.\n\nTo link this chat: open ${esc(APP())}/app/connections, tap <b>Link Telegram</b>, then press Start here.`, { fetch: fetchImpl });
-          } else if (command === "/help" || command === "/start" || !chatHandler) {
-            await sendMessage(
-              chatId,
-              `This chat is linked to <b>${esc(owner.slice(0, 6))}…${esc(owner.slice(-4))}</b>. Your moonlets report here and ask before acting on your behalf. Just talk to me: "what did Tide find?", "run Micheal now", "make it daily", "pause it".\n\n/status — your moonlets\n/stop — unlink\n\n${esc(APP())}/app`,
-              { fetch: fetchImpl },
-            );
-          } else {
-            await call("sendChatAction", { chat_id: chatId, action: "typing" }, fetchImpl).catch(() => undefined);
-            const photo = u.message.photo?.length ? u.message.photo[u.message.photo.length - 1] : undefined;
-            const imageUrl = photo ? await fileUrl(photo.file_id, fetchImpl).catch(() => undefined) : undefined;
-            const reply = await chatHandler(owner, text, { chatId, replyToMessageId: u.message.reply_to_message?.message_id, imageUrl }).catch((e) => `I couldn't think just now (${(e as Error).message.slice(0, 80)}). Try again in a minute, or use ${APP()}/app.`);
-            await sendMessage(chatId, esc(reply), { fetch: fetchImpl });
-          }
-        }
-      } else if (u.callback_query?.data && u.callback_query.message) {
-        const [action, id] = u.callback_query.data.split(":");
-        if ((action === "approve" || action === "reject") && id) {
-          const chatId = String(u.callback_query.message.chat.id);
-          const messageId = u.callback_query.message.message_id;
-          const text = await onCallback(action, id, { chatId, messageId });
-          await call("answerCallbackQuery", { callback_query_id: u.callback_query.id, text: action === "approve" ? "Approved" : "Rejected" }, fetchImpl).catch(() => undefined);
-          await editMessage(chatId, messageId, text, fetchImpl);
-          decided++;
-        }
-      }
-    } catch {
-      // one bad update must not block the rest
-    }
+    const r = await handleUpdate(u, onCallback, fetchImpl);
+    if (r === "linked") linked++;
+    if (r === "decided") decided++;
   }
   if (updates.length) await store.kvSet("telegram.offset", String(last + 1));
   return { linked, decided, skipped: false };
+}
+
+/** One update, from the webhook or the poller. Never throws: one bad update must not block the rest. */
+export async function handleUpdate(u: Update, onCallback: CallbackHandler, fetchImpl: typeof fetch = fetch): Promise<"linked" | "decided" | "handled" | "error"> {
+  try {
+    if ((u.message?.text || u.message?.photo?.length) && u.message.chat.type === "private") {
+      const chatId = String(u.message.chat.id);
+      const text = u.message.text ?? u.message.caption ?? "";
+      const [cmd, arg] = text.trim().split(/\s+/);
+      const command = (cmd ?? "").replace(/@\w+$/, "").toLowerCase();
+      if (command === "/start" && arg) {
+        const hit = await store.takeLinkCode(arg);
+        if (hit && hit.kind === "telegram") {
+          await store.setConnection(hit.owner, "telegram", u.message.chat.username ? `@${u.message.chat.username}` : (u.message.chat.first_name ?? "Telegram"), { chatId, username: u.message.chat.username, firstName: u.message.chat.first_name } satisfies TelegramConn);
+          await sendMessage(chatId, `✓ Linked to <b>${esc(hit.owner.slice(0, 6))}…${esc(hit.owner.slice(-4))}</b>.\n\nYour moonlets will report here. Reply to any report to dig into it, send a screenshot, or just talk to me: "what did Tide find?", "run it now", "make it every 6 hours". Anything that needs your OK comes with Approve / Reject buttons.`, { fetch: fetchImpl });
+          return "linked";
+        } else {
+          await sendMessage(chatId, `That link has expired. Open ${esc(APP())}/app/connections and tap <b>Link Telegram</b> again.`, { fetch: fetchImpl });
+        }
+      } else if (command === "/status") {
+        const owner = await ownerOfChat(chatId);
+        await sendMessage(chatId, owner ? await statusText(owner) : `This chat isn't linked yet. Open ${esc(APP())}/app/connections and tap <b>Link Telegram</b>.`, { fetch: fetchImpl });
+      } else if (command === "/stop") {
+        const owner = await ownerOfChat(chatId);
+        if (owner) await store.deleteConnection(owner, "telegram");
+        await sendMessage(chatId, owner ? "Unlinked. Your moonlets will stop messaging this chat; pending drafts stay on the dashboard." : "This chat wasn't linked to anything.", { fetch: fetchImpl });
+      } else {
+        const owner = await ownerOfChat(chatId);
+        if (!owner) {
+          await sendMessage(chatId, `Moonlet runs small AI agents paid for by the credits your $ORBIO earns.\n\nTo link this chat: open ${esc(APP())}/app/connections, tap <b>Link Telegram</b>, then press Start here.`, { fetch: fetchImpl });
+        } else if (command === "/help" || command === "/start" || !chatHandler) {
+          await sendMessage(
+            chatId,
+            `This chat is linked to <b>${esc(owner.slice(0, 6))}…${esc(owner.slice(-4))}</b>. Your moonlets report here and ask before acting on your behalf. Just talk to me: "what did Tide find?", "run Micheal now", "make it daily", "pause it".\n\n/status — your moonlets\n/stop — unlink\n\n${esc(APP())}/app`,
+            { fetch: fetchImpl },
+          );
+        } else {
+          await call("sendChatAction", { chat_id: chatId, action: "typing" }, fetchImpl).catch(() => undefined);
+          const photo = u.message.photo?.length ? u.message.photo[u.message.photo.length - 1] : undefined;
+          const imageUrl = photo ? await fileUrl(photo.file_id, fetchImpl).catch(() => undefined) : undefined;
+          const reply = await chatHandler(owner, text, { chatId, replyToMessageId: u.message.reply_to_message?.message_id, imageUrl }).catch((e) => `I couldn't think just now (${(e as Error).message.slice(0, 80)}). Try again in a minute, or use ${APP()}/app.`);
+          await sendMessage(chatId, esc(reply), { fetch: fetchImpl });
+        }
+      }
+    } else if (u.callback_query?.data && u.callback_query.message) {
+      const [action, id] = u.callback_query.data.split(":");
+      if ((action === "approve" || action === "reject") && id) {
+        const chatId = String(u.callback_query.message.chat.id);
+        const messageId = u.callback_query.message.message_id;
+        const text = await onCallback(action, id, { chatId, messageId });
+        await call("answerCallbackQuery", { callback_query_id: u.callback_query.id, text: action === "approve" ? "Approved" : "Rejected" }, fetchImpl).catch(() => undefined);
+        await editMessage(chatId, messageId, text, fetchImpl);
+        return "decided";
+      }
+    }
+    return "handled";
+  } catch {
+    return "error";
+  }
 }

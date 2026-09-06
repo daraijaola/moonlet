@@ -15,6 +15,7 @@ function fakeTelegram() {
   const sent: Array<{ chat_id: string; text: string; buttons?: string[] }> = [];
   const edited: Array<{ message_id: number; text: string }> = [];
   const configured: string[] = [];
+  const webhooks: Array<{ url: string; secret_token: string }> = [];
   let queue: unknown[] = [];
   let nextId = 100;
   const fetchImpl: typeof fetch = async (input, init) => {
@@ -35,13 +36,14 @@ function fakeTelegram() {
       return ok(out);
     }
     if (url.endsWith("/answerCallbackQuery")) return ok(true);
-    if (/\/setMy(Commands|Description|ShortDescription)$/.test(url)) {
+    if (/\/(setMy(Commands|Description|ShortDescription)|setWebhook|deleteWebhook)$/.test(url)) {
       configured.push(url.split("/").pop()!);
+      if (url.endsWith("/setWebhook")) webhooks.push(JSON.parse(String(init?.body)) as { url: string; secret_token: string });
       return ok(true);
     }
     return new Response("not found", { status: 404 });
   };
-  return { fetchImpl, sent, edited, configured, push: (u: unknown) => queue.push(u) };
+  return { fetchImpl, sent, edited, configured, webhooks, push: (u: unknown) => queue.push(u) };
 }
 
 // Reference vector from X's "Creating a signature" guide.
@@ -120,7 +122,7 @@ describe("connections + proposals", () => {
     const t = fakeTelegram();
     expect(await tg.configureBot(t.fetchImpl)).toBe(true);
     expect(await tg.configureBot(t.fetchImpl)).toBe(false);
-    expect(t.configured.sort()).toEqual(["setMyCommands", "setMyDescription", "setMyShortDescription"]);
+    expect(t.configured.sort()).toEqual(["deleteWebhook", "setMyCommands", "setMyDescription", "setMyShortDescription"]);
 
     t.push({ update_id: 10, message: { message_id: 1, text: "/start", chat: { id: 5555, type: "private" } } });
     t.push({ update_id: 11, message: { message_id: 2, text: "/status", chat: { id: 4242, type: "private" } } });
@@ -228,6 +230,39 @@ describe("connections + proposals", () => {
     const f: typeof fetch = async () => new Response(JSON.stringify({ ok: false, description: "Conflict: terminated by other getUpdates request" }), { status: 409 });
     const r = await tg.processUpdates(telegramCallback, f);
     expect(r.skipped).toBe(true);
+  });
+
+  it("with a public https APP_URL the bot registers a webhook, polling steps aside, and the route answers updates", async () => {
+    process.env.APP_URL = "https://m.example";
+    try {
+      const t = fakeTelegram();
+      expect(await tg.configureBot(t.fetchImpl)).toBe(true);
+      expect(t.webhooks).toMatchObject([{ url: "https://m.example/api/telegram/webhook", secret_token: tg.webhookSecret() }]);
+      expect(tg.webhookSecret()).toMatch(/^[0-9a-f]{64}$/);
+
+      t.push({ update_id: 40, message: { message_id: 1, text: "/status", chat: { id: 4242, type: "private" } } });
+      expect((await tg.processUpdates(telegramCallback, t.fetchImpl)).skipped).toBe(true);
+      expect(t.sent).toHaveLength(0);
+
+      const { POST } = await import("@/app/api/telegram/webhook/route");
+      const post = (secret: string, body: unknown) => POST(new Request("https://m.example/api/telegram/webhook", { method: "POST", headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": secret }, body: JSON.stringify(body) }));
+      expect((await post("nope", { update_id: 41 })).status).toBe(401);
+      expect((await post(tg.webhookSecret(), { hello: 1 })).status).toBe(400);
+
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = t.fetchImpl;
+      try {
+        const res = await post(tg.webhookSecret(), { update_id: 42, message: { message_id: 2, text: "/status", chat: { id: 4242, type: "private" } } });
+        expect(res.status).toBe(200);
+        for (let i = 0; i < 50 && t.sent.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+      expect(t.sent[0]?.text).toMatch(/No moonlets yet|Your moonlets/);
+    } finally {
+      delete process.env.APP_URL;
+      await store.kvSet("telegram.configured", "");
+    }
   });
 
   it("github oauth: exchanges the code, verifies the user, stores the token sealed", async () => {

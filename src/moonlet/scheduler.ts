@@ -107,6 +107,13 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
   await anchorPending(deps).catch(() => undefined);
   await tg.configureBot(deps.fetch).catch(() => undefined);
+  installChatHandler(deps);
+  await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
+  return results;
+}
+
+/** Free text from a linked Telegram chat, whether it arrives on the webhook or the tick's poll. */
+export function installChatHandler(deps: SchedulerDeps = {}) {
   tg.setChatHandler(async (owner, text, ctx) => {
     // A reply to a report (or a photo, or a short question right after one) is a follow-up on that report.
     const ref = ctx.replyToMessageId ? await store.telegramMessageRef(ctx.chatId, ctx.replyToMessageId) : null;
@@ -117,8 +124,6 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
     }
     return concierge(owner, text, { appUrl: process.env.APP_URL ?? "https://16labs.xyz", fetch: deps.fetch });
   });
-  await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
-  return results;
 }
 
 function pickAnchor(deps: SchedulerDeps) {
