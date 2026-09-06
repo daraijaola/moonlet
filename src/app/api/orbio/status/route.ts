@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { bad, ownerFrom } from "@/moonlet/http";
-import { sessionFrom } from "@/moonlet/session";
+import { renewedCookie, sessionFrom } from "@/moonlet/session";
 import { bagOf, orbioFor } from "@/moonlet/scheduler";
 import { estimateEarnPerDay } from "@/moonlet/budget";
 import * as store from "@/moonlet/store";
@@ -23,7 +23,7 @@ export async function GET(req: Request) {
   }
   const canWrite = !!sessionFrom(req) || process.env.ALLOW_HEADER_AUTH === "1" || process.env.NODE_ENV !== "production";
   const o = await store.getOwner(owner);
-  return NextResponse.json({
+  const res = NextResponse.json({
     approved: !!orbio,
     bag,
     earnPerDayUsd: estimateEarnPerDay(bag),
@@ -31,6 +31,9 @@ export async function GET(req: Request) {
     canWrite,
     orbio: { tools, error: orbioError, expiresAt: o?.orbioExpiresAt ?? null, dev: process.env.ALLOW_DEV_ORBIO === "1" },
   });
+  const renewed = renewedCookie(req);
+  if (renewed) res.headers.set("set-cookie", renewed);
+  return res;
 }
 
 /** Disconnect Orbio for this owner (they can re-approve from sign-in). */
