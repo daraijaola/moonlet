@@ -182,6 +182,13 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   }
 
   const bag = await getBag(m.owner);
+  // Orbio issues one key per wallet. A new moonlet borrows the key a sibling already holds
+  // instead of trying to claim a second one (which fails, or would rotate the sibling's key away).
+  let startKey = m.key;
+  if (!startKey) {
+    const sibling = (await store.listMoonlets(m.owner)).find((x) => x.id !== m.id && x.key?.key);
+    if (sibling?.key) startKey = { ...sibling.key };
+  }
   const [ghConn, tgConn, xConn] = await Promise.all([
     store.getConnection<GitHubConn>(m.owner, "github"),
     store.getConnection<tg.TelegramConn>(m.owner, "telegram"),
@@ -195,7 +202,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const runId = store.newId("run");
   const result = await run(
     {
-      id: m.id, owner: m.owner, bag, spec: m.spec, key: m.key, autopilot: m.autopilot, runId, memory: m.memory,
+      id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory,
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn },
     },
@@ -220,6 +227,11 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     trace: result.trace,
   });
 
+  if (result.key && result.keyEvents.some((e) => e.kind === "rotated")) {
+    for (const sib of (await store.listMoonlets(m.owner)).filter((x) => x.id !== m.id && x.key)) {
+      await store.updateMoonlet(sib.id, { key: { ...result.key } });
+    }
+  }
   await store.updateMoonlet(id, {
     status: result.status === "quiet" ? "quiet" : "idle",
     key: result.key,
