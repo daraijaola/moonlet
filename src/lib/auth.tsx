@@ -21,7 +21,8 @@ type AuthState = Saved & { ready: boolean; orbioApproved: boolean; orbioChecked:
 type Auth = AuthState & {
   signed: boolean;
   connect: (wallet?: WalletId) => Promise<string>;
-  approveOrbio: (redirectTo?: string) => Promise<void>;
+  /** Resolves "handoff" when the approval was sent to the wallet app's browser and this tab is now polling for it. */
+  approveOrbio: (redirectTo?: string) => Promise<"redirect" | "handoff">;
   refreshOrbio: () => Promise<boolean>;
   disconnect: () => void;
   hasInjected: boolean;
@@ -214,9 +215,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const approveOrbio = useCallback(async (redirectTo = "/app") => {
     const address = read().address;
     if (!address) throw new Error("connect a wallet first");
+    // Orbio's page connects the wallet through Privy, which on a phone browser
+    // without an injected wallet just waits forever. Hand the approval to the
+    // MetaMask in-app browser instead (the callback needs no cookie: the state
+    // carries the wallet) and watch for it from here.
+    const phone = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+    if (phone && !injected()) {
+      const { url } = await api.orbioStart(address, "/orbio/done");
+      window.location.assign(`https://metamask.app.link/dapp/${url.replace(/^https?:\/\//, "")}`);
+      const started = Date.now();
+      const poll = async () => {
+        if (await refreshOrbio()) return;
+        if (Date.now() - started < 15 * 60_000) setTimeout(poll, 3000);
+      };
+      setTimeout(poll, 3000);
+      return "handoff" as const;
+    }
     const { url } = await api.orbioStart(address, redirectTo);
     window.location.assign(url);
-  }, []);
+    return "redirect" as const;
+  }, [refreshOrbio]);
 
   const disconnect = useCallback(() => {
     void fetch("/api/auth/logout", { method: "POST" });

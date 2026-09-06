@@ -477,6 +477,7 @@ function Ctl({ children, onClick, danger, disabled }: { children: React.ReactNod
 
 function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Connections | null }) {
   const { approveOrbio } = useAuth();
+  const [handoff, setHandoff] = useState(false);
   const idle = status?.idleCreditsUsd;
   const orbioOk = !!status?.approved;
   const telegramOk = !!conns?.connections.some((c) => c.kind === "telegram");
@@ -499,11 +500,12 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
 
       <ol className="mt-7 space-y-2.5">
         <SetupStep n={1} done={orbioOk} title={orbioOk ? "Orbio approved" : "Approve Orbio"} hint={orbioOk ? "Your credits can fund runs." : "The budget. Once, on orbio.so; your $ORBIO credits pay for every run."}>
-          {!orbioOk && (
-            <button onClick={() => void approveOrbio("/app").catch(() => undefined)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[12.5px] font-medium text-midnight">
+          {!orbioOk && !handoff && (
+            <button onClick={() => void approveOrbio("/app").then((r) => setHandoff(r === "handoff")).catch(() => undefined)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[12.5px] font-medium text-midnight">
               <OrbioMark size={14} /> Approve on Orbio
             </button>
           )}
+          {!orbioOk && handoff && <p className="font-mono text-[12px] text-ink-soft">Finish in the MetaMask browser, then come back here; this page notices on its own. <button onClick={() => setHandoff(false)} className="underline">didn’t open?</button></p>}
         </SetupStep>
         <SetupStep n={2} done={telegramOk} title={telegramOk ? "Telegram linked" : "Link Telegram"} hint={telegramOk ? "Results and approvals reach your phone." : telegramAvailable ? "Where results and approvals reach you. Two taps: open the bot, press Start." : "Not switched on for this deployment yet; results stay on this dashboard."}>
           {!telegramOk && telegramAvailable && (

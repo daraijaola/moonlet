@@ -28,7 +28,7 @@ function SignInInner() {
   const params = useSearchParams();
   const next = params.get("next") || "/app";
   const orbioResult = params.get("orbio");
-  const [busy, setBusy] = useState<"wallet" | "orbio" | null>(null);
+  const [busy, setBusy] = useState<"wallet" | "orbio" | "handoff" | null>(null);
   const [err, setErr] = useState<string | null>(
     orbioResult && orbioResult !== "ok" ? `Orbio approval ${orbioResult.replace("_", " ")}. Try again.` : null,
   );
@@ -121,7 +121,7 @@ function SignInInner() {
               n={2}
               state={step > 2 ? "done" : step === 2 ? "active" : "todo"}
               title="Let moonlet manage your Orbio credits"
-              hint={`Opens orbio.so, where you connect the same wallet and approve once. Moonlet can claim, top up, rotate and revoke keys, nothing else.${isPhone ? " On a phone, Orbio’s page needs your wallet app’s browser (MetaMask → Browser → 16labs.xyz)." : ""}`}
+              hint={`Opens orbio.so, where you connect the same wallet and approve once. Moonlet can claim, top up, rotate and revoke keys, nothing else.${isPhone && wallets.length === 0 ? " On a phone this opens inside the MetaMask app’s browser, where your wallet is; other wallets: open 16labs.xyz from inside the wallet’s own browser." : ""}`}
             >
               {address && !orbioChecked && !skipOrbio && (
                 <p className="mt-3 font-mono text-[12px] text-ink-soft">Checking Orbio…</p>
@@ -134,7 +134,7 @@ function SignInInner() {
                       setBusy("orbio");
                       setErr(null);
                       try {
-                        await approveOrbio(next);
+                        if ((await approveOrbio(next)) === "handoff") setBusy("handoff");
                       } catch (e) {
                         setErr((e as Error).message);
                         setBusy(null);
@@ -143,8 +143,15 @@ function SignInInner() {
                     className="btn-hard mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border-2 border-ink bg-white px-4 py-2.5 font-mono text-[13.5px] font-medium text-ink disabled:opacity-60"
                   >
                     <OrbioMark size={16} />
-                    {busy === "orbio" ? "Waiting for Orbio…" : "Approve on Orbio"}
+                    {busy === "handoff" ? "Waiting for MetaMask…" : busy === "orbio" ? "Waiting for Orbio…" : isPhone && wallets.length === 0 ? "Approve in MetaMask" : "Approve on Orbio"}
                   </button>
+                  {busy === "handoff" && (
+                    <div className="mt-3 rounded-md border border-ink/10 bg-paper px-3 py-2.5 text-[11.5px] leading-[1.55] text-ink-soft">
+                      <p className="font-medium text-ink">Finish in MetaMask, then come back here.</p>
+                      <p className="mt-0.5">Orbio opened inside the MetaMask browser. Connect the same wallet there and tap Approve; this tab notices on its own and carries on.</p>
+                      <button onClick={() => setBusy(null)} className="mt-2 font-mono text-[11.5px] text-ink-faint underline hover:text-ink">didn’t open? try again</button>
+                    </div>
+                  )}
                   <button onClick={() => router.replace(next)} className="mt-2 w-full font-mono text-[11.5px] text-ink-faint hover:text-ink">
                     skip for now — moonlets stay quiet until approved
                   </button>
