@@ -61,17 +61,35 @@ type Eip1193 = { request: (a: { method: string; params?: unknown[] }) => Promise
 const injected = () => (typeof window !== "undefined" ? (window as unknown as { ethereum?: Eip1193 }).ethereum : undefined);
 
 export type WalletId = "metamask" | "rabby" | "robinhood" | "walletconnect" | "injected";
-/** Which injected wallets are present. Multi-provider windows expose `providers[]`. */
+
+/**
+ * EIP-6963: every wallet extension announces itself with an rdns, so we can
+ * talk to MetaMask directly instead of whichever extension last won
+ * window.ethereum (the cause of "wallet must has at least one account").
+ */
+const announced = new Map<string, Eip1193>();
+const RDNS: Record<string, WalletId> = { "io.metamask": "metamask", "io.metamask.flask": "metamask", "io.rabby": "rabby", "com.robinhood.wallet": "robinhood" };
+if (typeof window !== "undefined") {
+  window.addEventListener("eip6963:announceProvider", (e) => {
+    const d = (e as CustomEvent<{ info: { rdns: string }; provider: Eip1193 }>).detail;
+    if (d?.info?.rdns && d.provider) announced.set(d.info.rdns, d.provider);
+  });
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+}
+
+/** Which injected wallets are present: announced (EIP-6963) first, then the legacy window.ethereum / providers[]. */
 export function detectWallets(): WalletId[] {
-  const eth = injected();
-  if (!eth) return [];
-  const all = eth.providers?.length ? eth.providers : [eth];
   const ids = new Set<WalletId>();
-  for (const p of all) {
-    if (p.isRabby) ids.add("rabby");
-    else if (p.isRobinhood) ids.add("robinhood");
-    else if (p.isMetaMask) ids.add("metamask");
-    else ids.add("injected");
+  for (const rdns of announced.keys()) ids.add(RDNS[rdns] ?? "injected");
+  const eth = injected();
+  if (eth) {
+    const all = eth.providers?.length ? eth.providers : [eth];
+    for (const p of all) {
+      if (p.isRabby) ids.add("rabby");
+      else if (p.isRobinhood) ids.add("robinhood");
+      else if (p.isMetaMask) ids.add("metamask");
+      else ids.add("injected");
+    }
   }
   return [...ids];
 }
@@ -156,8 +174,9 @@ async function metamaskSdkProvider(): Promise<Eip1193> {
 }
 
 function providerFor(id: WalletId): Eip1193 | undefined {
+  for (const [rdns, p] of announced) if (RDNS[rdns] === id) return p;
   const eth = injected();
-  if (!eth) return undefined;
+  if (!eth) return id === "injected" ? undefined : announced.values().next().value;
   const all = eth.providers?.length ? eth.providers : [eth];
   return all.find((p) => (id === "rabby" ? p.isRabby : id === "robinhood" ? p.isRobinhood : id === "metamask" ? p.isMetaMask && !p.isRabby : true)) ?? eth;
 }
@@ -202,10 +221,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!eth) {
       throw new Error(`${walletName(wallet)} isn't available in this browser. Use MetaMask, or open this page inside your wallet app's browser.`);
     }
-    await ensureRobinhoodChain(eth);
+    // Accounts first: on a fresh origin MetaMask refuses a chain switch ("wallet must has at least one account") until the site is connected.
     const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
     const address = accounts[0]?.toLowerCase() ?? "";
     if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error("No account was shared. Unlock your wallet and try again.");
+    await ensureRobinhoodChain(eth);
     // The signature is the login. Without it nothing is stored and nothing is shown.
     await siwe(eth, address);
     write({ address, signed: true });

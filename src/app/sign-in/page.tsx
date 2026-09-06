@@ -21,8 +21,11 @@ function SignInInner() {
   }, []);
   const [wallets, setWallets] = useState<WalletId[]>([]);
   useEffect(() => {
+    // Announcements arrive asynchronously after the request event; look again for a moment.
     const t = setTimeout(() => setWallets(detectWallets()), 0);
-    return () => clearTimeout(t);
+    const t2 = setTimeout(() => setWallets(detectWallets()), 400);
+    const t3 = setTimeout(() => setWallets(detectWallets()), 1500);
+    return () => { clearTimeout(t); clearTimeout(t2); clearTimeout(t3); };
   }, []);
   const router = useRouter();
   const params = useSearchParams();
