@@ -117,12 +117,20 @@ describe("runner", () => {
   });
 
   it("6b. a moonlet still on a legacy key with room keeps using it; once nearly dry it moves to the account key", async () => {
+    // The legacy key must look like an OpenRouter key (sk-or-…) but still reach a real model: swap it for ours at the wire.
+    const LEGACY = "sk-or-v1-legacy-test-key";
+    const swap: typeof fetch = (u, init) => {
+      const h = new Headers(init?.headers);
+      if (h.get("authorization") !== `Bearer ${LEGACY}`) return fetch(u, init);
+      h.set("authorization", `Bearer ${KEY}`);
+      return fetch(String(u).replace("https://openrouter.ai/api/v1", "https://www.orbio.so/api/v1"), { ...init, headers: h });
+    };
     const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 5, legacy: { remainingUsd: 3 } });
-    const r = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: KEY, limitUsd: 3.5, spentUsd: 0.5 } }, { orbio: orbio.client });
+    const r = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: LEGACY, limitUsd: 3.5, spentUsd: 0.5 } }, { orbio: orbio.client, fetch: swap });
     expect(r.status).toBe("done");
     expect(orbio.state.calls).not.toContain("create");
     orbio.state.legacy!.remainingUsd = 0.005;
-    const r2 = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: KEY, limitUsd: 3.5, spentUsd: 3.495 } }, { orbio: orbio.client });
+    const r2 = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: LEGACY, limitUsd: 3.5, spentUsd: 3.495 } }, { orbio: orbio.client, fetch: swap });
     console.log("run6b:", r2.status, r2.keyEvents.map((e) => e.detail));
     expect(r2.status).toBe("done");
     expect(orbio.state.calls).toContain("create");

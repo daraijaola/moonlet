@@ -85,7 +85,8 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
 
   let cost = 0, calls = 0, usedModel = o.model;
   for (let step = 0; step < o.maxSteps; step++) {
-    const lastStep = step === o.maxSteps - 1 || cost >= o.maxCostUsd * 0.85;
+    // Cost is only known after a call, so the last tool round starts well before the cap; a single answer can still land near it.
+    const lastStep = step === o.maxSteps - 1 || cost >= o.maxCostUsd * 0.6;
     const body: Record<string, unknown> = {
       model: models[0],
       models: models.length > 1 ? models : undefined,
@@ -141,7 +142,9 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
         }
       }
       o.onTool?.(tc.function.name, safeJson(tc.function.arguments), result);
-      messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result).slice(0, 30_000) });
+      // Tool output is the expensive part of the next call; tighten it as the budget drains and for small caps.
+      const roomChars = cost >= o.maxCostUsd * 0.4 ? 8_000 : o.maxCostUsd < 0.03 ? 14_000 : 30_000;
+      messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result).slice(0, roomChars) });
     }
     if (cost >= o.maxCostUsd) {
       messages.push({ role: "user", content: "Budget reached. Answer now with the final structured output from what you have." });
