@@ -29,6 +29,7 @@ export const TOOL_LABEL: Record<ToolId, string> = {
   sandbox: "Sandboxed shell",
   deliver: "Deliver",
   spawn_moonlet: "Spawn a moonlet",
+  write_document: "Write a file (PDF, DOCX, TXT)",
   github_read: "Read GitHub repo",
   open_pull_request: "Open pull request",
   comment_on_issue: "Comment on issue",

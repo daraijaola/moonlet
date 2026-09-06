@@ -50,6 +50,7 @@ export type ApiRun = {
   trace?: Array<{ at: number; tool: string; summary: string }>;
   sections?: Array<{ check: string; finding: string; changed: boolean }>;
   error: string | null;
+  files?: Array<{ id: string; name: string; mime: string; size: number; url: string }>;
 };
 
 export type ConnectionKind = "telegram" | "github" | "x";

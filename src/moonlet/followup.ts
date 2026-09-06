@@ -4,6 +4,8 @@ import { buildTools } from "./tools";
 import { CADENCE_MS, Cadence } from "./spec";
 import { cadenceReply } from "./budget";
 import type { GitHubConn } from "./connections/github";
+import type { TelegramConn } from "./connections/telegram";
+import { fileSink } from "./files";
 
 /**
  * A follow-up on one report. The owner replies to a result ("why did it move?",
@@ -56,8 +58,14 @@ export async function followup(input: FollowupInput): Promise<string> {
   const runs = await store.listRuns(m.id, 3);
   const run = (input.runId && runs.find((r) => r.id === input.runId)) ?? (input.runId ? await store.getRun(input.runId) : null) ?? runs[0] ?? null;
   const gh = await store.getConnection<GitHubConn>(m.owner, "github");
-  const readOnly = m.spec.tools.filter((t) => !["deliver", "open_pull_request", "comment_on_issue", "post_tweet"].includes(t));
-  const built = buildTools(readOnly, { fetch: input.fetch, delivery: {}, connections: { github: gh?.data } });
+  const readOnly = m.spec.tools.filter((t) => !["deliver", "open_pull_request", "comment_on_issue", "post_tweet", "spawn_moonlet"].includes(t));
+  const tgConn = await store.getConnection<TelegramConn>(m.owner, "telegram");
+  const built = buildTools([...readOnly, "write_document"], {
+    fetch: input.fetch,
+    delivery: {},
+    connections: { github: gh?.data },
+    files: fileSink({ owner: m.owner, moonletId: m.id, runId: run ? run.id : null, chatId: tgConn?.data.chatId, fetch: input.fetch }),
+  });
 
   const context = run
     ? [
@@ -78,6 +86,7 @@ export async function followup(input: FollowupInput): Promise<string> {
     "Terse, concrete, plain text, no markdown, no emoji. Two to six sentences unless they ask for detail. Name sources.",
     "Use the report first. Use a tool only if the answer needs fresh data the report doesn't contain. Never invent numbers.",
     "Never speculate on price direction or give financial advice. Describe what happened.",
+    "If they ask for the report as a file (pdf, docx, txt, md), call write_document once with the full report from the context (and anything new you fetched), then answer in one line naming the file.",
     "If they ask you to change your job (schedule, what to watch), say what they should do: reply 'every 6 hours' style for schedule, or edit the job at the site for scope. Do not pretend to change it.",
     m.memory ? `Your notes from the last run:\n${m.memory}` : "",
     `Your job: ${m.spec.objective}`,

@@ -5,7 +5,7 @@ import { ModelHttpError, runLoop } from "./llm";
 import { OrbioAuthError, type OrbioClient } from "./orbio";
 import { buildInstructions } from "./personality";
 import { RunOutput, RunOutputJsonSchema, type JobSpec } from "./spec";
-import { buildTools, type DeliverySink, type ToolDeps } from "./tools";
+import { buildTools, type DeliverySink, type FileSink, type ToolDeps } from "./tools";
 import { compileJob } from "./compile";
 
 /**
@@ -60,6 +60,7 @@ export type RunDeps = {
   orbio: OrbioClient;
   fetch?: typeof fetch;
   deliver?: DeliverySink;
+  files?: FileSink;
   now?: () => Date;
   bagOf?: (owner: string) => Promise<number>;
 };
@@ -90,9 +91,10 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   }
 
   const attempt = async (k: NonNullable<KeyState>) => {
-    const built = buildTools(m.parentId ? m.spec.tools : [...m.spec.tools, "spawn_moonlet"], {
+    const built = buildTools([...m.spec.tools, "write_document", ...(m.parentId ? [] : ["spawn_moonlet" as const])], {
       fetch: deps.fetch,
       deliver: deps.deliver,
+      files: deps.files,
       delivery: m.delivery,
       connections: m.connections,
       propose: { owner: m.owner, moonletId: m.id, moonletName: m.spec.name, runId: m.runId ?? null, autopilot: !!m.autopilot },

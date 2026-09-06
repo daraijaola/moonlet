@@ -7,6 +7,7 @@ import { runMoonlet } from "./runner";
 import { CADENCE_MS, type Cadence } from "./spec";
 import * as store from "./store";
 import type { DeliverySink } from "./tools";
+import { fileSink } from "./files";
 import { bagOf } from "./bag";
 export { bagOf } from "./bag";
 import * as tg from "./connections/telegram";
@@ -226,13 +227,14 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
       ? async ({ channel, text }) => (channel === "telegram" ? tg.sendMessage(tgConn.data.chatId, tg.esc(text), { fetch: deps.fetch }) : { ok: false })
       : undefined);
   const runId = store.newId("run");
+  const files = fileSink({ owner: m.owner, moonletId: m.id, runId, chatId: tgConn?.data.chatId, fetch: deps.fetch });
   const result = await run(
     {
       id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn },
     },
-    { orbio: guardedOrbio, fetch: deps.fetch, deliver, bagOf: async () => bag },
+    { orbio: guardedOrbio, fetch: deps.fetch, deliver, files, bagOf: async () => bag },
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;

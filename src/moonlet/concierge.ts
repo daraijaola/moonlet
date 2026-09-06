@@ -8,6 +8,9 @@ import { runOne } from "./scheduler";
 import { compileJob } from "./compile";
 import { launchMoonlet } from "./launch";
 import { TEMPLATE_IDS } from "./spec";
+import { DOC_FORMATS, DOC_MIME, renderDocument, safeFilename } from "./documents";
+import { fileSink } from "./files";
+import type { TelegramConn } from "./connections/telegram";
 
 /**
  * The owner talks to their moonlets in Telegram. Free text from a linked chat
@@ -19,7 +22,7 @@ import { TEMPLATE_IDS } from "./spec";
 
 const CHARACTER = `You are the owner's moonlet concierge in Telegram: the voice of their small agents.
 Terse, warm, concrete. One to four short sentences, no markdown, no emoji, no bullet lists unless listing moonlets.
-You can: list their moonlets and what each does, report the latest result, run a moonlet now, pause or resume one, change how often it runs, and spawn a new moonlet from a one-sentence job ("spawn a moonlet that watches wallet 0x…", "make me one that digests my repo nightly").
+You can: list their moonlets and what each does, report the latest result, run a moonlet now, pause or resume one, change how often it runs, send a moonlet's latest report as a file (pdf, docx, txt or md) to this chat and its page, and spawn a new moonlet from a one-sentence job ("spawn a moonlet that watches wallet 0x…", "make me one that digests my repo nightly").
 When spawning, pass the owner's words as the sentence; pick the template yourself. Tell them its name, what it will do, how often, and that it is running its first check now. Include the tool's note if there is one.
 If they ask for something you cannot do (connections, spending, deleting), say so in one line and point to the site.
 Never speculate on price or give financial advice. Never ask for keys or wallet access.
@@ -94,6 +97,25 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
         if (!m) return { error: "no such moonlet" };
         await store.updateMoonlet(m.id, { spec: { ...m.spec, cadence }, cadence, nextRunAt: Math.min(m.nextRunAt, Date.now() + CADENCE_MS[cadence]) });
         return { ok: true, tellOwner: cadenceReply(m.name, m.spec, cadence, m.earnPerDayUsd) };
+      },
+    }),
+    tool({
+      name: "send_report_file",
+      description: "Send a moonlet's latest report (or its last few) to the owner as a file: pdf, docx, txt or md. The file is also kept on the moonlet page.",
+      inputSchema: z.object({ moonlet: z.string(), format: z.enum(DOC_FORMATS).default("pdf"), runs: z.number().int().min(1).max(5).default(1) }),
+      execute: async ({ moonlet, format, runs: n }) => {
+        const m = byName(moonlet);
+        if (!m) return { error: "no such moonlet" };
+        const runs = (await store.listRuns(m.id, n)).filter((r) => r.status !== "quiet" || n === 1);
+        if (!runs.length) return { error: `${m.name} has no report yet` };
+        const content = runs
+          .map((r) => [`# ${r.title}`, `_${new Date(r.at).toISOString().slice(0, 16).replace("T", " ")} UTC · ${r.status}_`, "", r.summary, "", ...(r.sections ?? []).map((sec) => `- **${sec.check}** — ${sec.finding}`), "", r.body, r.sources.length ? `\nSources: ${r.sources.join(", ")}` : ""].join("\n"))
+          .join("\n\n");
+        const title = runs.length === 1 ? `${m.name} · ${runs[0].title}` : `${m.name} · last ${runs.length} reports`;
+        const bytes = await renderDocument({ format, title, content, footer: `${m.name} · ${m.spec.objective} · every run hashed on Robinhood Chain` });
+        const tgConn = await store.getConnection<TelegramConn>(owner, "telegram");
+        const r = await fileSink({ owner, moonletId: m.id, runId: runs[0].id, chatId: tgConn?.data.chatId, fetch: opts.fetch })({ name: safeFilename(title, format), mime: DOC_MIME[format], bytes, caption: title });
+        return { ok: r.ok, file: safeFilename(title, format), sentTo: r.sentTo, tellOwner: r.sentTo?.includes("telegram") ? "The file is right above this message and on the moonlet page." : "Saved on the moonlet page; link Telegram to receive files here." };
       },
     }),
     tool({

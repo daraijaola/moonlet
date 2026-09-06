@@ -21,6 +21,7 @@ export const TOOL_IDS = [
   "comment_on_issue",
   "post_tweet",
   "spawn_moonlet",
+  "write_document",
 ] as const;
 
 /** Tools that need a connection on the owner's account before a moonlet may use them. */

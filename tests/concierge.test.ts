@@ -74,4 +74,27 @@ describe("telegram concierge (real model, owner's key)", () => {
     expect(r).toMatch(/Shadow/);
     expect(r.toLowerCase()).toMatch(/wallet|0x8366/);
   }, 90_000);
+
+  it("sends a moonlet's latest report as a pdf file", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "test-token";
+    const uploads: string[] = [];
+    const f: typeof fetch = async (url, init) => {
+      if (String(url).endsWith("/sendDocument")) {
+        uploads.push((((init!.body as FormData).get("document")) as File).name);
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 901 } }), { headers: { "content-type": "application/json" } });
+      }
+      return fetch(url, init);
+    };
+    try {
+      await store.setConnection(OWNER, "telegram", "@t", { chatId: "4242" });
+      const r = await concierge(OWNER, "send me tide's last report as a pdf", { appUrl: "https://16labs.xyz", fetch: f });
+      console.log("concierge6:", r, uploads);
+      expect(uploads).toHaveLength(1);
+      expect(uploads[0]).toMatch(/\.pdf$/);
+      expect((await store.filesForRuns(["run_1"])).run_1?.[0]?.mime).toBe("application/pdf");
+    } finally {
+      await store.deleteConnection(OWNER, "telegram");
+      delete process.env.TELEGRAM_BOT_TOKEN;
+    }
+  }, 90_000);
 });

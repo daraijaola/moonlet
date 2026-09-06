@@ -140,6 +140,8 @@ export function migrate() {
     await c.execute(`ALTER TABLE moonlets ADD COLUMN memory TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN parent_id TEXT`).catch(() => undefined);
+    await c.execute(`CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, owner TEXT NOT NULL, moonlet_id TEXT NOT NULL, run_id TEXT, name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, bytes BLOB NOT NULL, created_at INTEGER NOT NULL)`).catch(() => undefined);
+    await c.execute(`CREATE INDEX IF NOT EXISTS files_run ON files(run_id)`).catch(() => undefined);
     await c.execute(`CREATE TABLE IF NOT EXISTS tg_messages (chat_id TEXT NOT NULL, message_id INTEGER NOT NULL, run_id TEXT, moonlet_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(chat_id, message_id))`).catch(() => undefined);
   })();
   return ready;
@@ -609,4 +611,46 @@ export function open(sealed: string) {
   const d = createDecipheriv("aes-256-gcm", secretKey(), Buffer.from(iv, "base64url"));
   d.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([d.update(Buffer.from(enc, "base64url")), d.final()]).toString("utf8");
+}
+
+// ---- files a moonlet wrote (reports as PDF/DOCX/TXT), kept on the run ---------
+
+export type FileMeta = { id: string; owner: string; moonletId: string; runId: string | null; name: string; mime: string; size: number; createdAt: number };
+
+export async function saveFile(f: { owner: string; moonletId: string; runId: string | null; name: string; mime: string; bytes: Uint8Array }): Promise<FileMeta> {
+  await migrate();
+  const id = newId("f");
+  const createdAt = Date.now();
+  await db().execute({
+    sql: `INSERT INTO files(id,owner,moonlet_id,run_id,name,mime,size,bytes,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
+    args: [id, f.owner.toLowerCase(), f.moonletId, f.runId, f.name, f.mime, f.bytes.byteLength, f.bytes, createdAt],
+  });
+  return { id, owner: f.owner.toLowerCase(), moonletId: f.moonletId, runId: f.runId, name: f.name, mime: f.mime, size: f.bytes.byteLength, createdAt };
+}
+
+export async function getFile(id: string): Promise<(FileMeta & { bytes: Uint8Array }) | null> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM files WHERE id=?`, args: [id] });
+  const row = r.rows[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  const raw = row.bytes as ArrayBuffer | Uint8Array;
+  return { ...fileMeta(row), bytes: raw instanceof Uint8Array ? raw : new Uint8Array(raw) };
+}
+
+/** Files attached to any of these runs, newest first; a run with none simply has no entry. */
+export async function filesForRuns(runIds: string[]): Promise<Record<string, FileMeta[]>> {
+  await migrate();
+  if (!runIds.length) return {};
+  const r = await db().execute({ sql: `SELECT id,owner,moonlet_id,run_id,name,mime,size,created_at FROM files WHERE run_id IN (${runIds.map(() => "?").join(",")}) ORDER BY created_at DESC`, args: runIds });
+  const out: Record<string, FileMeta[]> = {};
+  for (const row of r.rows as unknown as Record<string, unknown>[]) {
+    const m = fileMeta(row);
+    (out[m.runId ?? ""] ??= []).push(m);
+  }
+  return out;
+}
+
+/** A run's files are moved with it when a follow-up attaches to an older report; nothing to do on delete: files stay with the run. */
+function fileMeta(row: Record<string, unknown>): FileMeta {
+  return { id: row.id as string, owner: row.owner as string, moonletId: row.moonlet_id as string, runId: (row.run_id as string | null) ?? null, name: row.name as string, mime: row.mime as string, size: Number(row.size), createdAt: Number(row.created_at) };
 }

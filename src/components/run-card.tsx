@@ -33,6 +33,18 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
               {!open && run.sections!.length > 3 && <li className="font-mono text-[11px] text-ink-faint">+{run.sections!.length - 3} more</li>}
             </ul>
           )}
+          {(run.files?.length ?? 0) > 0 && (
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {run.files!.map((f) => (
+                <li key={f.id}>
+                  <a href={f.url} download={f.name} className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[11.5px] text-ink hover:border-ink/40" title={`${f.mime} · ${(f.size / 1024).toFixed(0)} KB`}>
+                    <FileGlyph /> {f.name}
+                    <span className="text-ink-faint">{(f.size / 1024).toFixed(0)} KB</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
           {open && hasBody && <pre className="mt-3 whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-[13px] leading-[1.6] text-ink [overflow-wrap:anywhere]">{run.body}</pre>}
           {open && run.sources.length > 0 && (
             <ul className="mt-2 space-y-0.5 font-mono text-[11.5px]">
@@ -80,5 +92,12 @@ const Check = () => (
   <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
     <circle cx="6" cy="6" r="5.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
     <path d="M3.6 6.2 5.3 7.8 8.5 4.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const FileGlyph = () => (
+  <svg width="11" height="12" viewBox="0 0 11 12" aria-hidden>
+    <path d="M1.5 1.5h5l3 3v6h-8z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+    <path d="M6.5 1.5v3h3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
   </svg>
 );

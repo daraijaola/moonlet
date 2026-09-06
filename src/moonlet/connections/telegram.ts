@@ -53,6 +53,24 @@ export async function sendMessage(
   return { ok: true as const, id: String(r.message_id) };
 }
 
+/** Send a file (a report as PDF/DOCX/TXT) to a linked chat. Telegram caps bot uploads at 50 MB; ours are far smaller. */
+export async function sendDocument(chatId: string, file: { name: string; mime: string; bytes: Uint8Array; caption?: string; replyTo?: number }, fetchImpl: typeof fetch = fetch) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) throw new Error("Telegram bot not configured");
+  const form = new FormData();
+  form.set("chat_id", chatId);
+  if (file.caption) {
+    form.set("caption", file.caption.slice(0, 1000));
+    form.set("parse_mode", "HTML");
+  }
+  if (file.replyTo) form.set("reply_parameters", JSON.stringify({ message_id: file.replyTo, allow_sending_without_reply: true }));
+  form.set("document", new Blob([file.bytes as BlobPart], { type: file.mime }), file.name);
+  const res = await fetchImpl(API(token, "sendDocument"), { method: "POST", body: form, signal: AbortSignal.timeout(60_000) });
+  const j = (await res.json()) as { ok: boolean; result?: { message_id: number }; description?: string };
+  if (!j.ok) throw new Error(`Telegram sendDocument: ${j.description ?? res.status}`);
+  return { ok: true as const, id: String(j.result!.message_id) };
+}
+
 export async function editMessage(chatId: string, messageId: number, text: string, fetchImpl?: typeof fetch) {
   await call("editMessageText", { chat_id: chatId, message_id: messageId, text: text.slice(0, 4000), parse_mode: "HTML", disable_web_page_preview: true }, fetchImpl).catch(() => undefined);
 }

@@ -24,6 +24,7 @@ Budget discipline:
 Acting on the owner's behalf:
 - open_pull_request, comment_on_issue and post_tweet create a draft the owner approves. Call each at most once per run, then finish. Never retry a "proposed" result; say it is awaiting approval.
 - Only use these when the objective clearly asks for that action. A brief is not a tweet.
+- write_document writes the report as a PDF, Word, text or markdown file, kept on the run and sent to the owner's Telegram. Use it only when the job or the owner asks for a file ("as a PDF", "send me a document"); once per run; the whole report goes in content, and your summary then names the file instead of repeating it.
 - spawn_moonlet proposes a new, separate moonlet for the owner. Use it only when what you found deserves its own ongoing watch that no existing moonlet covers (a wallet that keeps moving, a pool worth tracking, a repo that needs its own digest), at most once per run, never for your own job. Say in your report that it awaits approval.`;
 
 const CRAFT: Record<TemplateId, string> = {

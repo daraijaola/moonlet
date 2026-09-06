@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { webFetchTool, type LocalTool } from "./llm";
 import { TEMPLATE_IDS, type JobSpec, type TemplateId, type ToolId } from "./spec";
+import { DOC_FORMATS, DOC_MIME, renderDocument, safeFilename, type DocFormat } from "./documents";
 import { readRepo, type GitHubConn } from "./connections/github";
 import { propose, type ProposeCtx } from "./proposals";
 
@@ -18,6 +19,8 @@ export const RH_RPC = process.env.ROBINHOOD_RPC ?? "https://rpc.mainnet.chain.ro
 const DEXSCREENER = "https://api.dexscreener.com";
 
 export type DeliverySink = (msg: { channel: "telegram" | "x"; text: string }) => Promise<{ ok: boolean; id?: string }>;
+/** Keeps a rendered file on the run and pushes a copy to the owner's channel. */
+export type FileSink = (file: { name: string; mime: string; bytes: Uint8Array; caption: string }) => Promise<{ ok: boolean; id?: string; sentTo?: string[]; error?: string }>;
 
 export type ToolDeps = {
   fetch?: typeof fetch;
@@ -28,6 +31,8 @@ export type ToolDeps = {
   propose?: ProposeCtx;
   /** Turns one sentence into a JobSpec (the launch compiler on the run's key). Without it, spawn_moonlet is not offered. */
   compile?: (input: { sentence: string; template: TemplateId; name?: string }) => Promise<JobSpec>;
+  /** Where write_document puts its files. Without it the tool is not offered. */
+  files?: FileSink;
   /** Called after every local tool call with a one-line summary of what it did. */
   trace?: (e: { tool: string; summary: string }) => void;
 };
@@ -330,6 +335,33 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     },
   });
 
+  let wroteFile = false;
+  const writeDocument = tool({
+    name: "write_document",
+    description:
+      "Write the report as a file for the owner: PDF, Word (docx), plain text or markdown. It is saved on this run (downloadable from the moonlet page) and sent to their Telegram as a document. Use only when the job or the owner asks for a file. Put the complete, final report in content using light markdown (# headings, - bullets, paragraphs). Once per run.",
+    inputSchema: z.object({
+      format: z.enum(DOC_FORMATS).describe("pdf unless the owner asked for docx, txt or md"),
+      title: z.string().min(3).max(120),
+      filename: z.string().min(1).max(80).optional().describe("Without extension; defaults to the title"),
+      content: z.string().min(20).max(60_000).describe("The whole report, light markdown"),
+    }),
+    execute: traced("write_document", (a: { format: DocFormat; title: string; filename?: string; content: string }, r: unknown) => `${a.format} · ${brief(a.title, 60)} · ${brief(r, 60)}`, async ({ format, title, filename, content }) => {
+      if (!deps.files) return { error: "files are unavailable in this environment" };
+      if (wroteFile) return { error: "already wrote a file this run; do not retry" };
+      wroteFile = true;
+      try {
+        const bytes = await renderDocument({ format, title, content, footer: `Written by a moonlet · ${new Date().toISOString().slice(0, 10)} · every run hashed on Robinhood Chain` });
+        const name = safeFilename(filename ?? title, format);
+        const r = await deps.files({ name, mime: DOC_MIME[format], bytes, caption: title });
+        if (!r.ok) return { written: false, error: r.error ?? "could not save the file", note: "Do not retry; put the report in your output instead." };
+        return { written: true, file: name, bytes: bytes.byteLength, sentTo: r.sentTo ?? [], note: "Mention the file by name in your summary; do not paste the whole report again." };
+      } catch (e) {
+        return { written: false, error: (e as Error).message.slice(0, 160), note: "Do not retry; put the report in your output instead." };
+      }
+    }),
+  });
+
   const webFetch: LocalTool = { ...webFetchTool(f), execute: traced("web_fetch", (a: { url: string }, r: unknown) => `${a.url} · ${brief(r, 90)}`, webFetchTool(f).execute as never) as never };
 
   const all: Partial<Record<ToolId, LocalTool>> = {
@@ -342,12 +374,14 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     comment_on_issue: commentIssue,
     post_tweet: postTweet,
     spawn_moonlet: spawnMoonlet,
+    write_document: writeDocument,
   };
 
   const available = (id: ToolId) => {
     if (id === "github_read" || id === "open_pull_request" || id === "comment_on_issue") return !!ghToken;
     if (id === "post_tweet") return !!deps.connections?.x;
     if (id === "spawn_moonlet") return !!deps.compile && !!deps.propose;
+    if (id === "write_document") return !!deps.files;
     return true;
   };
   const tools = ids.filter(available).map((id) => all[id]).filter((t): t is LocalTool => !!t);

@@ -325,7 +325,7 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
         <div className="sm:col-span-2">
           <span className={label}>Tools</span>
           <div className="mt-1.5 flex flex-wrap gap-2">
-            {TOOL_IDS.filter((t) => t !== "spawn_moonlet").map((t) => {
+            {TOOL_IDS.filter((t) => t !== "spawn_moonlet" && t !== "write_document").map((t) => {
               const on = spec.tools.includes(t);
               return (
                 <button key={t} type="button" onClick={() => toggleTool(t)} disabled={t === "deliver"} className={`rounded-md border px-2.5 py-1 font-mono text-[12px] transition-colors ${on ? "border-ink bg-ink text-cream" : "border-ink/15 text-ink-soft hover:border-ink/40"} disabled:opacity-70`}>

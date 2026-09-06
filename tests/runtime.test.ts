@@ -168,6 +168,29 @@ describe("runner", () => {
     expect(r.output?.summary.toLowerCase()).toMatch(/approv|awaiting|pending/);
   }, 180_000);
 
+  it("10. 'send it as a PDF' → the run writes one file, the summary names it, the report is not duplicated", async () => {
+    process.env.DATABASE_URL = "file:/tmp/moonlet-runtime.db";
+    process.env.SECRET_KEY = "test";
+    const orbio = fakeOrbio({ realKey: KEY });
+    const files: Array<{ name: string; mime: string; size: number; caption: string }> = [];
+    const spec: Spec = { ...marketWatch, name: "Quill", objective: `Brief me on $ORBIO (${ORBIO_CA}) on Robinhood Chain: price, liquidity and volume right now, and send me the brief as a PDF.`, spendCapUsd: 0.05 };
+    const r = await runMoonlet({ id: "m_t10", owner: OWNER, bag: 1_250_000, spec, delivery: {}, key: null }, {
+      orbio: orbio.client,
+      files: async (f) => {
+        files.push({ name: f.name, mime: f.mime, size: f.bytes.byteLength, caption: f.caption });
+        return { ok: true, id: "f_1", sentTo: ["moonlet page", "telegram"] };
+      },
+    });
+    console.log("run10:", r.status, r.error, "\n", r.output?.title, "\n", r.output?.summary, "\n", files, "\n", r.trace.map((t) => `${t.tool}: ${t.summary}`));
+    expect(r.status).toBe("done");
+    expect(files).toHaveLength(1);
+    expect(files[0].mime).toBe("application/pdf");
+    expect(files[0].size).toBeGreaterThan(800);
+    expect(files[0].name).toMatch(/\.pdf$/);
+    expect(r.trace.filter((t) => t.tool === "write_document")).toHaveLength(1);
+    expect(r.output?.summary.toLowerCase()).toMatch(/pdf|file|attached|document/);
+  }, 180_000);
+
   it("delivery tool refuses channels the owner didn't configure, and uses the sink when they did", async () => {
     const orbio = fakeOrbio({ realKey: KEY });
     const sent: string[] = [];
