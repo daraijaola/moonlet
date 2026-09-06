@@ -31,6 +31,11 @@ export function DitherField({ className, from = "right" }: { className?: string;
     <div aria-hidden className={`dither-field pointer-events-none absolute ${from === "left" ? "dither-left" : from === "around" ? "dither-around" : ""} ${className ?? ""}`}>
       <Dithering
         style={{ width: "100%", height: "100%" }}
+        // Paper Shaders renders at 2x device pixels by default: 6M+ shader evaluations per frame per field, and
+        // there are several fields on a page. A 3px Bayer dither loses nothing at 1x, so render at native pixels
+        // and cap at one 1080p frame; the library already pauses fields that are off-screen or in a hidden tab.
+        minPixelRatio={1}
+        maxPixelCount={1920 * 1080}
         speed={reduced ? 0 : 0.5}
         frame={40000}
         colorBack="#00000000"
