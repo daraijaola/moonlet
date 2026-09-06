@@ -11,6 +11,7 @@ import * as tg from "./connections/telegram";
 import type { GitHubConn } from "./connections/github";
 import { telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
+import { followup } from "./followup";
 
 /**
  * The scheduler is what a cron tick calls. It picks due moonlets, claims each
@@ -99,7 +100,16 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
   await anchorPending(deps).catch(() => undefined);
   await tg.configureBot(deps.fetch).catch(() => undefined);
-  tg.setChatHandler((owner, text) => concierge(owner, text, { appUrl: process.env.APP_URL ?? "https://16labs.xyz", fetch: deps.fetch }));
+  tg.setChatHandler(async (owner, text, ctx) => {
+    // A reply to a report (or a photo, or a short question right after one) is a follow-up on that report.
+    const ref = ctx.replyToMessageId ? await store.telegramMessageRef(ctx.chatId, ctx.replyToMessageId) : null;
+    if (ref) return followup({ moonletId: ref.moonletId, owner, text, runId: ref.runId, imageUrl: ctx.imageUrl, fetch: deps.fetch });
+    if (ctx.imageUrl) {
+      const last = await store.lastTelegramRef(ctx.chatId);
+      if (last) return followup({ moonletId: last.moonletId, owner, text, runId: last.runId, imageUrl: ctx.imageUrl, fetch: deps.fetch });
+    }
+    return concierge(owner, text, { appUrl: process.env.APP_URL ?? "https://16labs.xyz", fetch: deps.fetch });
+  });
   await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
   return results;
 }
@@ -242,7 +252,8 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
         ? `\n\n${tg.esc(o.body.slice(0, 2500))}`
         : "";
     const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
-    await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch(() => undefined);
+    const sent = await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch(() => null);
+    if (sent) await store.rememberTelegramMessage(tgConn.data.chatId, Number(sent.id), m.id, runId).catch(() => undefined);
   } else if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && !alreadyDelivered) {
     await deliver({ channel: "telegram", text: `${result.output.title}\n\n${result.output.summary}` }).catch(() => undefined);
   }

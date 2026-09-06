@@ -85,7 +85,7 @@ function NewInner() {
         return;
       }
       const r = await api.launch(address, { spec, delivery, autopilot, runNow: true });
-      router.push(`/app?m=${r.moonlet.id}`);
+      router.push(`/app?m=${r.moonlet.id}&launched=1`);
     } catch (e) {
       setErr((e as Error).message);
       setLaunching(false);

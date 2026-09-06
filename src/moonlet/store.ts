@@ -137,6 +137,7 @@ export function migrate() {
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN memory TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
+    await c.execute(`CREATE TABLE IF NOT EXISTS tg_messages (chat_id TEXT NOT NULL, message_id INTEGER NOT NULL, run_id TEXT, moonlet_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(chat_id, message_id))`).catch(() => undefined);
   })();
   return ready;
 }
@@ -546,6 +547,25 @@ export async function decideProposal(id: string, status: "approved" | "rejected"
 
 export async function finishProposal(id: string, status: "executed" | "failed", result: Record<string, unknown>) {
   await db().execute({ sql: `UPDATE proposals SET status=?, result=? WHERE id=?`, args: [status, JSON.stringify(result), id] });
+}
+
+/** Remember which Telegram message carried which report, so a reply can be routed to it. */
+export async function rememberTelegramMessage(chatId: string, messageId: number, moonletId: string, runId: string | null) {
+  await migrate();
+  await db().execute({ sql: `INSERT OR REPLACE INTO tg_messages(chat_id,message_id,run_id,moonlet_id,created_at) VALUES(?,?,?,?,?)`, args: [chatId, messageId, runId, moonletId, Date.now()] });
+}
+export async function telegramMessageRef(chatId: string, messageId: number): Promise<{ moonletId: string; runId: string | null } | null> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT moonlet_id, run_id FROM tg_messages WHERE chat_id=? AND message_id=?`, args: [chatId, messageId] });
+  const row = r.rows[0];
+  return row ? { moonletId: row.moonlet_id as string, runId: (row.run_id as string | null) ?? null } : null;
+}
+/** The last report this chat received, for replies that aren't threaded. */
+export async function lastTelegramRef(chatId: string): Promise<{ moonletId: string; runId: string | null } | null> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT moonlet_id, run_id FROM tg_messages WHERE chat_id=? ORDER BY created_at DESC LIMIT 1`, args: [chatId] });
+  const row = r.rows[0];
+  return row ? { moonletId: row.moonlet_id as string, runId: (row.run_id as string | null) ?? null } : null;
 }
 
 export async function setProposalTelegram(id: string, msg: { chatId: string; messageId: number }) {

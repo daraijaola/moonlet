@@ -32,14 +32,15 @@ function DashboardInner() {
     setConns(c);
   }, [address]);
 
+  const anyRunning = !!moonlets?.some((m) => m.status === "running");
   useEffect(() => {
     const first = setTimeout(load, 0);
-    const t = setInterval(load, 15_000);
+    const t = setInterval(load, anyRunning ? 4000 : 15_000);
     return () => {
       clearTimeout(first);
       clearInterval(t);
     };
-  }, [load]);
+  }, [load, anyRunning]);
 
   if (!moonlets) {
     return <p className="py-20 text-center font-mono text-[13px] text-ink-soft">Loading your orbit…</p>;
@@ -90,7 +91,7 @@ function DashboardInner() {
 
       <div className="min-w-0">
         <Queue owner={address!} />
-        <Detail key={selected.id} m={selected} owner={address!} onChange={load} />
+        <Detail key={selected.id} m={selected} owner={address!} onChange={load} conns={conns} launched={params.get("launched") === "1"} />
       </div>
     </div>
   );
@@ -232,8 +233,18 @@ const Row = ({ k, v }: { k: string; v: string }) => (
   </div>
 );
 
-function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange: () => Promise<void> }) {
+function Detail({ m, owner, onChange, conns, launched }: { m: ApiMoonlet; owner: string; onChange: () => Promise<void>; conns: Connections | null; launched?: boolean }) {
   const [runs, setRuns] = useState<ApiRun[] | null>(null);
+  const [thread, setThread] = useState<Array<{ q: string; a: string | null; runId?: string }>>([]);
+  const [question, setQuestion] = useState("");
+  const [asking, setAsking] = useState(false);
+  const tg = conns?.connections.find((c) => c.kind === "telegram");
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((x) => x + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+  void tick;
   const [anchoring, setAnchoring] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -289,7 +300,27 @@ function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange
         </Link>
       </header>
 
-      <div className="mt-6 grid gap-4 md:grid-cols-[auto_1fr]">
+      <div className={`mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border p-3.5 ${m.status === "running" ? "border-gold bg-gold/10" : "border-ink/10 bg-white"}`}>
+        <div className="flex items-center gap-2.5">
+          <StatusDot tone={m.status === "running" ? "green" : quiet ? "grey" : "green"} pulse={m.status === "running"} />
+          <p className="text-[13.5px] text-ink">
+            {m.status === "running"
+              ? <>Working on {m.runsTotal === 0 ? "its first report" : "a report"} now — about a minute.</>
+              : m.status === "paused"
+                ? <>Paused. Resume to pick the schedule back up.</>
+                : m.status === "quiet"
+                  ? <>Quiet: not enough fuel. It wakes up when the bag earns.</>
+                  : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>}
+          </p>
+        </div>
+        <p className="flex items-center gap-2 font-mono text-[12px] text-ink-soft sm:ml-auto">
+          <span>delivered to</span>
+          {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 text-moss"><TelegramMark size={11} /> {tg.label}</span> : <Link href="/app/connections" className="underline decoration-ink/30 hover:text-ink">link Telegram</Link>}
+          <span>+ this page</span>
+        </p>
+      </div>
+
+      <div className="mt-4 grid gap-4 md:grid-cols-[auto_1fr]">
         <div className="rounded-lg border border-ink/10 bg-white p-5">
           <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={m.keyRemainingUsd} quiet={quiet} size="lg" />
         </div>
@@ -344,12 +375,57 @@ function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange
           <p className="font-mono text-[13px] text-ink-soft">Loading…</p>
         ) : (
           <div className="space-y-2.5">
+            {(runs.length > 0 || thread.length > 0) && (
+              <div className="rounded-lg border border-ink/10 bg-white p-3.5">
+                {thread.length > 0 && (
+                  <ul className="mb-3 space-y-3">
+                    {thread.map((t, i) => (
+                      <li key={i} className="space-y-1.5">
+                        <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] text-cream">{t.q}</p>
+                        <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-paper px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                <form
+                  className="flex items-end gap-2"
+                  onSubmit={async (e) => {
+                    e.preventDefault();
+                    const q = question.trim();
+                    if (!q || asking) return;
+                    setQuestion("");
+                    setAsking(true);
+                    const runId = runs[0]?.id;
+                    setThread((t) => [...t, { q, a: null, runId }]);
+                    try {
+                      const r = await api.ask(owner, m.id, q, runId);
+                      setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: r.reply } : x)));
+                      if (/\bnow reports\b/i.test(r.reply)) await onChange();
+                    } catch (err) {
+                      setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: `Couldn't answer: ${(err as Error).message}` } : x)));
+                    }
+                    setAsking(false);
+                  }}
+                >
+                  <input
+                    value={question}
+                    onChange={(e) => setQuestion(e.target.value)}
+                    placeholder={runs.length ? `Ask ${m.name} about its latest report, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
+                    className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
+                  />
+                  <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">
+                    {asking ? "…" : "Ask"}
+                  </button>
+                </form>
+                <p className="mt-2 font-mono text-[11px] text-ink-faint">Same brain, same tools, billed to its key. {tg ? "You can also reply to its Telegram messages." : ""}</p>
+              </div>
+            )}
             {m.status === "running" && (
               <div className="flex items-center gap-3 rounded-lg border border-gold bg-gold/10 p-4">
                 <StatusDot tone="green" pulse />
                 <div>
-                  <p className="text-[14px] font-semibold text-ink">Working now</p>
-                  <p className="font-mono text-[12px] text-ink-soft">Reading sources, calling tools, writing the brief. The result lands here in under a minute.</p>
+                  <p className="text-[14px] font-semibold text-ink">{launched && m.runsTotal === 0 ? "Launched. First report on the way." : "Working now"}</p>
+                  <p className="font-mono text-[12px] text-ink-soft">Reading sources, calling tools, writing the report. It lands here{tg ? ` and in Telegram (${tg.label})` : ""} in under a minute.</p>
                 </div>
               </div>
             )}
