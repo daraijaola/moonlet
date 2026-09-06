@@ -1,8 +1,9 @@
-import { callModel, stepCountIs, tool, maxCost } from "@openrouter/agent";
 import { z } from "zod";
 import * as store from "./store";
-import { makeClient, pickModel } from "./model";
+import { pickModel } from "./model";
+import { runLoop, type LocalTool } from "./llm";
 import { Cadence, CADENCE_MS } from "./spec";
+import { CADENCE_WORDS, cadenceReply } from "./budget";
 import { runOne } from "./scheduler";
 
 /**
@@ -21,7 +22,6 @@ Never speculate on price or give financial advice. Never ask for keys or wallet 
 When you run something now, say it started and that the result will arrive here in about a minute.
 Use tool results; do not invent moonlets, runs or numbers.`;
 
-const CADENCE_WORDS: Record<Cadence, string> = { "15m": "every 15 minutes", "1h": "hourly", "4h": "every 4 hours", "6h": "every 6 hours", "12h": "every 12 hours", "24h": "daily", "7d": "weekly" };
 
 export async function concierge(owner: string, text: string, opts: { appUrl: string; fetch?: typeof fetch; runNow?: (id: string) => Promise<unknown> } ): Promise<string> {
   const moonlets = await store.listMoonlets(owner);
@@ -47,6 +47,7 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
     page: `${opts.appUrl}/s/${m.id}`,
   });
 
+  const tool = <S extends z.ZodType>(t: { name: string; description: string; inputSchema: S; execute: (a: z.infer<S>) => Promise<unknown> }): LocalTool => ({ name: t.name, description: t.description, schema: t.inputSchema, execute: t.execute as never });
   const tools = [
     tool({
       name: "list_moonlets",
@@ -87,7 +88,7 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
         const m = byName(moonlet);
         if (!m) return { error: "no such moonlet" };
         await store.updateMoonlet(m.id, { spec: { ...m.spec, cadence }, cadence, nextRunAt: Math.min(m.nextRunAt, Date.now() + CADENCE_MS[cadence]) });
-        return { ok: true, moonlet: m.name, cadence: CADENCE_WORDS[cadence] };
+        return { ok: true, tellOwner: cadenceReply(m.name, m.spec, cadence, m.earnPerDayUsd) };
       },
     }),
     tool({
@@ -103,13 +104,22 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
     }),
   ];
 
-  const result = callModel(makeClient(key), {
-    model: pickModel(0, "compile"),
-    instructions: `${CHARACTER}\n\nIt is ${new Date().toISOString()}. The owner has ${moonlets.length} moonlet${moonlets.length === 1 ? "" : "s"}: ${moonlets.map((m) => `${m.name} (${CADENCE_WORDS[m.spec.cadence]}, ${m.status})`).join(", ")}. Site: ${opts.appUrl}`,
-    input: text,
-    tools,
-    stopWhen: [maxCost(0.02), stepCountIs(4)],
-  });
-  const reply = (await result.getText()).trim();
-  return reply || "Done.";
+  try {
+    const r = await runLoop({
+      key,
+      model: pickModel(0, "compile"),
+      instructions: `${CHARACTER}\n\nIt is ${new Date().toISOString()}. The owner has ${moonlets.length} moonlet${moonlets.length === 1 ? "" : "s"}: ${moonlets.map((m) => `${m.name} (${CADENCE_WORDS[m.spec.cadence]}, ${m.status})`).join(", ")}. Site: ${opts.appUrl}`,
+      input: text,
+      tools,
+      maxCostUsd: 0.02,
+      maxSteps: 4,
+      fetch: opts.fetch,
+    });
+    const reply = r.text.trim();
+    return reply || "Done.";
+  } catch (e) {
+    const msg = String((e as Error).message ?? e);
+    if (/401|user not found|unauthorized|402|insufficient/i.test(msg)) return `Your moonlets' key isn't working right now; it rotates on the next run. Meanwhile: ${opts.appUrl}/app`;
+    throw e;
+  }
 }

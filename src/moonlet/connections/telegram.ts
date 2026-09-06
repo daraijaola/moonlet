@@ -110,13 +110,26 @@ export async function beginLink(owner: string) {
 
 type Update = {
   update_id: number;
-  message?: { message_id: number; text?: string; chat: { id: number; type: string; username?: string; first_name?: string } };
+  message?: {
+    message_id: number;
+    text?: string;
+    caption?: string;
+    photo?: Array<{ file_id: string; width: number; height: number }>;
+    reply_to_message?: { message_id: number };
+    chat: { id: number; type: string; username?: string; first_name?: string };
+  };
   callback_query?: { id: string; data?: string; message?: { message_id: number; chat: { id: number } } };
 };
 
 export type CallbackHandler = (action: "approve" | "reject", proposalId: string, ctx: { chatId: string; messageId: number }) => Promise<string>;
 /** Free text from a linked chat. Returns the reply (HTML-escaped by the caller). */
-export type ChatHandler = (owner: string, text: string) => Promise<string>;
+export type ChatHandler = (owner: string, text: string, ctx: { chatId: string; replyToMessageId?: number; imageUrl?: string }) => Promise<string>;
+
+/** Public URL for a photo the owner sent; Telegram file URLs embed the bot token, so callers must not log them. */
+export async function fileUrl(fileId: string, fetchImpl?: typeof fetch) {
+  const f = await call<{ file_path: string }>("getFile", { file_id: fileId }, fetchImpl);
+  return `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${f.file_path}`;
+}
 let chatHandler: ChatHandler | null = null;
 export function setChatHandler(h: ChatHandler | null) {
   chatHandler = h;
@@ -158,15 +171,16 @@ async function processUpdatesInner(onCallback: CallbackHandler, fetchImpl: typeo
   for (const u of updates) {
     last = Math.max(last, u.update_id);
     try {
-      if (u.message?.text && u.message.chat.type === "private") {
+      if ((u.message?.text || u.message?.photo?.length) && u.message.chat.type === "private") {
         const chatId = String(u.message.chat.id);
-        const [cmd, arg] = u.message.text.trim().split(/\s+/);
-        const command = cmd.replace(/@\w+$/, "").toLowerCase();
+        const text = u.message.text ?? u.message.caption ?? "";
+        const [cmd, arg] = text.trim().split(/\s+/);
+        const command = (cmd ?? "").replace(/@\w+$/, "").toLowerCase();
         if (command === "/start" && arg) {
           const hit = await store.takeLinkCode(arg);
           if (hit && hit.kind === "telegram") {
             await store.setConnection(hit.owner, "telegram", u.message.chat.username ? `@${u.message.chat.username}` : (u.message.chat.first_name ?? "Telegram"), { chatId, username: u.message.chat.username, firstName: u.message.chat.first_name } satisfies TelegramConn);
-            await sendMessage(chatId, `✓ Linked to <b>${esc(hit.owner.slice(0, 6))}…${esc(hit.owner.slice(-4))}</b>.\n\nYour moonlets will report here. When one wants to post or open a pull request, you'll get it with Approve / Reject buttons. Send /status any time.`, { fetch: fetchImpl });
+            await sendMessage(chatId, `✓ Linked to <b>${esc(hit.owner.slice(0, 6))}…${esc(hit.owner.slice(-4))}</b>.\n\nYour moonlets will report here. Reply to any report to dig into it, send a screenshot, or just talk to me: "what did Tide find?", "run it now", "make it every 6 hours". Anything that needs your OK comes with Approve / Reject buttons.`, { fetch: fetchImpl });
             linked++;
           } else {
             await sendMessage(chatId, `That link has expired. Open ${esc(APP())}/app/connections and tap <b>Link Telegram</b> again.`, { fetch: fetchImpl });
@@ -190,7 +204,9 @@ async function processUpdatesInner(onCallback: CallbackHandler, fetchImpl: typeo
             );
           } else {
             await call("sendChatAction", { chat_id: chatId, action: "typing" }, fetchImpl).catch(() => undefined);
-            const reply = await chatHandler(owner, u.message.text).catch((e) => `I couldn't think just now (${(e as Error).message.slice(0, 80)}). Try again in a minute, or use ${APP()}/app.`);
+            const photo = u.message.photo?.length ? u.message.photo[u.message.photo.length - 1] : undefined;
+            const imageUrl = photo ? await fileUrl(photo.file_id, fetchImpl).catch(() => undefined) : undefined;
+            const reply = await chatHandler(owner, text, { chatId, replyToMessageId: u.message.reply_to_message?.message_id, imageUrl }).catch((e) => `I couldn't think just now (${(e as Error).message.slice(0, 80)}). Try again in a minute, or use ${APP()}/app.`);
             await sendMessage(chatId, esc(reply), { fetch: fetchImpl });
           }
         }

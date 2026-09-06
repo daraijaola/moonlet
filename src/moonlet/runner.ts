@@ -1,7 +1,7 @@
-import { callModel, maxCost, stepCountIs } from "@openrouter/agent";
 import { createHash } from "node:crypto";
-import { keyClaimAmount, keyNeedsRefill, plan, type Plan } from "./budget";
-import { fallbackModels, makeClient, pickModel, type OpenRouterClient } from "./model";
+import { plan, type Plan } from "./budget";
+import { fallbackModels, pickModel } from "./model";
+import { ModelHttpError, runLoop } from "./llm";
 import { OrbioAuthError, type OrbioClient } from "./orbio";
 import { buildInstructions } from "./personality";
 import { RunOutput, RunOutputJsonSchema, type JobSpec } from "./spec";
@@ -30,6 +30,7 @@ export type MoonletState = {
   key: KeyState;
   autopilot?: boolean;
   connections?: ToolDeps["connections"];
+  memory?: string | null;
   runId?: string | null;
 };
 
@@ -54,7 +55,6 @@ export type RunResult = {
 
 export type RunDeps = {
   orbio: OrbioClient;
-  clientFor?: (apiKey: string) => OpenRouterClient;
   fetch?: typeof fetch;
   deliver?: DeliverySink;
   now?: () => Date;
@@ -86,10 +86,8 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
     return { ok: true, status: "quiet", costUsd: 0, model, modelCalls: 0, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key };
   }
 
-  const clientFor = deps.clientFor ?? makeClient;
   const attempt = async (k: NonNullable<KeyState>) => {
-    const client = clientFor(k.key);
-    const tools = buildTools(m.spec.tools, {
+    const built = buildTools(m.spec.tools, {
       fetch: deps.fetch,
       deliver: deps.deliver,
       delivery: m.delivery,
@@ -97,19 +95,20 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       propose: { owner: m.owner, moonletId: m.id, moonletName: m.spec.name, runId: m.runId ?? null, autopilot: !!m.autopilot },
       trace: (e) => trace.push({ at: Date.now() - t0, ...e }),
     });
-    const result = callModel(client, {
+    const r = await runLoop({
+      key: k.key,
       model,
       models: fallbackModels(model),
-      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login }),
-      input: `Run your job now. Finish with the structured output.`,
-      tools,
-      stopWhen: [maxCost(p.perRunCapUsd), stepCountIs(8)],
-      text: { format: { type: "json_schema", name: "run_output", strict: true, schema: RunOutputJsonSchema as Record<string, unknown> } },
-      doomLoop: true,
+      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, memory: m.memory ?? undefined }),
+      input: "Run your job now. Finish with the structured output.",
+      tools: built.tools,
+      webSearch: built.webSearch,
+      jsonSchema: { name: "run_output", schema: RunOutputJsonSchema as Record<string, unknown> },
+      maxCostUsd: p.perRunCapUsd,
+      maxSteps: 8,
+      fetch: deps.fetch,
     });
-    const text = await result.getText();
-    const usage = await result.getUsage();
-    return { text, cost: usage.cost ?? 0, calls: usage.modelCalls };
+    return { text: r.text, cost: r.costUsd, calls: r.modelCalls };
   };
 
   const attemptWithBackoff = async (k: NonNullable<KeyState>) => {
@@ -132,9 +131,14 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   } catch (e) {
     if (!isKeyExhausted(e)) return fail(e, "run", { t0, model, p, keyEvents, trace, key });
     try {
-      const rotated = await deps.orbio.rotateKey();
-      key = { key: rotated.key, limitUsd: rotated.limitUsd, spentUsd: 0 };
-      keyEvents.push({ kind: "rotated", detail: "key rejected mid-run; rotated and retried", amountUsd: rotated.limitUsd });
+      const bal = await deps.orbio.getBalance();
+      if (bal.availableUsd < p.perRunCapUsd) {
+        keyEvents.push({ kind: "quiet", detail: "key rejected and the balance can't fund a run" });
+        return { ok: true, status: "quiet", costUsd: 0, model, modelCalls: 0, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key: null };
+      }
+      const minted = await deps.orbio.createKey("moonlet");
+      key = { key: minted.key, limitUsd: bal.availableUsd, spentUsd: 0 };
+      keyEvents.push({ kind: "rotated", detail: "key rejected mid-run; re-minted the Orbio key and retried", amountUsd: bal.availableUsd });
       ({ text, cost, calls } = await attemptWithBackoff(key));
     } catch (e2) {
       return fail(e2, "run-after-rotate", { t0, model, p, keyEvents, trace, key });
@@ -161,50 +165,51 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   };
 }
 
+/**
+ * Funding on Orbio's account-key model. One Orbio key per wallet draws on the
+ * live balance; every moonlet of that wallet shares it. Legacy OpenRouter keys
+ * (capped, sk-or-…) keep working until spent; when one runs dry we fold it back
+ * into the balance and move to the account key.
+ */
 async function ensureFunded(key: KeyState, p: Plan, orbio: OrbioClient, events: KeyEvent[]): Promise<KeyState> {
-  const want = keyClaimAmount(p);
-  if (!key) {
-    const bal = await orbio.getBalance();
-    const floor = Math.max(p.perRunCapUsd, 0.05);
-    if (bal.availableUsd >= floor) {
-      try {
-        const claimed = await orbio.claimKey(Math.min(want, bal.availableUsd));
-        events.push({ kind: "claimed", detail: `claimed a funded key from Orbio balance`, amountUsd: claimed.limitUsd });
-        return { key: claimed.key, limitUsd: claimed.limitUsd, spentUsd: 0 };
-      } catch (e) {
-        // Orbio issues one key per wallet; if the holder already claimed theirs, fall through and adopt it.
-        if (!/already|exists|active key/i.test(String((e as Error).message))) throw e;
-      }
-    }
-    // The holder may have moved their credits into a key themselves. Orbio never
-    // returns an existing secret, so rotate it: same balance, fresh secret that
-    // only the moonlet holds. Their old key string stops working.
-    const existing = await orbio.getKeyStatus().catch(() => null);
-    if (!existing || existing.limitUsd <= 0 || existing.remainingUsd < floor) return null;
-    const rotated = await orbio.rotateKey();
-    events.push({ kind: "rotated", detail: `adopted the wallet's existing Orbio key ($${existing.remainingUsd.toFixed(2)} left) by rotating it`, amountUsd: rotated.limitUsd });
-    return { key: rotated.key, limitUsd: rotated.limitUsd, spentUsd: 0 };
-  }
+  const floor = Math.max(p.perRunCapUsd, 0.02);
   const status = await orbio.getKeyStatus();
-  if (!status.active) {
-    const rotated = await orbio.rotateKey();
-    events.push({ kind: "rotated", detail: "key was inactive; rotated", amountUsd: rotated.limitUsd });
-    return { key: rotated.key, limitUsd: rotated.limitUsd, spentUsd: 0 };
-  }
-  if (keyNeedsRefill(status.remainingUsd, p)) {
-    const bal = await orbio.getBalance();
-    const amount = Math.min(want, bal.availableUsd, 200 - status.remainingUsd);
-    if (amount >= p.perRunCapUsd) {
-      const after = await orbio.topUpKey(amount);
-      events.push({ kind: "topped_up", detail: `key had $${status.remainingUsd.toFixed(2)} left; topped up`, amountUsd: amount });
-      return { key: key.key, limitUsd: after.limitUsd, spentUsd: after.spentUsd };
+
+  // A legacy capped key we already hold: use it while it has room.
+  if (key && !key.key.startsWith("sk-orbio-")) {
+    const legacy = status.legacy;
+    if (legacy && legacy.active && legacy.remainingUsd >= floor) return { key: key.key, limitUsd: legacy.limitUsd, spentUsd: legacy.spentUsd };
+    if (legacy && !legacy.active) events.push({ kind: "rotated", detail: "legacy OpenRouter key was disabled; moving to the Orbio account key" });
+    if (legacy && legacy.active && legacy.remainingUsd > 0 && legacy.remainingUsd < floor) {
+      const back = await orbio.deleteLegacyKey().catch(() => null);
+      if (back) events.push({ kind: "topped_up", detail: `folded $${back.returnedUsd.toFixed(2)} left on the legacy key back into the balance`, amountUsd: back.returnedUsd });
     }
-    if (status.remainingUsd < p.perRunCapUsd) return null;
+    key = null;
   }
-  return { key: key.key, limitUsd: status.limitUsd, spentUsd: status.spentUsd };
+
+  const bal = await orbio.getBalance();
+  if (bal.availableUsd < floor) {
+    // Nothing spendable, but a legacy key with money may still exist (the holder claimed it by hand).
+    const legacy = status.legacy;
+    if (legacy && legacy.active && legacy.remainingUsd >= floor && !key) {
+      const back = await orbio.deleteLegacyKey().catch(() => null);
+      if (back && back.returnedUsd >= floor) {
+        events.push({ kind: "topped_up", detail: `moved $${back.returnedUsd.toFixed(2)} from the wallet's legacy OpenRouter key into the Orbio balance`, amountUsd: back.returnedUsd });
+      } else return null;
+    } else return null;
+  }
+
+  // Account key: reuse ours if Orbio still knows it; otherwise mint one (this retires any other).
+  if (key && key.key.startsWith("sk-orbio-") && status.hasKey && (!status.prefix || key.key.startsWith(status.prefix.replace(/…$/, "")))) {
+    return { key: key.key, limitUsd: bal.availableUsd, spentUsd: 0 };
+  }
+  const minted = await orbio.createKey("moonlet");
+  events.push({ kind: "claimed", detail: status.hasKey ? "re-minted the Orbio account key (previous one retired)" : "minted the Orbio account key; it spends the live balance", amountUsd: bal.availableUsd });
+  return { key: minted.key, limitUsd: bal.availableUsd, spentUsd: 0 };
 }
 
 function httpStatus(e: unknown) {
+  if (e instanceof ModelHttpError) return e.status;
   return (e as { statusCode?: number })?.statusCode ?? (e as { status?: number })?.status;
 }
 
@@ -222,19 +227,42 @@ function isKeyExhausted(e: unknown) {
 }
 
 function safeParseOutput(text: string): RunOutput | null {
-  try {
-    const r = RunOutput.safeParse(JSON.parse(text));
-    return r.success ? r.data : null;
-  } catch {
-    const m = text.match(/\{[\s\S]*\}/);
-    if (!m) return null;
+  const candidates: string[] = [text.trim()];
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  if (fenced) candidates.unshift(fenced.trim());
+  const first = text.indexOf("{"), last = text.lastIndexOf("}");
+  if (first >= 0 && last > first) candidates.push(text.slice(first, last + 1));
+  for (const c of candidates) {
     try {
-      const r = RunOutput.safeParse(JSON.parse(m[0]));
-      return r.success ? r.data : null;
+      const r = RunOutput.safeParse(coerceOutput(JSON.parse(c)));
+      if (r.success) return r.data;
     } catch {
-      return null;
+      continue;
     }
   }
+  return null;
+}
+
+/** Models drift from the schema in small, predictable ways; repair those before validating. */
+function coerceOutput(o: unknown): unknown {
+  if (!o || typeof o !== "object") return o;
+  const x = { ...(o as Record<string, unknown>) };
+  const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v));
+  x.title = str(x.title).slice(0, 90) || "Run";
+  x.summary = str(x.summary).slice(0, 600) || str(x.title);
+  x.body = str(x.body).slice(0, 4000);
+  x.remember = str(x.remember ?? x.memory ?? x.notes).slice(0, 1200);
+  x.sources = Array.isArray(x.sources) ? x.sources.filter((u) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 12) : [];
+  if (!["none", "low", "medium", "high"].includes(x.signal as string)) x.signal = "low";
+  x.nothingHappened = !!x.nothingHappened;
+  x.sections = Array.isArray(x.sections)
+    ? x.sections.slice(0, 6).map((sec) => {
+        const s = (sec ?? {}) as Record<string, unknown>;
+        const finding = str(s.finding ?? s.result ?? s.summary ?? s.value ?? s.note);
+        return { check: str(s.check ?? s.name ?? s.title).slice(0, 160), finding: finding.slice(0, 700), changed: !!s.changed };
+      })
+    : [];
+  return x;
 }
 
 /** The model answered in prose instead of the schema. Keep the work; the owner reads it as a note. */
@@ -247,14 +275,19 @@ function salvageOutput(text: string, name: string): RunOutput | null {
     summary: t.replace(/\s+/g, " ").slice(0, 600),
     body: t.slice(0, 4000),
     sources: [...t.matchAll(/https?:\/\/[^\s)>"']+/g)].map((x) => x[0]).slice(0, 12),
+    sections: [],
+    remember: "",
     signal: "low",
     nothingHappened: false,
   });
   return r.success ? r.data : null;
 }
 
+/** The receipt hash covers what the owner sees; private carry-over notes are not part of it. */
 export function hashOutput(o: RunOutput) {
-  return "0x" + createHash("sha256").update(JSON.stringify(o)).digest("hex");
+  const { remember: _remember, ...pub } = o;
+  void _remember;
+  return "0x" + createHash("sha256").update(JSON.stringify(pub)).digest("hex");
 }
 
 function fail(

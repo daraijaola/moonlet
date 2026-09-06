@@ -58,6 +58,11 @@ export const JobSpec = z.object({
     .array(z.string().min(1).max(200))
     .max(8)
     .describe("Concrete things to watch or read: URLs, token symbols, contract addresses, repo slugs, topics."),
+  checks: z
+    .array(z.string().min(4).max(160))
+    .max(6)
+    .default([])
+    .describe("The concrete checks to perform every run, one line each, e.g. '$ORBIO price, liquidity and volume vs last run'. 2-5 for a watch job; empty for a single-purpose job."),
   tools: z.array(z.enum(TOOL_IDS)).min(1).max(6).describe("Only the tools this job needs. Fewer is better."),
   output: z.object({
     kind: z.enum(["brief", "alert", "digest", "pr", "note"]),
@@ -119,6 +124,14 @@ export const RunOutput = z.object({
   title: z.string().min(3).max(90),
   summary: z.string().min(1).max(600).describe("Plain text. What happened, why it matters. No markdown."),
   body: z.string().max(4000).describe("The full deliverable in markdown. Empty string if nothing to report."),
+  sections: z
+    .array(z.object({ check: z.string().max(160), finding: z.string().max(700), changed: z.boolean() }))
+    .max(6)
+    .describe("One entry per check in the plan, in order: what you found, and whether it changed since the last run. Empty when the plan has no checks."),
+  remember: z
+    .string()
+    .max(1200)
+    .describe("Compact notes for your next run: last values seen, last item ids, page fingerprints. Plain text. Empty if nothing worth carrying over."),
   sources: z.array(z.url()).max(12).describe("Only URLs actually used. Verbatim."),
   signal: z.enum(["none", "low", "medium", "high"]).describe("How much the owner should care."),
   nothingHappened: z.boolean().describe("true when there was nothing worth reporting."),

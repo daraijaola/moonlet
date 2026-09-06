@@ -1,6 +1,6 @@
 /**
- * Orbio MCP client. Six tools, one loop:
- *   orbio_get_balance → orbio_claim_key → orbio_get_key_status → orbio_top_up_key → orbio_rotate_key → orbio_delete_key
+ * Orbio MCP client. Five tools:
+ *   orbio_get_balance · orbio_get_key_status · orbio_create_key · orbio_revoke_key · orbio_delete_key (legacy)
  *
  * The MCP speaks JSON-RPC over HTTP with a Bearer token obtained through
  * Orbio's OAuth (PKCE, dynamic client registration). Tool result shapes are
@@ -20,18 +20,23 @@ export const ORBIO = {
   scope: "orbio:credits",
 } as const;
 
-export type OrbioBalance = { availableUsd: number; raw: unknown };
-export type OrbioKey = { key: string; limitUsd: number; raw: unknown };
-export type OrbioKeyStatus = { spentUsd: number; limitUsd: number; remainingUsd: number; active: boolean; raw: unknown };
+export type OrbioBalance = { availableUsd: number; accruedUsd?: number; raw: unknown };
+export type OrbioKey = { key: string; prefix?: string; baseUrl?: string; raw: unknown };
+export type LegacyKey = { limitUsd: number; spentUsd: number; remainingUsd: number; active: boolean };
+export type OrbioKeyStatus = { hasKey: boolean; prefix: string | null; createdAt?: string | null; lastUsedAt?: string | null; legacy: LegacyKey | null; raw: unknown };
 
+/**
+ * Orbio's account-key model (Sept 2026): one key per account that spends the
+ * live balance through Orbio's gateway. Legacy capped OpenRouter keys can be
+ * folded back into the balance with deleteLegacyKey.
+ */
 export type OrbioClient = {
   listTools?(): Promise<Array<{ name: string; inputSchema?: unknown }>>;
   getBalance(): Promise<OrbioBalance>;
-  claimKey(amountUsd?: number): Promise<OrbioKey>;
   getKeyStatus(): Promise<OrbioKeyStatus>;
-  topUpKey(amountUsd: number): Promise<OrbioKeyStatus>;
-  rotateKey(): Promise<OrbioKey>;
-  deleteKey(): Promise<{ returnedUsd: number }>;
+  createKey(label?: string): Promise<OrbioKey>;
+  revokeKey(): Promise<void>;
+  deleteLegacyKey(): Promise<{ returnedUsd: number }>;
 };
 
 type Rpc = { jsonrpc: "2.0"; id: number; result?: { content?: Array<{ type: string; text?: string }>; structuredContent?: unknown; isError?: boolean }; error?: { code: number; message: string } };
@@ -74,17 +79,6 @@ async function toolDefs(accessToken: string, fetchImpl: typeof fetch): Promise<M
   return schemaCache.get(k)!;
 }
 
-/** Pick the first property name Orbio's schema exposes for a dollar amount. */
-async function amountKey(accessToken: string, tool: string, fetchImpl: typeof fetch) {
-  try {
-    const defs = await toolDefs(accessToken, fetchImpl);
-    const props = Object.keys(defs.get(tool)?.inputSchema?.properties ?? {});
-    return props.find((p) => /amount|usd|dollar|limit|credit/i.test(p)) ?? props[0] ?? "amount_usd";
-  } catch (e) {
-    if (e instanceof OrbioAuthError) throw e;
-    return "amount_usd";
-  }
-}
 
 async function callTool(accessToken: string, name: string, args: Record<string, unknown> = {}, fetchImpl: typeof fetch = fetch) {
   const res = await fetchImpl(ORBIO.mcp, {
@@ -143,40 +137,30 @@ export function makeOrbioClient(accessToken: string, fetchImpl: typeof fetch = f
       return [...(await toolDefs(accessToken, fetchImpl)).values()];
     },
     async getBalance() {
-      const raw = await call("orbio_get_balance");
-      return { availableUsd: num(raw, "available_usd", "availableUsd", "balance_usd", "balance", "available"), raw };
-    },
-    async claimKey(amountUsd) {
-      const args: Record<string, unknown> = {};
-      if (amountUsd) args[await amountKey(accessToken, "orbio_claim_key", fetchImpl)] = amountUsd;
-      const raw = await call("orbio_claim_key", args);
-      return { key: str(raw, "key", "api_key", "apiKey", "secret"), limitUsd: num(raw, "limit_usd", "limitUsd", "limit", "amount_usd"), raw };
+      const raw = (await call("orbio_get_balance")) as Record<string, unknown>;
+      const balance = (raw?.balance as Record<string, unknown>) ?? {};
+      return { availableUsd: num(balance, "usd") || num(raw, "available_usd", "availableUsd", "balance_usd", "spendable", "available"), accruedUsd: num((raw?.accrued as Record<string, unknown>) ?? {}, "usd") || undefined, raw };
     },
     async getKeyStatus() {
-      const raw = await call("orbio_get_key_status");
-      const limitUsd = num(raw, "limit_usd", "limitUsd", "limit");
-      const spentUsd = num(raw, "spent_usd", "spentUsd", "usage_usd", "usage", "spent");
-      const remaining = num(raw, "remaining_usd", "remainingUsd", "remaining");
-      const activeRaw = (raw as Record<string, unknown>)?.active ?? (raw as Record<string, unknown>)?.disabled;
-      return {
-        limitUsd,
-        spentUsd,
-        remainingUsd: remaining || Math.max(0, limitUsd - spentUsd),
-        active: typeof activeRaw === "boolean" ? ((raw as Record<string, unknown>).disabled === undefined ? activeRaw : !activeRaw) : true,
-        raw,
-      };
+      const raw = (await call("orbio_get_key_status")) as Record<string, unknown>;
+      const lg = raw?.legacy as Record<string, unknown> | undefined;
+      const legacy: LegacyKey | null = lg
+        ? { limitUsd: num(lg, "limitUsd", "limit_usd"), spentUsd: num(lg, "usageUsd", "usage_usd", "spentUsd"), remainingUsd: num(lg, "remainingUsd", "remaining_usd") || Math.max(0, num(lg, "limitUsd", "limit_usd") - num(lg, "usageUsd", "usage_usd")), active: lg.disabled === undefined ? true : !lg.disabled }
+        : null;
+      return { hasKey: !!raw?.hasKey, prefix: (raw?.prefix as string | null) ?? null, createdAt: (raw?.createdAt as string | null) ?? null, lastUsedAt: (raw?.lastUsedAt as string | null) ?? null, legacy, raw };
     },
-    async topUpKey(amountUsd) {
-      await call("orbio_top_up_key", { [await amountKey(accessToken, "orbio_top_up_key", fetchImpl)]: amountUsd });
-      return this.getKeyStatus();
+    async createKey(label = "moonlet") {
+      const raw = await call("orbio_create_key", { label });
+      const key = str(raw, "key", "secret", "apiKey", "api_key");
+      if (!key) throw new Error("Orbio MCP orbio_create_key: no key in response");
+      return { key, prefix: str(raw, "prefix") || undefined, baseUrl: str(raw, "baseUrl", "base_url") || undefined, raw };
     },
-    async rotateKey() {
-      const raw = await call("orbio_rotate_key");
-      return { key: str(raw, "key", "api_key", "apiKey", "secret"), limitUsd: num(raw, "limit_usd", "limitUsd", "limit"), raw };
+    async revokeKey() {
+      await call("orbio_revoke_key");
     },
-    async deleteKey() {
+    async deleteLegacyKey() {
       const raw = await call("orbio_delete_key");
-      return { returnedUsd: num(raw, "returned_usd", "returnedUsd", "refunded_usd", "returned") };
+      return { returnedUsd: num(raw, "returnedUsd", "returned_usd", "refundedUsd", "refunded_usd", "returned") };
     },
   };
 }

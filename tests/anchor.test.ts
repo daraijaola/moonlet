@@ -10,6 +10,8 @@ const HASH = hashOutput({
   summary: "Liquidity +11% in 6h.",
   body: "",
   sources: ["https://dexscreener.com"],
+  sections: [],
+  remember: "",
   signal: "medium",
   nothingHappened: false,
 }) as Hex;

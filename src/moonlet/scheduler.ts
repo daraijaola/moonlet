@@ -3,7 +3,7 @@ import { makeAnchorer, type Anchorer } from "./anchor";
 import { estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
 import { makeOrbioClient, OrbioAuthError, refreshOrbioToken, type OrbioClient } from "./orbio";
 import { devOrbio } from "./orbio-dev";
-import { runMoonlet, type RunDeps } from "./runner";
+import { runMoonlet } from "./runner";
 import { CADENCE_MS, type Cadence } from "./spec";
 import * as store from "./store";
 import { RH_RPC, type DeliverySink } from "./tools";
@@ -11,6 +11,7 @@ import * as tg from "./connections/telegram";
 import type { GitHubConn } from "./connections/github";
 import { telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
+import { followup } from "./followup";
 
 /**
  * The scheduler is what a cron tick calls. It picks due moonlets, claims each
@@ -25,7 +26,6 @@ export type SchedulerDeps = {
   anchor?: Anchorer | null;
   deliver?: DeliverySink;
   run?: typeof runMoonlet;
-  clientFor?: RunDeps["clientFor"];
   fetch?: typeof fetch;
   now?: () => number;
 };
@@ -33,6 +33,14 @@ export type SchedulerDeps = {
 const ORBIO_TOKEN = "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3";
 
 /** Live ERC-20 balance read; cached per owner for 10 minutes in the owners table. */
+const ownerLocks = new Map<string, Promise<unknown>>();
+async function withOwnerLock<T>(owner: string, fn: () => Promise<T>): Promise<T> {
+  const prev = ownerLocks.get(owner) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  ownerLocks.set(owner, next.catch(() => undefined));
+  return next;
+}
+
 export async function bagOf(owner: string, fetchImpl: typeof fetch = fetch): Promise<number> {
   const cached = await store.getOwner(owner);
   if (cached && Date.now() - cached.bagCheckedAt < 10 * 60_000) return cached.bag;
@@ -99,7 +107,16 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
   await anchorPending(deps).catch(() => undefined);
   await tg.configureBot(deps.fetch).catch(() => undefined);
-  tg.setChatHandler((owner, text) => concierge(owner, text, { appUrl: process.env.APP_URL ?? "https://16labs.xyz", fetch: deps.fetch }));
+  tg.setChatHandler(async (owner, text, ctx) => {
+    // A reply to a report (or a photo, or a short question right after one) is a follow-up on that report.
+    const ref = ctx.replyToMessageId ? await store.telegramMessageRef(ctx.chatId, ctx.replyToMessageId) : null;
+    if (ref) return followup({ moonletId: ref.moonletId, owner, text, runId: ref.runId, imageUrl: ctx.imageUrl, fetch: deps.fetch });
+    if (ctx.imageUrl) {
+      const last = await store.lastTelegramRef(ctx.chatId);
+      if (last) return followup({ moonletId: last.moonletId, owner, text, runId: last.runId, imageUrl: ctx.imageUrl, fetch: deps.fetch });
+    }
+    return concierge(owner, text, { appUrl: process.env.APP_URL ?? "https://16labs.xyz", fetch: deps.fetch });
+  });
   await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
   return results;
 }
@@ -172,11 +189,55 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   }
 
   const bag = await getBag(m.owner);
-  const [ghConn, tgConn, xConn] = await Promise.all([
+  // Orbio issues one key per wallet. A new moonlet borrows the key a sibling already holds
+  // instead of trying to claim a second one (which fails, or would rotate the sibling's key away).
+  let startKey = m.key;
+  if (!startKey) {
+    const sibling = (await store.listMoonlets(m.owner)).find((x) => x.id !== m.id && x.key?.key);
+    if (sibling?.key) startKey = { ...sibling.key };
+  }
+  // Minting retires the wallet's previous key, so concurrent moonlets must not race to mint.
+  // Serialize per owner; whoever mints first writes the secret to every sibling, and later
+  // callers reuse it instead of minting again.
+  const guardedOrbio: OrbioClient = {
+    ...orbio,
+    createKey: (label) =>
+      withOwnerLock(m.owner, async () => {
+        const fresh = (await store.listMoonlets(m.owner)).find((x) => x.key?.key.startsWith("sk-orbio-"))?.key;
+        if (fresh && fresh.key !== startKey?.key && (!m.key || fresh.key !== m.key.key)) {
+          return { key: fresh.key, raw: { reused: true } };
+        }
+        const minted = await orbio.createKey(label);
+        const bal = await orbio.getBalance().catch(() => ({ availableUsd: 0 }));
+        for (const sib of await store.listMoonlets(m.owner)) {
+          await store.updateMoonlet(sib.id, { key: { key: minted.key, limitUsd: bal.availableUsd, spentUsd: 0 } });
+        }
+        return minted;
+      }),
+  };
+  const [ghConnStored, tgConn, xConn] = await Promise.all([
     store.getConnection<GitHubConn>(m.owner, "github"),
     store.getConnection<tg.TelegramConn>(m.owner, "telegram"),
     store.getConnection(m.owner, "x"),
   ]);
+  let ghConn = ghConnStored;
+  // A revoked GitHub token would make every repo job fail quietly; check it before the run and tell the owner once.
+  if (ghConn && m.spec.tools.some((t) => t.startsWith("github") || t === "open_pull_request" || t === "comment_on_issue")) {
+    const probe = await (deps.fetch ?? fetch)("https://api.github.com/user", { headers: { authorization: `Bearer ${ghConn.data.token}`, "user-agent": "moonlet" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+    if (probe?.status === 401) {
+      await store.deleteConnection(m.owner, "github");
+      if (tgConn && tg.telegramConfigured()) {
+        await tg.sendMessage(tgConn.data.chatId, `GitHub disconnected: the access you granted (@${tg.esc(ghConn.data.login)}) was revoked or expired. Reconnect at ${tg.esc(process.env.APP_URL ?? "https://16labs.xyz")}/app/connections so <b>${tg.esc(m.spec.name)}</b> can read your repos again.`, { fetch: deps.fetch }).catch(() => undefined);
+      }
+      ghConn = null;
+    }
+  }
+  if (!ghConn && m.spec.tools.some((t) => t === "github_read" || t === "open_pull_request" || t === "comment_on_issue") && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read")) {
+    // A repo job without GitHub access has nothing to read; park it rather than burn credits reporting 404s.
+    await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
+    await recordRun(m.id, now(), { status: "quiet", error: "GitHub isn't connected; reconnect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "GitHub isn't connected. Reconnect it under Connections and this moonlet resumes on its own." }] });
+    return { status: "quiet" };
+  }
   const deliver: DeliverySink | undefined =
     deps.deliver ??
     (tgConn && tg.telegramConfigured()
@@ -185,11 +246,11 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const runId = store.newId("run");
   const result = await run(
     {
-      id: m.id, owner: m.owner, bag, spec: m.spec, key: m.key, autopilot: m.autopilot, runId,
+      id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory,
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn },
     },
-    { orbio, clientFor: deps.clientFor, fetch: deps.fetch, deliver, bagOf: async () => bag },
+    { orbio: guardedOrbio, fetch: deps.fetch, deliver, bagOf: async () => bag },
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;
@@ -213,6 +274,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   await store.updateMoonlet(id, {
     status: result.status === "quiet" ? "quiet" : "idle",
     key: result.key,
+    ...(result.status === "done" && result.output ? { memory: result.output.remember?.slice(0, 1200) || m.memory } : {}),
     cadence,
     perRunCapUsd: result.plan.perRunCapUsd,
     earnPerDayUsd: result.plan.earnPerDayUsd || estimateEarnPerDay(bag),
@@ -235,8 +297,17 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   if (result.status === "done" && result.output && !result.output.nothingHappened && tgConn && tg.telegramConfigured() && !deps.deliver && !alreadyDelivered) {
     const o = result.output;
     const page = `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}`;
-    const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${o.body.trim() && o.body.trim() !== o.summary.trim() ? `\n\n${tg.esc(o.body.slice(0, 2500))}` : ""}\n\n$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · ${tg.esc(page)}`;
-    await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch(() => undefined);
+    const sections = (o.sections ?? []).length
+      ? "\n\n" + o.sections.map((sec) => `${sec.changed ? "●" : "○"} <b>${tg.esc(sec.check)}</b>\n${tg.esc(sec.finding)}`).join("\n\n")
+      : o.body.trim() && o.body.trim() !== o.summary.trim()
+        ? `\n\n${tg.esc(o.body.slice(0, 2500))}`
+        : "";
+    const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
+    const sent = await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch((e) => {
+      console.error("telegram delivery failed", m.id, (e as Error).message);
+      return null;
+    });
+    if (sent) await store.rememberTelegramMessage(tgConn.data.chatId, Number(sent.id), m.id, runId).catch((e) => console.error("tg_messages insert failed", (e as Error).message));
   } else if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && !alreadyDelivered) {
     await deliver({ channel: "telegram", text: `${result.output.title}\n\n${result.output.summary}` }).catch(() => undefined);
   }
@@ -254,7 +325,7 @@ async function recordRun(
   r: {
     id?: string;
     status: "done" | "quiet" | "failed";
-    output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean };
+    output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean; sections?: Array<{ check: string; finding: string; changed: boolean }> };
     outputHash?: string;
     error?: string;
     model: string;
@@ -278,6 +349,7 @@ async function recordRun(
     sources: r.output?.sources ?? [],
     signal: r.output?.signal ?? "none",
     nothingHappened: r.output?.nothingHappened ?? true,
+    sections: r.output?.sections ?? [],
     costUsd: r.costUsd,
     model: r.model,
     modelCalls: r.modelCalls,

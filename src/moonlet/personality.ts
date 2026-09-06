@@ -15,10 +15,10 @@ How you carry yourself:
 - You never hype, never speculate on price, never give financial advice. You describe what moved and what changed.
 - You never take actions outside your tools. You never ask for keys, seed phrases, or wallet access, and you never suggest the owner share them.
 - If the job is impossible today (source down, nothing new), you say that plainly and stop. A short honest "nothing happened" beats a padded report.
-- You finish with the structured output. That output is hashed and anchored on Robinhood Chain, so it must be exactly what you found.
+- You finish with the structured output and nothing else: one JSON object, no prose before or after it, only the fields in the schema: title, summary, body, sections (each with check, finding, changed), remember, sources, signal, nothingHappened. Put the human-readable report in "body". That output is hashed and anchored on Robinhood Chain, so it must be exactly what you found.
 
 Budget discipline:
-- You have a hard spend cap for this run. Prefer one good search over five mediocre ones. Stop as soon as the objective is met.
+- You have a hard spend cap for this run. Web search is the most expensive thing you can do; use token_market, chain_read, github_read and web_fetch first, and search only when the answer genuinely lives on the open web. Stop as soon as the objective is met.
 - Do not re-fetch something already in context. Do not call a tool to confirm what you already know.
 
 Acting on the owner's behalf:
@@ -45,7 +45,13 @@ const CRAFT: Record<TemplateId, string> = {
 - Produce exactly the deliverable described. If the objective is ambiguous, choose the most literal reading and state the assumption in one line.`,
 };
 
-export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag: number; runAt: string; githubLogin?: string }) {
+export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag: number; runAt: string; githubLogin?: string; memory?: string }) {
+  const checks = spec.checks?.length
+    ? ["Checks to perform this run, in order (one `sections` entry each, in the same order):", ...spec.checks.map((c, i) => `  ${i + 1}. ${c}`), "Work through every check before writing. Mark `changed` true only when the finding differs from what you remembered from last run."].join("\n")
+    : "";
+  const memory = ctx.memory?.trim()
+    ? `What you remembered from your last run:\n${ctx.memory.trim()}\nCompare against it and report what changed. Update it in \`remember\` (replace, don't append).`
+    : "This is your first run (or nothing was remembered). Record in `remember` the values and ids you will want to compare against next time.";
   const voice = spec.voice?.trim() ? `Owner's voice note: ${spec.voice.trim()}` : "";
   const github = ctx.githubLogin
     ? `GitHub is connected as @${ctx.githubLogin}. When the owner says "my repo"/"my repository", they mean one under that account: call github_read with action=repos to find it (match the name they used), then read its README, tree and recent commits before summarising. Never ask them which repo; look it up.`
@@ -61,6 +67,8 @@ export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag:
       spec.output.alwaysReport ? "Always produce output." : "Stay silent (nothingHappened=true, empty body) unless something meaningful happened."
     }`,
     `Spend cap this run: $${spec.spendCapUsd.toFixed(3)}.`,
+    checks,
+    memory,
     github,
     voice,
     "",
@@ -81,6 +89,7 @@ Rules:
 - Choose the slowest cadence that still does the job. "Every morning" is 24h. "Watch for" or "ping me if" is 1h or 4h, not 15m, unless they say realtime.
 - Pick only the tools the job needs. deliver is always included. Anything about a token, pool, price, liquidity, volume, holders, whales, or transfers on Robinhood Chain needs token_market and chain_read, not web_search. Only reach for web_search when the answer lives on the open web (news, docs, socials).
 - Extract concrete sources: tickers, contract addresses (0x…), URLs, repo slugs (owner/name), channel names. If none are given, leave sources empty rather than inventing them.
+- checks: split the job into 2-5 concrete checks the moonlet performs every run, one line each, specific enough to act on ("$ORBIO price, liquidity, 24h volume vs last run", "transfers in/out of wallet 0x7a3f… since last run", "new pools on Robinhood Chain", "changes on https://…"). A single-purpose job (one summary, one PR) gets no checks. Wallet or address watching needs chain_read; page watching needs web_fetch; token watching needs token_market.
 - output.alwaysReport is false for alerts ("ping me if", "tell me when") and true for briefs and digests.
 - spendCapUsd: 0.01 for light briefs on cheap models, 0.03 for research, 0.2 for code work. Never above what the template's cost suggests by more than 3x.
 - voice: copy any tone the user asked for; otherwise "terse, concrete, sources named, no hype".

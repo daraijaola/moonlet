@@ -19,6 +19,20 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
           </div>
           <h4 className="mt-1 text-[15.5px] font-semibold leading-[1.3] tracking-[-0.01em] text-ink">{run.title}</h4>
           <p className={`mt-1.5 text-[13.5px] leading-[1.6] text-ink-soft ${open ? "" : "line-clamp-3"}`}>{run.summary}</p>
+          {(run.sections?.length ?? 0) > 0 && (
+            <ul className="mt-3 space-y-2">
+              {run.sections!.slice(0, open ? 6 : 3).map((sec, i) => (
+                <li key={i} className="flex gap-2.5 text-[13px] leading-[1.5]">
+                  <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${sec.changed ? "bg-gold" : "bg-ink/20"}`} title={sec.changed ? "changed since last run" : "unchanged"} />
+                  <span className="min-w-0">
+                    <span className="font-medium text-ink">{sec.check}</span>
+                    <span className={`block text-ink-soft ${open ? "" : "line-clamp-2"}`}>{sec.finding}</span>
+                  </span>
+                </li>
+              ))}
+              {!open && run.sections!.length > 3 && <li className="font-mono text-[11px] text-ink-faint">+{run.sections!.length - 3} more</li>}
+            </ul>
+          )}
           {open && hasBody && <pre className="mt-3 whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-[13px] leading-[1.6] text-ink">{run.body}</pre>}
           {open && run.sources.length > 0 && (
             <ul className="mt-2 space-y-0.5 font-mono text-[11.5px]">
@@ -40,7 +54,7 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[11.5px] text-ink-soft">
-        {(hasBody || run.sources.length > 0 || run.keyEvents.length > 0) && (
+        {(hasBody || run.sources.length > 0 || run.keyEvents.length > 0 || (run.sections?.length ?? 0) > 3) && (
           <button onClick={() => setOpen((o) => !o)} className="rounded-md border border-ink/15 bg-paper px-2 py-1 text-ink hover:border-ink/40">
             {open ? "Collapse" : hasBody ? "Read" : "Details"}
           </button>

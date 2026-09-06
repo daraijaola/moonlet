@@ -1,7 +1,6 @@
-import { callModel, stepCountIs } from "@openrouter/agent";
 import { buildCompilerInstructions } from "./personality";
-import type { OpenRouterClient } from "./model";
 import { pickModel } from "./model";
+import { runLoop } from "./llm";
 import { JobSpec, JobSpecJsonSchema, TEMPLATE_DEFAULTS, type Cadence, type TemplateId } from "./spec";
 
 /**
@@ -10,11 +9,12 @@ import { JobSpec, JobSpecJsonSchema, TEMPLATE_DEFAULTS, type Cadence, type Templ
  * good first draft.
  */
 export async function compileJob(
-  client: OpenRouterClient,
+  key: string,
   input: { sentence: string; template: TemplateId; name?: string; repos?: string[] },
 ): Promise<JobSpec> {
   const defaults = TEMPLATE_DEFAULTS[input.template];
-  const result = callModel(client, {
+  const result = await runLoop({
+    key,
     model: pickModel(0, "compile"),
     instructions: buildCompilerInstructions(),
     input: [
@@ -27,10 +27,11 @@ export async function compileJob(
     ]
       .filter(Boolean)
       .join("\n"),
-    text: { format: { type: "json_schema", name: "job_spec", strict: true, schema: JobSpecJsonSchema as Record<string, unknown> } },
-    stopWhen: stepCountIs(1),
+    jsonSchema: { name: "job_spec", schema: JobSpecJsonSchema as Record<string, unknown> },
+    maxCostUsd: 0.02,
+    maxSteps: 1,
   });
-  const text = await result.getText();
+  const text = result.text.replace(/```(?:json)?|```/g, "").trim();
   const parsed = JobSpec.safeParse(JSON.parse(text));
   if (parsed.success) return withDefaults(parsed.data, input);
   return fallbackSpec(input);
@@ -43,6 +44,7 @@ function withDefaults(spec: JobSpec, input: { sentence: string; template: Templa
     template: input.template,
     name: input.name?.trim() || spec.name,
     tools: Array.from(new Set([...(spec.tools.length ? spec.tools : d.tools), "deliver" as const])),
+    checks: (spec.checks ?? []).slice(0, 6),
     spendCapUsd: Math.min(Math.max(spec.spendCapUsd, d.costPerRunUsd), d.costPerRunUsd * 3),
     model: spec.model ?? "auto",
   };
@@ -59,12 +61,24 @@ export function fallbackSpec(input: { sentence: string; template: TemplateId; na
     objective: s.trim(),
     cadence: cadenceFrom(s, alert ? "4h" : d.cadence),
     sources: extractSources(s),
+    checks: checksFrom(s),
     tools: d.tools,
     output: { ...d.output, alwaysReport: alert ? false : d.output.alwaysReport },
     voice: "terse, concrete, sources named, no hype",
     spendCapUsd: d.costPerRunUsd,
     model: "auto",
   };
+}
+
+/** Without a model: split on "and"/commas/";" into up to 5 concrete checks when the sentence reads like a watch list. */
+function checksFrom(s: string): string[] {
+  const body = s
+    .replace(/^(every|each)\s+\d*\s*(minutes?|min|hours?|h|days?|mornings?|nights?|weeks?)\b[,:]?\s*/i, "")
+    .replace(/\b(and\s+)?(tell|ping|alert|notify|message|brief)\s+me\b.*$/i, "")
+    .trim();
+  const parts = body.split(/\s*(?:;|,|\band\b)\s*/i).map((p) => p.replace(/^(watch|check|track|monitor|read)\s+/i, "").trim()).filter((p) => p.length >= 4);
+  if (parts.length < 2) return [];
+  return parts.slice(0, 5).map((p) => `${p.charAt(0).toUpperCase()}${p.slice(1)} vs last run`);
 }
 
 function cadenceFrom(s: string, fallback: Cadence): Cadence {

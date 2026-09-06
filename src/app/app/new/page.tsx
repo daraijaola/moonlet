@@ -85,7 +85,7 @@ function NewInner() {
         return;
       }
       const r = await api.launch(address, { spec, delivery, autopilot, runNow: true });
-      router.push(`/app?m=${r.moonlet.id}`);
+      router.push(`/app?m=${r.moonlet.id}&launched=1`);
     } catch (e) {
       setErr((e as Error).message);
       setLaunching(false);
@@ -294,6 +294,10 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
           </select>
         </label>
         <label className="block sm:col-span-2"><span className={label}>Objective</span><textarea value={spec.objective} rows={2} maxLength={400} onChange={(e) => set("objective", e.target.value)} className={`${field} resize-none`} /></label>
+        <label className="block sm:col-span-2"><span className={label}>Checks every run (one per line)</span>
+          <textarea value={(spec.checks ?? []).join("\n")} rows={Math.max(2, Math.min(6, (spec.checks ?? []).length + 1))} onChange={(e) => set("checks", e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 6))} placeholder={"$ORBIO price, liquidity and volume vs last run\nTransfers in/out of wallet 0x… since last run\nNew pools on Robinhood Chain"} className={`${field} resize-none`} />
+          <span className="mt-1 block font-mono text-[11px] text-ink-faint">It works through these in order each cycle, remembers what it saw, and reports one section per check.</span>
+        </label>
         <label className="block sm:col-span-2"><span className={label}>Sources (one per line)</span>
           <textarea value={spec.sources.join("\n")} rows={3} onChange={(e) => set("sources", e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 8))} placeholder="$ORBIO&#10;0x…&#10;https://…" className={`${field} resize-none`} />
         </label>

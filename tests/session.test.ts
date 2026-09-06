@@ -26,3 +26,24 @@ describe("siwe sessions", () => {
     expect(openSession("garbage")).toBeNull();
   });
 });
+
+describe("session renewal", () => {
+  it("lasts 30 days and slides forward once a third is used; fresh sessions are left alone", async () => {
+    const { renewedCookie, sealSession, sessionExpiry } = await import("@/moonlet/session");
+    const addr = "0x00000000000000000000000000000000000000ab";
+    const fresh = sealSession(addr);
+    const exp = sessionExpiry(fresh)!;
+    expect(exp - Date.now()).toBeGreaterThan(29 * 24 * 3600_000);
+    expect(renewedCookie(new Request("http://x", { headers: { cookie: `moonlet_session=${fresh}` } }))).toBeNull();
+    // forge an older-but-valid token: same address, expiry 12 days out (18 used of 30)
+    const [a] = fresh.split(".");
+    const oldExp = Date.now() + 12 * 24 * 3600_000;
+    const { createHmac } = await import("node:crypto");
+    const mac = createHmac("sha256", process.env.SECRET_KEY ?? "moonlet-dev-only-not-secret").update(`${a}.${oldExp}`).digest("base64url");
+    const aged = `${a}.${oldExp}.${mac}`;
+    const renewed = renewedCookie(new Request("http://x", { headers: { cookie: `moonlet_session=${aged}` } }));
+    expect(renewed).toMatch(/^moonlet_session=0x/);
+    expect(renewed).toMatch(/Max-Age=2592000/);
+    expect(sessionExpiry(renewed!.split("=")[1].split(";")[0])! - Date.now()).toBeGreaterThan(29 * 24 * 3600_000);
+  });
+});

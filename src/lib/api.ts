@@ -47,6 +47,7 @@ export type ApiRun = {
   explorerUrl: string | null;
   keyEvents: Array<{ kind: string; detail: string; amountUsd?: number }>;
   trace?: Array<{ at: number; tool: string; summary: string }>;
+  sections?: Array<{ check: string; finding: string; changed: boolean }>;
   error: string | null;
 };
 
@@ -67,7 +68,7 @@ export type Proposal = {
   decidedAt: number | null;
 };
 
-export type OrbioStatus = { approved: boolean; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; canWrite: boolean; orbio: { tools: string[]; error: string | null; expiresAt: number | null; dev: boolean } };
+export type OrbioStatus = { approved: boolean; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; legacyKeyUsd?: number | null; canWrite: boolean; orbio: { tools: string[]; error: string | null; expiresAt: number | null; dev: boolean } };
 
 async function req<T>(owner: string | null, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -94,7 +95,7 @@ export const api = {
   compile: (owner: string, body: { sentence: string; template: JobSpec["template"]; name?: string }) =>
     req<{ spec: JobSpec; compiled: boolean }>(owner, "/api/moonlets/compile", { method: "POST", body: JSON.stringify(body) }),
   launch: (owner: string, body: { spec: JobSpec; delivery: { telegram?: string; x?: string }; autopilot?: boolean; runNow?: boolean }) =>
-    req<{ moonlet: ApiMoonlet; plan: Plan; firstRun: { status: string; error?: string; runId?: string } | null }>(owner, "/api/moonlets", { method: "POST", body: JSON.stringify(body) }),
+    req<{ moonlet: ApiMoonlet; plan: Plan; firstRunStarted: boolean }>(owner, "/api/moonlets", { method: "POST", body: JSON.stringify(body) }),
   patch: (owner: string, id: string, body: { action: "pause" | "resume" | "rotate_key" | "edit"; spec?: JobSpec; delivery?: { telegram?: string; x?: string }; autopilot?: boolean }) =>
     req<{ moonlet: ApiMoonlet }>(owner, `/api/moonlets/${id}`, { method: "PATCH", body: JSON.stringify(body) }),
   remove: (owner: string, id: string) => req<{ ok: boolean; returnedUsd: number }>(owner, `/api/moonlets/${id}`, { method: "DELETE" }),
@@ -106,6 +107,7 @@ export const api = {
   githubStart: (owner: string) => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
   githubConnect: (owner: string, token: string) => req<{ ok: boolean; login: string }>(owner, "/api/connections/github", { method: "POST", body: JSON.stringify({ token }) }),
   xConnect: (owner: string, keys: { apiKey: string; apiSecret: string; accessToken: string; accessSecret: string }) => req<{ ok: boolean; username: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify(keys) }),
+  ask: (owner: string, id: string, text: string, runId?: string) => req<{ reply: string }>(owner, `/api/moonlets/${id}/ask`, { method: "POST", body: JSON.stringify({ text, runId }) }),
   proposals: (owner: string, status?: Proposal["status"]) => req<{ proposals: Proposal[] }>(owner, `/api/proposals${status ? `?status=${status}` : ""}`),
   decide: (owner: string, id: string, action: "approve" | "reject") => req<{ ok: boolean; status: string; result?: Record<string, unknown> }>(owner, `/api/proposals/${id}`, { method: "POST", body: JSON.stringify({ action }) }),
   sky: () => req<{ alive: number; total: number; creditsPerDay: number; burnPerDay: number; spentTotalUsd: number; runsToday: number; anchoredToday: number }>(null, "/api/sky/stats"),

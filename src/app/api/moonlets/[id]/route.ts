@@ -38,8 +38,11 @@ export async function PATCH(req: Request, { params }: Ctx) {
   if (body.data.action === "rotate_key") {
     const orbio = await orbioFor(owner);
     if (!orbio) return bad("Orbio not connected", 409);
-    const k = await orbio.rotateKey();
-    await store.updateMoonlet(id, { key: { key: k.key, limitUsd: k.limitUsd, spentUsd: 0 }, keysRotated: m.keysRotated + 1 });
+    // Re-mint the wallet's Orbio key (the previous one is retired) and hand the new secret to every moonlet on this wallet.
+    const [k, bal] = await Promise.all([orbio.createKey("moonlet"), orbio.getBalance()]);
+    for (const sib of await store.listMoonlets(owner)) {
+      await store.updateMoonlet(sib.id, { key: { key: k.key, limitUsd: bal.availableUsd, spentUsd: 0 }, ...(sib.id === id ? { keysRotated: m.keysRotated + 1 } : {}) });
+    }
   }
   if (body.data.action === "edit") {
     const spec = body.data.spec ?? m.spec;
@@ -67,11 +70,7 @@ export async function DELETE(req: Request, { params }: Ctx) {
   const { id } = await params;
   const m = await store.getMoonlet(id);
   if (!m || m.owner !== owner) return bad("not found", 404);
-  let returnedUsd = 0;
-  if (m.key) {
-    const orbio = await orbioFor(owner);
-    if (orbio) returnedUsd = (await orbio.deleteKey().catch(() => ({ returnedUsd: 0 }))).returnedUsd;
-  }
+  // The key belongs to the wallet, not the moonlet: deleting a moonlet never touches credits.
   await store.updateMoonlet(id, { status: "deleted", key: null });
-  return NextResponse.json({ ok: true, returnedUsd });
+  return NextResponse.json({ ok: true, returnedUsd: 0 });
 }

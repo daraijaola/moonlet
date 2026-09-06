@@ -8,7 +8,7 @@ import { verifyMessage } from "viem";
  */
 
 const COOKIE = "moonlet_session";
-const TTL_MS = 7 * 24 * 3600_000;
+const TTL_MS = 30 * 24 * 3600_000;
 
 function secret() {
   return process.env.SECRET_KEY ?? "moonlet-dev-only-not-secret";
@@ -46,6 +46,21 @@ export function sealSession(address: string) {
   const body = `${address.toLowerCase()}.${exp}`;
   const mac = createHmac("sha256", secret()).update(body).digest("base64url");
   return `${body}.${mac}`;
+}
+
+/** Expiry of a valid token, or null. Used to slide the cookie forward on active use. */
+export function sessionExpiry(token: string | undefined | null): number | null {
+  if (!token || !openSession(token)) return null;
+  return Number(token.split(".")[1]);
+}
+
+/** Re-issue the cookie when the session has used up a third of its life. */
+export function renewedCookie(req: Request): string | null {
+  const m = (req.headers.get("cookie") ?? "").match(new RegExp(`(?:^|;\\s*)${COOKIE}=([^;]+)`));
+  const exp = sessionExpiry(m?.[1]);
+  if (!exp) return null;
+  if (exp - Date.now() > (TTL_MS * 2) / 3) return null;
+  return sessionCookie(sealSession(openSession(m![1])!));
 }
 
 export function openSession(token: string | undefined | null): string | null {

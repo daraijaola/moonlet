@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { bad, ownerFrom } from "@/moonlet/http";
-import { sessionFrom } from "@/moonlet/session";
+import { renewedCookie, sessionFrom } from "@/moonlet/session";
 import { bagOf, orbioFor } from "@/moonlet/scheduler";
 import { estimateEarnPerDay } from "@/moonlet/budget";
 import * as store from "@/moonlet/store";
@@ -11,11 +11,14 @@ export async function GET(req: Request) {
   if (!owner) return bad("sign in with your wallet first", 401);
   const [orbio, bag] = await Promise.all([orbioFor(owner), bagOf(owner)]);
   let balanceUsd: number | null = null;
+  let legacyUsd: number | null = null;
   let tools: string[] = [];
   let orbioError: string | null = null;
   if (orbio) {
     try {
-      balanceUsd = (await orbio.getBalance()).availableUsd;
+      const [bal, ks] = await Promise.all([orbio.getBalance(), orbio.getKeyStatus()]);
+      balanceUsd = bal.availableUsd;
+      legacyUsd = ks.legacy?.active ? ks.legacy.remainingUsd : null;
       tools = orbio.listTools ? (await orbio.listTools()).map((t) => t.name) : [];
     } catch (e) {
       orbioError = (e as Error).message;
@@ -23,14 +26,18 @@ export async function GET(req: Request) {
   }
   const canWrite = !!sessionFrom(req) || process.env.ALLOW_HEADER_AUTH === "1" || process.env.NODE_ENV !== "production";
   const o = await store.getOwner(owner);
-  return NextResponse.json({
+  const res = NextResponse.json({
     approved: !!orbio,
     bag,
     earnPerDayUsd: estimateEarnPerDay(bag),
     idleCreditsUsd: balanceUsd,
+    legacyKeyUsd: legacyUsd,
     canWrite,
     orbio: { tools, error: orbioError, expiresAt: o?.orbioExpiresAt ?? null, dev: process.env.ALLOW_DEV_ORBIO === "1" },
   });
+  const renewed = renewedCookie(req);
+  if (renewed) res.headers.set("set-cookie", renewed);
+  return res;
 }
 
 /** Disconnect Orbio for this owner (they can re-approve from sign-in). */

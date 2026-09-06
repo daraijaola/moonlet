@@ -49,11 +49,15 @@ export async function POST(req: Request) {
     createdAt: now,
   });
 
-  let first: Awaited<ReturnType<typeof runOne>> | null = null;
-  if (runNow && !p.quiet && (await store.claimForRun(id, now))) first = await runOne(id);
+  // First run starts in the background so the owner lands on the moonlet page at once and watches it work.
+  let started = false;
+  if (runNow && !p.quiet && (await store.claimForRun(id, now))) {
+    started = true;
+    void runOne(id).catch(() => undefined);
+  }
 
   const m = await store.getMoonlet(id);
-  return NextResponse.json({ moonlet: m && publicMoonlet(m), plan: p, firstRun: first }, { status: 201 });
+  return NextResponse.json({ moonlet: m && publicMoonlet(m), plan: p, firstRunStarted: started }, { status: 201 });
 }
 
 export function publicMoonlet(m: store.MoonletRow) {

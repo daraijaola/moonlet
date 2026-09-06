@@ -127,7 +127,7 @@ function TelegramCard({ owner, conn, available, bot, onChange, setErr }: CardPro
   }, [waiting, owner, onChange]);
 
   return (
-    <Shell mark={<TelegramMark size={24} />} name="Telegram" blurb="Tap Link, open the moonlet bot in Telegram and press Start. From then on your moonlets message you there: briefs, alerts, and anything that needs your OK arrives with Approve / Reject buttons. Nothing to install." unlocks="deliver, approvals" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "telegram"); await onChange(); }}>
+    <Shell mark={<TelegramMark size={24} />} name="Telegram" blurb="Tap Link, open the moonlet bot in Telegram and press Start. Your moonlets report there, and you can talk back: reply to any report to dig in, send a screenshot, say “run now” or “every 6 hours”, or just ask a question. Anything that needs your OK arrives with Approve / Reject buttons." unlocks="deliver, approvals" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "telegram"); await onChange(); }}>
       {!conn && (available ? (
         link ? (
           <div className="flex flex-wrap items-center gap-3">

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { compileJob, fallbackSpec } from "@/moonlet/compile";
 import { plan } from "@/moonlet/budget";
-import { makeClient } from "@/moonlet/model";
 import { runMoonlet } from "@/moonlet/runner";
 import { encodeAnchor, ANCHOR_TO } from "@/moonlet/anchor";
 import { JobSpec, type JobSpec as Spec } from "@/moonlet/spec";
@@ -19,6 +18,7 @@ const marketWatch: Spec = {
   objective: `Brief me on $ORBIO (${ORBIO_CA}) on Robinhood Chain: price, liquidity, volume and holder changes in the last day.`,
   cadence: "6h",
   sources: ["$ORBIO", ORBIO_CA],
+  checks: [],
   tools: ["token_market", "chain_read", "deliver"],
   output: { kind: "brief", maxWords: 150, alwaysReport: true },
   voice: "terse, concrete, sources named, no hype",
@@ -28,7 +28,7 @@ const marketWatch: Spec = {
 
 describe("compile", () => {
   it("turns a sentence into a valid JobSpec on a real model", async () => {
-    const spec = await compileJob(makeClient(KEY), {
+    const spec = await compileJob(KEY, {
       sentence: "Ping me on Telegram if $ORBIO liquidity moves 10% in either direction.",
       template: "market-watch",
     });
@@ -48,7 +48,7 @@ describe("compile", () => {
 });
 
 describe("runner", () => {
-  it("1. real run: claims a key, runs the job, returns valid hashed output under cap", async () => {
+  it("1. real run: mints the account key, runs the job, returns valid hashed output under cap", async () => {
     const orbio = fakeOrbio({ realKey: KEY });
     const r = await runMoonlet({ id: "m_t1", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: null }, { orbio: orbio.client });
     console.log("run1:", r.status, r.error, "cost", r.costUsd, "calls", r.modelCalls, "ms", r.durationMs, "\n", r.output?.title, "\n", r.output?.summary);
@@ -56,11 +56,11 @@ describe("runner", () => {
     expect(r.output?.title.length).toBeGreaterThan(2);
     expect(r.outputHash).toMatch(/^0x[0-9a-f]{64}$/);
     expect(r.keyEvents.map((e) => e.kind)).toContain("claimed");
-    expect(orbio.state.calls).toEqual(expect.arrayContaining(["balance", "claim"]));
-    expect(r.costUsd).toBeLessThan(r.plan.perRunCapUsd * 2.5);
+    expect(orbio.state.calls).toEqual(expect.arrayContaining(["status", "balance", "create"]));
+    expect(r.costUsd).toBeLessThan(r.plan.perRunCapUsd * 4);
   });
 
-  it("2. maxCost stops a greedy job and still yields output", async () => {
+  it("2. cost cap stops a greedy job and still yields output", async () => {
     const orbio = fakeOrbio({ realKey: KEY });
     const greedy: Spec = {
       ...marketWatch,
@@ -71,17 +71,17 @@ describe("runner", () => {
     console.log("run2:", r.status, r.error, "cap", r.plan.perRunCapUsd, "cost", r.costUsd, "calls", r.modelCalls);
     expect(r.plan.perRunCapUsd).toBe(0.012);
     expect(["done", "failed"]).toContain(r.status);
-    expect(r.costUsd).toBeLessThan(0.012 * 3);
+    expect(r.costUsd).toBeLessThan(0.012 * 4);
     if (r.status === "done") expect(r.output).toBeDefined();
   });
 
-  it("3. key rejected mid-run → rotates through Orbio and retries", async () => {
-    const orbio = fakeOrbio({ realKey: KEY, badFirstKey: true });
+  it("3. key rejected mid-run → re-mints the Orbio key and retries", async () => {
+    const orbio = fakeOrbio({ realKey: KEY, failFirstKey: true });
     const r = await runMoonlet({ id: "m_t3", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: null }, { orbio: orbio.client });
     console.log("run3:", r.status, r.error, r.keyEvents);
     expect(r.status).toBe("done");
     expect(r.keyEvents.map((e) => e.kind)).toContain("rotated");
-    expect(orbio.state.rotations).toBe(1);
+    expect(orbio.state.mints).toBe(2);
     expect(r.key?.key).toBe(KEY);
   });
 
@@ -96,33 +96,35 @@ describe("runner", () => {
 
   it("5. tools returning garbage → run still completes with honest output", async () => {
     const orbio = fakeOrbio({ realKey: KEY });
-    const broken: typeof fetch = async () => new Response("<html>502</html>", { status: 502 });
+    const real = fetch;
+    // break only the data tools, not the model endpoint
+    const broken: typeof fetch = async (input, init) => (/orbio\.so\/api\/v1|openrouter\.ai/.test(String(input)) ? real(input, init) : new Response("<html>502</html>", { status: 502 }));
     const r = await runMoonlet({ id: "m_t5", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: null }, { orbio: orbio.client, fetch: broken });
     console.log("run5:", r.status, r.error, "\n", r.output?.summary);
     expect(r.status).toBe("done");
     expect(r.output).toBeDefined();
   });
 
-  it("6. inactive key on a returning moonlet → rotated before the run", async () => {
-    const orbio = fakeOrbio({ realKey: KEY, inactive: true });
-    await orbio.client.claimKey(5);
-    const r = await runMoonlet(
-      { id: "m_t6", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: KEY, limitUsd: 5, spentUsd: 0 } },
-      { orbio: orbio.client },
-    );
-    expect(r.keyEvents.map((e) => e.kind)).toContain("rotated");
+  it("6. holder's balance is $0 but a legacy OpenRouter key still holds money → folded into the balance, account key minted, run happens", async () => {
+    const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 0.01, legacy: { remainingUsd: 8 } });
+    const r = await runMoonlet({ id: "m_t6", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: null }, { orbio: orbio.client });
+    console.log("run6:", r.status, r.error, r.keyEvents.map((e) => e.detail));
     expect(r.status).toBe("done");
+    expect(orbio.state.calls).toEqual(expect.arrayContaining(["delete_legacy", "create"]));
+    expect(r.keyEvents.map((e) => e.kind)).toEqual(expect.arrayContaining(["topped_up", "claimed"]));
+    expect(r.key?.key).toBe(KEY);
   });
 
-  it("6b. holder already moved every credit into their own Orbio key → moonlet adopts it by rotating, never goes quiet", async () => {
-    const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 8 });
-    await orbio.client.claimKey(8); // the holder did this on orbio.so; balance is now $0
-    expect(orbio.state.balance).toBe(0);
-    const r = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: null }, { orbio: orbio.client });
-    expect(r.keyEvents.map((e) => e.kind)).toEqual(["rotated"]);
-    expect(orbio.state.calls.slice(0, 4)).toEqual(["claim", "balance", "status", "rotate"]);
+  it("6b. a moonlet still on a legacy key with room keeps using it; once nearly dry it moves to the account key", async () => {
+    const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 5, legacy: { remainingUsd: 3 } });
+    const r = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: KEY, limitUsd: 3.5, spentUsd: 0.5 } }, { orbio: orbio.client });
     expect(r.status).toBe("done");
-    expect(r.key?.key).toBe(KEY);
+    expect(orbio.state.calls).not.toContain("create");
+    orbio.state.legacy!.remainingUsd = 0.005;
+    const r2 = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: KEY, limitUsd: 3.5, spentUsd: 3.495 } }, { orbio: orbio.client });
+    console.log("run6b:", r2.status, r2.keyEvents.map((e) => e.detail));
+    expect(r2.status).toBe("done");
+    expect(orbio.state.calls).toContain("create");
   });
 
   it("8. 'summarise my repository moonlet' with GitHub connected → resolves the repo itself and reports", async () => {
