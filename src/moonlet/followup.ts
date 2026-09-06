@@ -92,7 +92,7 @@ export async function followup(input: FollowupInput): Promise<string> {
     try {
       const res = await (input.fetch ?? fetch)(input.imageUrl, { signal: AbortSignal.timeout(15_000) });
       const buf = Buffer.from(await res.arrayBuffer());
-      if (res.ok && buf.length > 0 && buf.length < 6_000_000) imageData = `data:${res.headers.get("content-type")?.split(";")[0] || "image/jpeg"};base64,${buf.toString("base64")}`;
+      if (res.ok && buf.length > 0 && buf.length < 6_000_000) imageData = `data:${imageMime(buf) ?? res.headers.get("content-type")?.split(";")[0] ?? "image/jpeg"};base64,${buf.toString("base64")}`;
     } catch {
       imageData = null;
     }
@@ -121,4 +121,13 @@ export async function followup(input: FollowupInput): Promise<string> {
     if (/401|user not found|unauthorized|402|insufficient/i.test(msg)) return `${m.name}'s key isn't working right now (${/401|not found|unauthorized/i.test(msg) ? "rejected" : "out of credit"}). It rotates on its next run; ask again after that.`;
     throw e;
   }
+}
+
+/** Telegram's file server labels photos application/octet-stream, which vision models then read as text; trust the bytes instead. */
+function imageMime(buf: Buffer): string | null {
+  if (buf[0] === 0xff && buf[1] === 0xd8) return "image/jpeg";
+  if (buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (buf.subarray(0, 4).toString("latin1") === "GIF8") return "image/gif";
+  if (buf.subarray(0, 4).toString("latin1") === "RIFF" && buf.subarray(8, 12).toString("latin1") === "WEBP") return "image/webp";
+  return null;
 }

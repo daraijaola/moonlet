@@ -44,4 +44,16 @@ describe("follow-up on a report (real model)", () => {
     expect(r.length).toBeGreaterThan(20);
     expect(r.toLowerCase()).toMatch(/moon|cartoon|character|face|sleep|antenna|round/);
   }, 90_000);
+
+  it("reads a photo served as application/octet-stream (Telegram file server)", async () => {
+    const octet: typeof fetch = async (url, init) => {
+      const res = await fetch(url, init);
+      if (String(url).includes("/mascot/")) return new Response(await res.arrayBuffer(), { status: 200, headers: { "content-type": "application/octet-stream" } });
+      return res;
+    };
+    const r = await followup({ moonletId: "m_f", owner: OWNER, text: "describe this image in one sentence", runId: "run_f1", imageUrl: "https://16labs.xyz/mascot/moonlet-rest.png", fetch: octet });
+    console.log("followup5:", r);
+    expect(r.toLowerCase()).not.toMatch(/binary|raw data|cannot be rendered|pasted/);
+    expect(r.toLowerCase()).toMatch(/moon|cartoon|character|face|sleep|antenna|round/);
+  }, 90_000);
 });
