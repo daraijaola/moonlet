@@ -7,7 +7,7 @@ import Image from "next/image";
  *   google, openai: official vector logos
  *   orbio: orbio.so/icon.png
  *   discord, telegram, x, github: simple-icons (CC0)
- *   email: drawn in-house (envelope)
+ *   email: drawn in-house (envelope); gmail: Google's Gmail mark geometry, brand colours
  * Monochrome marks inherit text colour; brand-coloured ones render as-is.
  */
 
@@ -43,6 +43,7 @@ export const TelegramMark = (p: P) => <Mono src="/brands/telegram.svg" label="Te
 export const XMark = (p: P) => <Mono src="/brands/x.svg" label="X" {...p} />;
 export const DiscordMark = (p: P) => <Mono src="/brands/discord.svg" label="Discord" {...p} />;
 export const EmailMark = (p: P) => <Mono src="/brands/email.svg" label="Email" {...p} />;
+export const GmailMark = (p: P) => <Img src="/brands/gmail.svg" alt="Gmail" {...p} />;
 
 /** Auto routing is OpenRouter picking the model, so it wears OpenRouter's mark. */
 export const AutoMark = OpenRouterMark;

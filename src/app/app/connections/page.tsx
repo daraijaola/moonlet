@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, timeAgo, type ConnectionKind, type Connections, type OrbioStatus } from "@/lib/api";
-import { DiscordMark, EmailMark, GitHubMark, OrbioMark, TelegramMark, XMark } from "@/components/marks";
+import { DiscordMark, EmailMark, GitHubMark, GmailMark, OrbioMark, TelegramMark, XMark } from "@/components/marks";
 
 function ConnectionsInner() {
   const { address, approveOrbio } = useAuth();
@@ -381,9 +381,9 @@ function EmailCard({ owner, conn, available, onChange, setErr }: CardProps & { o
   const reset = () => { setStep("idle"); setAddress(""); setCode(""); setLocalErr(null); };
   return (
     <Shell
-      mark={<EmailMark size={24} />}
+      mark={<GmailMark size={26} />}
       name="Email"
-      blurb="An inbox, verified once with a six-digit code. Every report your moonlets finish lands there as a readable email, files as attachments, so it works with whatever you already read. Sending is free. Approvals stay in Telegram and here."
+      blurb="Gmail or any inbox, verified once with a six-digit code. Every report your moonlets finish lands there as a readable email, files as attachments, so it works with whatever you already read. Sending is free. Approvals stay in Telegram and here."
       unlocks="deliver"
       conn={conn}
       onDisconnect={async () => { await api.disconnect(owner, "email"); await onChange(); }}
