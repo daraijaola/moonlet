@@ -45,8 +45,11 @@ const CRAFT: Record<TemplateId, string> = {
 - Produce exactly the deliverable described. If the objective is ambiguous, choose the most literal reading and state the assumption in one line.`,
 };
 
-export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag: number; runAt: string }) {
+export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag: number; runAt: string; githubLogin?: string }) {
   const voice = spec.voice?.trim() ? `Owner's voice note: ${spec.voice.trim()}` : "";
+  const github = ctx.githubLogin
+    ? `GitHub is connected as @${ctx.githubLogin}. When the owner says "my repo"/"my repository", they mean one under that account: call github_read with action=repos to find it (match the name they used), then read its README, tree and recent commits before summarising. Never ask them which repo; look it up.`
+    : "";
   return [
     CHARACTER,
     "",
@@ -58,7 +61,10 @@ export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag:
       spec.output.alwaysReport ? "Always produce output." : "Stay silent (nothingHappened=true, empty body) unless something meaningful happened."
     }`,
     `Spend cap this run: $${spec.spendCapUsd.toFixed(3)}.`,
+    github,
     voice,
+    "",
+    "Always finish with the structured output, even if you could not complete the job: then title it plainly, explain what blocked you in summary, set nothingHappened=false and signal=low. Never answer with a question.",
     "",
     CRAFT[spec.template],
   ]

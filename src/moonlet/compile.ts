@@ -11,7 +11,7 @@ import { JobSpec, JobSpecJsonSchema, TEMPLATE_DEFAULTS, type Cadence, type Templ
  */
 export async function compileJob(
   client: OpenRouterClient,
-  input: { sentence: string; template: TemplateId; name?: string },
+  input: { sentence: string; template: TemplateId; name?: string; repos?: string[] },
 ): Promise<JobSpec> {
   const defaults = TEMPLATE_DEFAULTS[input.template];
   const result = callModel(client, {
@@ -22,6 +22,7 @@ export async function compileJob(
       `Default tools for this template: ${defaults.tools.join(", ")}`,
       `Default cadence: ${defaults.cadence}`,
       input.name ? `Name chosen by the owner: ${input.name}` : "",
+      input.repos?.length ? `The owner's GitHub repos (most recent first): ${input.repos.join(", ")}. If the request names one of them ("my repo X", "moonlet"), put its owner/name slug in sources.` : "",
       `Request: ${input.sentence}`,
     ]
       .filter(Boolean)

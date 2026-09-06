@@ -4,12 +4,12 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { api, fmtBag, fmtUsd, type OrbioStatus } from "@/lib/api";
+import { api, fmtBag, fmtUsd, type Connections, type OrbioStatus } from "@/lib/api";
 import { plan, HOLDER_FLOOR } from "@/moonlet/budget";
 import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
 import { FuelGauge } from "@/components/fuel-gauge";
 import { CADENCE_LABEL, MODEL_LABEL, TEMPLATE_BLURB, TEMPLATE_EXAMPLE, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
-import { OpenRouterMark, VENDOR_MARK } from "@/components/marks";
+import { GitHubMark, OpenRouterMark, TelegramMark, VENDOR_MARK, XMark } from "@/components/marks";
 
 const ORDER: TemplateId[] = ["market-watch", "repo-mechanic", "digest", "custom"];
 const CADENCES: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
@@ -27,10 +27,9 @@ function NewInner() {
   const [name, setName] = useState("");
   const [spec, setSpec] = useState<JobSpec | null>(null);
   const [compiled, setCompiled] = useState<boolean | null>(null);
-  const [telegram, setTelegram] = useState("");
-  const [x, setX] = useState("");
   const [autopilot, setAutopilot] = useState(false);
   const [status, setStatus] = useState<OrbioStatus | null>(null);
+  const [conns, setConns] = useState<Connections | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [launching, setLaunching] = useState(false);
@@ -38,6 +37,7 @@ function NewInner() {
   useEffect(() => {
     if (!address) return;
     api.orbioStatus(address).then(setStatus).catch(() => setStatus(null));
+    api.connections(address).then(setConns).catch(() => setConns(null));
   }, [address]);
 
   useEffect(() => {
@@ -47,8 +47,6 @@ function NewInner() {
       setTemplate(moonlet.spec.template);
       setSentence(moonlet.spec.objective);
       setName(moonlet.name);
-      setTelegram(moonlet.delivery.telegram ?? "");
-      setX(moonlet.delivery.x ?? "");
       setAutopilot(!!moonlet.autopilot);
       setCompiled(true);
       setStep(1);
@@ -57,7 +55,7 @@ function NewInner() {
 
   const bag = status?.bag ?? 0;
   const p = useMemo(() => (spec ? plan(spec, bag) : null), [spec, bag]);
-  const handleOk = (v: string) => v === "" || /^@?[A-Za-z0-9_]{3,32}$/.test(v.trim()) || /^-?\d{6,}$/.test(v.trim());
+  const linked = (k: "telegram" | "x" | "github") => conns?.connections.find((c) => c.kind === k) ?? null;
 
   const compile = async () => {
     if (!address) return;
@@ -80,7 +78,7 @@ function NewInner() {
     setErr(null);
     setLaunching(true);
     try {
-      const delivery = { telegram: telegram.trim() || undefined, x: x.trim() || undefined };
+      const delivery = { telegram: linked("telegram") ? "connected" : undefined, x: linked("x") ? "connected" : undefined };
       if (editId) {
         await api.patch(address, editId, { action: "edit", spec, delivery, autopilot });
         router.push(`/app?m=${editId}`);
@@ -95,7 +93,7 @@ function NewInner() {
     }
   };
 
-  const canNext = step === 0 ? sentence.trim().length > 8 : step === 1 ? !!spec && spec.objective.length > 8 : step === 2 ? handleOk(telegram) && handleOk(x) : true;
+  const canNext = step === 0 ? sentence.trim().length > 8 : step === 1 ? !!spec && spec.objective.length > 8 : true;
 
   return (
     <div className="mx-auto max-w-[760px]">
@@ -158,33 +156,48 @@ function NewInner() {
 
         {step === 2 && (
           <>
-            <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">Where should results go?</h1>
-            <p className="mt-1 text-[13.5px] text-ink-soft">The public page is the receipt. Telegram/X handles are saved for later — nothing is posted from this build.</p>
+            <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">Where results go</h1>
+            <p className="mt-1 text-[13.5px] text-ink-soft">Every run lands on the public page. Anything else follows what you’ve connected.</p>
             <ul className="mt-5 space-y-2.5">
-              <li className="flex items-center justify-between rounded-lg border border-ink/10 bg-paper p-3.5">
-                <div>
+              <li className="flex items-center justify-between gap-3 rounded-lg border border-ink/10 bg-paper p-3.5">
+                <div className="min-w-0">
                   <p className="text-[14px] font-semibold text-ink">Public page</p>
-                  <p className="text-[12.5px] text-ink-soft">anyone can watch it work · JSON at /api/moonlets/:id/runs</p>
+                  <p className="text-[12.5px] text-ink-soft">Anyone can watch it work. Every run is hashed and anchored on Robinhood Chain.</p>
                 </div>
-                <span className="rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">live now</span>
+                <span className="shrink-0 rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">always</span>
               </li>
-              <li className="rounded-lg border border-ink/10 p-3.5 opacity-80">
-                <p className="text-[14px] font-semibold text-ink">Telegram <span className="ml-2 font-mono text-[11px] font-normal text-ink-faint">saved, not sent yet</span></p>
-                <input value={telegram} onChange={(e) => setTelegram(e.target.value)} placeholder="@handle or chat id" className={`mt-2 w-full rounded-md border bg-paper px-3 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-ink ${handleOk(telegram) ? "border-ink/20" : "border-red-700"}`} />
-                {!handleOk(telegram) && <p className="mt-1 font-mono text-[11px] text-red-700">Use @handle (3–32 chars) or a numeric chat id.</p>}
+              <li className={`flex items-center justify-between gap-3 rounded-lg border p-3.5 ${linked("telegram") ? "border-moss/40 bg-white" : "border-ink/10"}`}>
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink"><TelegramMark size={18} /></span>
+                  <div className="min-w-0">
+                    <p className="text-[14px] font-semibold text-ink">Telegram</p>
+                    <p className="text-[12.5px] leading-[1.5] text-ink-soft">
+                      {linked("telegram") ? `Briefs and alerts go to ${linked("telegram")!.label}. Anything that needs your OK arrives with Approve / Reject buttons.` : "Link it and results reach your phone; approvals become two taps."}
+                    </p>
+                  </div>
+                </div>
+                {linked("telegram") ? (
+                  <span className="shrink-0 rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">on</span>
+                ) : (
+                  <Link href="/app/connections" className="shrink-0 rounded-md border border-ink/15 bg-white px-2.5 py-1.5 font-mono text-[12px] text-ink hover:border-ink/40">Link</Link>
+                )}
               </li>
-              <li className="rounded-lg border border-ink/10 p-3.5 opacity-80">
-                <p className="text-[14px] font-semibold text-ink">X <span className="ml-2 font-mono text-[11px] font-normal text-ink-faint">saved, not sent yet</span></p>
-                <input value={x} onChange={(e) => setX(e.target.value)} placeholder="@handle" className={`mt-2 w-full rounded-md border bg-paper px-3 py-2 font-mono text-[13.5px] text-ink outline-none focus:border-ink ${handleOk(x) ? "border-ink/20" : "border-red-700"}`} />
-              </li>
+              {(["x", "github"] as const).filter((k) => linked(k)).map((k) => (
+                <li key={k} className="flex items-center justify-between gap-3 rounded-lg border border-moss/40 bg-white p-3.5">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink">{k === "x" ? <XMark size={16} /> : <GitHubMark size={18} />}</span>
+                    <div className="min-w-0">
+                      <p className="text-[14px] font-semibold text-ink">{k === "x" ? "X" : "GitHub"} <span className="ml-1 font-mono text-[11px] font-normal text-ink-faint">{linked(k)!.label}</span></p>
+                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">{k === "x" ? "It may draft posts. Each one waits for your approval before it goes out." : "It may read repos and draft pull requests or comments. Each one waits for your approval."}</p>
+                    </div>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">asks first</span>
+                </li>
+              ))}
             </ul>
-            <label className="mt-4 flex items-start gap-3 rounded-lg border border-ink/10 bg-paper p-3.5">
-              <input type="checkbox" checked={autopilot} onChange={(e) => setAutopilot(e.target.checked)} className="mt-0.5 h-4 w-4 accent-ink" />
-              <span>
-                <span className="block text-[14px] font-semibold text-ink">Autopilot</span>
-                <span className="block text-[12.5px] leading-[1.5] text-ink-soft">Off (default): posts, PRs and comments are drafted and wait for your OK on the dashboard or in Telegram. On: it acts without asking. Connect accounts under <Link href="/app/connections" className="underline">Connections</Link>.</span>
-              </span>
-            </label>
+            {!linked("x") && !linked("github") && (
+              <p className="mt-3 font-mono text-[11.5px] text-ink-faint">Want it to post on X or open pull requests? Connect those under <Link href="/app/connections" className="underline">Connections</Link>; it will always ask you first.</p>
+            )}
           </>
         )}
 
@@ -217,7 +230,7 @@ function NewInner() {
               <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-soft">{spec.name} · {TEMPLATE_LABEL[spec.template]} · {CADENCE_LABEL[spec.cadence]}</p>
               <p className="mt-1.5 text-[14px] text-ink">“{spec.objective}”</p>
               <p className="mt-2 font-mono text-[12px] text-ink-soft">model: {MODEL_LABEL[spec.model ?? "auto"].name} · tools: {spec.tools.map((t) => TOOL_LABEL[t]).join(", ")}</p>
-              <p className="mt-1 font-mono text-[12px] text-ink-soft">→ public page{telegram && ` · Telegram ${telegram}`}{x && ` · X ${x}`}</p>
+              <p className="mt-1 font-mono text-[12px] text-ink-soft">→ public page{linked("telegram") && ` · Telegram ${linked("telegram")!.label}`}{linked("x") && " · may draft posts on X"}{linked("github") && " · may draft pull requests"}</p>
             </div>
           </>
         )}
@@ -305,11 +318,11 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
               const Mark = VENDOR_MARK[m.vendor];
               const on = (spec.model ?? "auto") === id;
               return (
-                <button key={id} type="button" onClick={() => set("model", id as ModelChoice)} className={`flex items-center gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${on ? "border-ink bg-paper" : "border-ink/10 hover:border-ink/30"}`}>
+                <button key={id} type="button" onClick={() => set("model", id as ModelChoice)} className={`flex min-w-0 items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${on ? "border-ink bg-paper" : "border-ink/10 hover:border-ink/30"}`}>
                   <Mark size={18} className={on ? "text-ink" : "text-ink-soft"} />
                   <span className="min-w-0 flex-1">
                     <span className="block text-[13.5px] font-semibold text-ink">{m.name}</span>
-                    <span className="block truncate font-mono text-[11px] text-ink-soft">{m.hint}</span>
+                    <span className="block font-mono text-[11px] leading-[1.45] text-ink-soft">{m.hint}</span>
                   </span>
                 </button>
               );

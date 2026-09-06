@@ -10,6 +10,7 @@ import { RH_RPC, type DeliverySink } from "./tools";
 import * as tg from "./connections/telegram";
 import type { GitHubConn } from "./connections/github";
 import { telegramCallback } from "./proposals";
+import { concierge } from "./concierge";
 
 /**
  * The scheduler is what a cron tick calls. It picks due moonlets, claims each
@@ -98,6 +99,7 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
   await anchorPending(deps).catch(() => undefined);
   await tg.configureBot(deps.fetch).catch(() => undefined);
+  tg.setChatHandler((owner, text) => concierge(owner, text, { appUrl: process.env.APP_URL ?? "https://16labs.xyz", fetch: deps.fetch }));
   await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
   return results;
 }
@@ -229,9 +231,14 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     txHash = a.txHash;
   }
 
-  if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && tgConn) {
-    const text = `${result.output.title}\n\n${result.output.summary}`;
-    await deliver({ channel: "telegram", text }).catch(() => undefined);
+  const alreadyDelivered = result.trace.some((t) => t.tool === "deliver" && t.summary.startsWith("telegram"));
+  if (result.status === "done" && result.output && !result.output.nothingHappened && tgConn && tg.telegramConfigured() && !deps.deliver && !alreadyDelivered) {
+    const o = result.output;
+    const page = `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}`;
+    const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${o.body.trim() && o.body.trim() !== o.summary.trim() ? `\n\n${tg.esc(o.body.slice(0, 2500))}` : ""}\n\n$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · ${tg.esc(page)}`;
+    await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch(() => undefined);
+  } else if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && !alreadyDelivered) {
+    await deliver({ channel: "telegram", text: `${result.output.title}\n\n${result.output.summary}` }).catch(() => undefined);
   }
 
   if ((result.error ?? "").includes("authorization expired")) {

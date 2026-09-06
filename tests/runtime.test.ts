@@ -125,6 +125,20 @@ describe("runner", () => {
     expect(r.key?.key).toBe(KEY);
   });
 
+  it("8. 'summarise my repository moonlet' with GitHub connected → resolves the repo itself and reports", async () => {
+    const gh = process.env.GITHUB_TOKEN;
+    if (!gh) return;
+    const orbio = fakeOrbio({ realKey: KEY });
+    const spec: Spec = { ...marketWatch, name: "Micheal", template: "repo-mechanic", objective: "Give me a summarization on what my repository moonlet is about", sources: [], tools: ["github_read", "web_fetch", "deliver"], output: { kind: "digest", maxWords: 220, alwaysReport: false }, spendCapUsd: 0.05, model: "openai/gpt-5.6-terra" };
+    const login = ((await (await fetch("https://api.github.com/user", { headers: { authorization: `Bearer ${gh}` } })).json()) as { login: string }).login;
+    const r = await runMoonlet({ id: "m_t8", owner: OWNER, bag: 1_250_000, spec, delivery: {}, key: null, connections: { github: { token: gh, login } } }, { orbio: orbio.client });
+    console.log("run8:", r.status, r.error, "\n", r.output?.title, "\n", r.output?.summary, "\n", r.trace.map((t) => t.summary));
+    expect(r.status).toBe("done");
+    expect(r.trace.some((t) => /^repos/.test(t.summary))).toBe(true);
+    expect(r.output?.nothingHappened).toBe(false);
+    expect(r.output?.summary.toLowerCase()).toMatch(/moonlet|orbio|agent/);
+  });
+
   it("delivery tool refuses channels the owner didn't configure, and uses the sink when they did", async () => {
     const orbio = fakeOrbio({ realKey: KEY });
     const sent: string[] = [];

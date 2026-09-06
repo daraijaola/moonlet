@@ -234,13 +234,18 @@ const Row = ({ k, v }: { k: string; v: string }) => (
 
 function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange: () => Promise<void> }) {
   const [runs, setRuns] = useState<ApiRun[] | null>(null);
+  const [anchoring, setAnchoring] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [more, setMore] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const quiet = m.status === "quiet" || m.status === "paused";
 
-  const loadRuns = useCallback(async () => setRuns((await api.runs(m.id)).runs), [m.id]);
+  const loadRuns = useCallback(async () => {
+    const r = await api.runs(m.id);
+    setRuns(r.runs);
+    setAnchoring(r.anchoring ?? true);
+  }, [m.id]);
   useEffect(() => {
     const first = setTimeout(loadRuns, 0);
     const t = setInterval(loadRuns, m.status === "running" ? 3000 : 15_000);
@@ -333,7 +338,7 @@ function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange
       <div className="mt-8">
         <div className="mb-3 flex items-center justify-between">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">What it did</h2>
-          <span className="font-mono text-[11px] text-ink-faint">{runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain</span>
+          <span className="font-mono text-[11px] text-ink-faint">{anchoring ? `${runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain` : "every run hashed"}</span>
         </div>
         {runs === null ? (
           <p className="font-mono text-[13px] text-ink-soft">Loading…</p>
@@ -348,7 +353,7 @@ function Detail({ m, owner, onChange }: { m: ApiMoonlet; owner: string; onChange
                 </div>
               </div>
             )}
-            {runs.map((r) => <RunCard key={r.id} run={r} />)}
+            {runs.map((r) => <RunCard key={r.id} run={r} anchoring={anchoring} />)}
             {!runs.length && m.status !== "running" && (
               <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center font-mono text-[13px] text-ink-soft">
                 No runs yet. The first one starts {timeUntil(m.nextRunAt)}, or press Run now.

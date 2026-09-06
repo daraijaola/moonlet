@@ -9,5 +9,6 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   const m = await store.getMoonlet(id);
   if (!m) return bad("not found", 404);
   const runs = await store.listRuns(id);
-  return NextResponse.json({ runs: runs.map((r) => ({ ...r, explorerUrl: r.txHash ? explorerTx(r.txHash) : null })) });
+  const anchoring = !!process.env.ANCHOR_PRIVATE_KEY;
+  return NextResponse.json({ anchoring, runs: runs.map((r) => ({ ...r, explorerUrl: r.txHash ? explorerTx(r.txHash) : null })) });
 }

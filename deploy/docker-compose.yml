@@ -1,7 +1,6 @@
 services:
   web:
-    build:
-      context: ..
+    image: ${WEB_IMAGE:-moonlet-web:latest}
     restart: unless-stopped
     env_file: .env
     environment:

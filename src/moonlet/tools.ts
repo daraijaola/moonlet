@@ -162,17 +162,18 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
   const ghToken = deps.connections?.github?.token;
   const githubRead = tool({
     name: "github_read",
-    description: "Read a GitHub repo the owner connected: open issues, pull requests, recent commits, a file, or a directory listing. Read-only.",
+    description: "Read GitHub through the owner's connected account. `repos` lists the owner's own repositories (use it to resolve 'my repo X'); `readme`, `tree`, `file`, `commits`, `issues`, `pulls` read one repo. Read-only.",
     inputSchema: z.object({
-      action: z.enum(["issues", "pulls", "commits", "file", "tree"]),
-      repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/).describe("owner/name"),
+      action: z.enum(["repos", "readme", "issues", "pulls", "commits", "file", "tree"]),
+      repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/).optional().describe("owner/name; not needed for `repos`"),
       path: z.string().optional().describe("for file / tree"),
       ref: z.string().optional().describe("branch or sha"),
       state: z.enum(["open", "closed", "all"]).optional(),
       limit: z.number().int().min(1).max(30).optional(),
     }),
-    execute: traced("github_read", (q: { action: string; repo: string; path?: string }, r: unknown) => `${q.action} ${q.repo}${q.path ? " " + q.path : ""} · ${brief(r, 90)}`, async (q) => {
+    execute: traced("github_read", (q: { action: string; repo?: string; path?: string }, r: unknown) => `${q.action}${q.repo ? " " + q.repo : ""}${q.path ? " " + q.path : ""} · ${brief(r, 90)}`, async (q) => {
       if (!ghToken) return { error: "GitHub not connected" };
+      if (q.action !== "repos" && !q.repo) return { error: "repo (owner/name) is required; call action=repos to find it" };
       try {
         return await readRepo(ghToken, q as never, f);
       } catch (e) {
