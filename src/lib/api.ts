@@ -21,6 +21,7 @@ export type ApiMoonlet = {
   nextRunAt: number;
   lastRunAt: number | null;
   createdAt: number;
+  parentId: string | null;
   keysRotated: number;
   runsTotal: number;
   runsFailed: number;
@@ -59,7 +60,7 @@ export type Connections = {
 export type Proposal = {
   id: string;
   moonletId: string;
-  kind: "tweet" | "pull_request" | "issue_comment";
+  kind: "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet";
   status: "pending" | "approved" | "rejected" | "executed" | "failed";
   title: string;
   body: string;

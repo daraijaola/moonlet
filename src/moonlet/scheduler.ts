@@ -251,7 +251,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const runId = store.newId("run");
   const result = await run(
     {
-      id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory,
+      id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn },
     },

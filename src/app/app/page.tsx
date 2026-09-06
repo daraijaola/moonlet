@@ -91,7 +91,7 @@ function DashboardInner() {
 
       <div className="min-w-0">
         <Queue owner={address!} />
-        <Detail key={selected.id} m={selected} owner={address!} onChange={load} conns={conns} launched={params.get("launched") === "1"} status={status} />
+        <Detail key={selected.id} m={selected} all={moonlets} owner={address!} onChange={load} conns={conns} launched={params.get("launched") === "1"} status={status} />
       </div>
     </div>
   );
@@ -111,7 +111,7 @@ function Queue({ owner }: { owner: string }) {
     };
   }, [load]);
   if (!items.length) return null;
-  const KIND = { tweet: "Post on X", pull_request: "Pull request", issue_comment: "Comment" } as const;
+  const KIND = { tweet: "Post on X", pull_request: "Pull request", issue_comment: "Comment", spawn_moonlet: "New moonlet" } as const;
   return (
     <section className="mb-6 rounded-lg border border-gold bg-gold/10 p-4">
       <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink">Waiting for your OK · {items.length}</h2>
@@ -233,7 +233,9 @@ const Row = ({ k, v }: { k: string; v: string }) => (
   </div>
 );
 
-function Detail({ m, owner, onChange, conns, launched, status }: { m: ApiMoonlet; owner: string; onChange: () => Promise<void>; conns: Connections | null; launched?: boolean; status: OrbioStatus | null }) {
+function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMoonlet; all: ApiMoonlet[]; owner: string; onChange: () => Promise<void>; conns: Connections | null; launched?: boolean; status: OrbioStatus | null }) {
+  const parent = m.parentId ? all.find((x) => x.id === m.parentId) : undefined;
+  const children = all.filter((x) => x.parentId === m.id);
   const [runs, setRuns] = useState<ApiRun[] | null>(null);
   const [thread, setThread] = useState<Array<{ q: string; a: string | null; runId?: string }>>([]);
   const [question, setQuestion] = useState("");
@@ -294,6 +296,13 @@ function Detail({ m, owner, onChange, conns, launched, status }: { m: ApiMoonlet
             {quiet && <span className="rounded-full bg-ink/5 px-2 py-0.5 font-mono text-[11px] text-ink-soft">{m.status}</span>}
           </div>
           <p className="mt-1.5 max-w-[46rem] text-[14px] leading-[1.55] text-ink-soft">“{m.spec.objective}”</p>
+          {(parent || children.length > 0) && (
+            <p className="mt-1.5 font-mono text-[12px] text-ink-faint">
+              {parent && <>spawned by <Link href={`/app?m=${parent.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{parent.name}</Link></>}
+              {parent && children.length > 0 && " · "}
+              {children.length > 0 && <>spawned {children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<Link href={`/app?m=${c.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{c.name}</Link></span>)}</>}
+            </p>
+          )}
         </div>
         <Link href={`/s/${m.id}`} className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[12.5px] text-ink hover:border-ink/40">
           Public page ↗

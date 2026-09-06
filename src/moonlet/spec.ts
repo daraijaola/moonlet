@@ -20,6 +20,7 @@ export const TOOL_IDS = [
   "open_pull_request",
   "comment_on_issue",
   "post_tweet",
+  "spawn_moonlet",
 ] as const;
 
 /** Tools that need a connection on the owner's account before a moonlet may use them. */
@@ -30,7 +31,7 @@ export const TOOL_REQUIRES: Partial<Record<ToolId, "telegram" | "github" | "x">>
   post_tweet: "x",
 };
 /** Tools that act on the owner's behalf; always go through draft → approve unless autopilot. */
-export const ACTING_TOOLS: ToolId[] = ["open_pull_request", "comment_on_issue", "post_tweet"];
+export const ACTING_TOOLS: ToolId[] = ["open_pull_request", "comment_on_issue", "post_tweet", "spawn_moonlet"];
 export type ToolId = (typeof TOOL_IDS)[number];
 
 export const MODEL_CHOICES = ["auto", "google/gemini-3.8-flash", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5"] as const;

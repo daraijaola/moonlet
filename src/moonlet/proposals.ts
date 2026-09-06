@@ -2,6 +2,8 @@ import * as store from "./store";
 import * as tg from "./connections/telegram";
 import * as gh from "./connections/github";
 import * as x from "./connections/x";
+import { describeSpec, launchMoonlet } from "./launch";
+import type { JobSpec } from "./spec";
 
 /**
  * Draft → approve → act.
@@ -15,7 +17,8 @@ import * as x from "./connections/x";
 export type ProposalInput =
   | { kind: "tweet"; text: string }
   | { kind: "pull_request"; plan: gh.PullRequestPlan }
-  | { kind: "issue_comment"; repo: string; number: number; body: string };
+  | { kind: "issue_comment"; repo: string; number: number; body: string }
+  | { kind: "spawn_moonlet"; spec: JobSpec; reason: string };
 
 export type ProposeCtx = { owner: string; moonletId: string; moonletName: string; runId: string | null; autopilot: boolean; fetch?: typeof fetch };
 
@@ -25,15 +28,20 @@ export function describe(kind: store.ProposalKind, payload: Record<string, unkno
     const p = payload.plan as gh.PullRequestPlan;
     return { title: `Open PR on ${p.repo}`, body: `${p.title}\n\n${p.body}\n\nfiles: ${p.files.map((f) => f.path).join(", ")}` };
   }
+  if (kind === "spawn_moonlet") {
+    const { spec, reason } = payload as { spec: JobSpec; reason: string };
+    return { title: `Spawn a moonlet: ${spec.name}`, body: `${reason}\n\n${describeSpec(spec)}` };
+  }
   const c = payload as { repo: string; number: number; body: string };
   return { title: `Comment on ${c.repo}#${c.number}`, body: c.body };
 }
 
 /** Create the proposal (or act immediately on autopilot). Returns what the tool should tell the model. */
 export async function propose(input: ProposalInput, ctx: ProposeCtx) {
-  const needs = input.kind === "tweet" ? "x" : "github";
-  if (!(await store.getConnection(ctx.owner, needs))) return { proposalId: null, status: "failed" as const, result: { error: `${needs === "x" ? "X" : "GitHub"} is not connected` } };
-  const payload: Record<string, unknown> = input.kind === "tweet" ? { text: input.text } : input.kind === "pull_request" ? { plan: input.plan } : { repo: input.repo, number: input.number, body: input.body };
+  const needs = input.kind === "tweet" ? "x" : input.kind === "spawn_moonlet" ? null : "github";
+  if (needs && !(await store.getConnection(ctx.owner, needs))) return { proposalId: null, status: "failed" as const, result: { error: `${needs === "x" ? "X" : "GitHub"} is not connected` } };
+  const payload: Record<string, unknown> =
+    input.kind === "tweet" ? { text: input.text } : input.kind === "pull_request" ? { plan: input.plan } : input.kind === "spawn_moonlet" ? { spec: input.spec, reason: input.reason } : { repo: input.repo, number: input.number, body: input.body };
   const id = store.newId("p");
   await store.insertProposal({ id, owner: ctx.owner, moonletId: ctx.moonletId, runId: ctx.runId, kind: input.kind, payload });
 
@@ -78,6 +86,10 @@ async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ s
     let result: Record<string, unknown>;
     if (p.kind === "tweet") {
       result = await x.postTweet(p.owner, String(p.payload.text ?? ""), fetchImpl);
+    } else if (p.kind === "spawn_moonlet") {
+      const r = await launchMoonlet(p.owner, p.payload.spec as JobSpec, { parentId: p.moonletId, fetch: fetchImpl });
+      if (!r.ok) throw new Error(r.error);
+      result = { moonletId: r.moonlet.id, name: r.moonlet.name, url: `${process.env.APP_URL ?? "https://16labs.xyz"}/app?m=${r.moonlet.id}`, familyNote: r.familyNote };
     } else if (p.kind === "pull_request") {
       const c = await gh.connectionFor(p.owner);
       if (!c) throw new Error("GitHub not connected");
@@ -105,9 +117,10 @@ export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   if (!(await tg.chatOwns(ctx.chatId, p.owner))) return "This chat isn't linked to the wallet that owns this draft.";
   const r = await decide(id, action);
   if (!r.ok) return `<b>${tg.esc(d.title)}</b>\n\n${tg.esc(r.error)}.`;
-  if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing was posted.`;
+  if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : "was posted"}.`;
   if (r.status === "executed") {
-    const url = (r.result as { url?: string })?.url;
+    const { url, name, familyNote } = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string };
+    if (p.kind === "spawn_moonlet") return `<b>${tg.esc(d.title)}</b>\n\n✓ <b>${tg.esc(name ?? "")}</b> is live and running its first check now; its reports will land here too.${familyNote ? `\n\n${tg.esc(familyNote)}` : ""}\n${tg.esc(url ?? "")}`;
     return `<b>${tg.esc(d.title)}</b>\n\n✓ Done.${url ? ` ${tg.esc(url)}` : ""}`;
   }
   return `<b>${tg.esc(d.title)}</b>\n\n⚠ Approved, but it failed: ${tg.esc(String((r.result as { error?: string })?.error ?? "unknown"))}`;

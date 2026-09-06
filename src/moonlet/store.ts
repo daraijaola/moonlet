@@ -31,6 +31,8 @@ export type MoonletRow = {
   autopilot: boolean;
   /** Compact notes the moonlet carries between runs (last values, seen ids). */
   memory: string | null;
+  /** The moonlet that spawned this one, if any. */
+  parentId: string | null;
   key: KeyState;
   cadence: string;
   perRunCapUsd: number;
@@ -137,6 +139,7 @@ export function migrate() {
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN memory TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN parent_id TEXT`).catch(() => undefined);
     await c.execute(`CREATE TABLE IF NOT EXISTS tg_messages (chat_id TEXT NOT NULL, message_id INTEGER NOT NULL, run_id TEXT, moonlet_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(chat_id, message_id))`).catch(() => undefined);
   })();
   return ready;
@@ -231,6 +234,7 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
     delivery: JSON.parse(row.delivery as string),
     autopilot: !!row.autopilot,
     memory: (row.memory as string | null) ?? null,
+    parentId: (row.parent_id as string | null) ?? null,
     key: row.key ? (JSON.parse(open(row.key as string)) as KeyState) : null,
     cadence: row.cadence as string,
     perRunCapUsd: Number(row.per_run_cap_usd),
@@ -246,14 +250,14 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
   };
 }
 
-export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory"> & { autopilot?: boolean }) {
+export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId"> & { autopilot?: boolean; parentId?: string | null }) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
       m.id, m.owner.toLowerCase(), m.name, JSON.stringify(m.spec), m.status, JSON.stringify(m.delivery), m.autopilot ? 1 : 0,
-      m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt,
+      m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt, m.parentId ?? null,
     ],
   });
 }
@@ -485,7 +489,7 @@ export async function takeLinkCode(code: string) {
 
 // ---- proposals (draft → approve → act) --------------------------------------
 
-export type ProposalKind = "tweet" | "pull_request" | "issue_comment";
+export type ProposalKind = "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet";
 export type ProposalStatus = "pending" | "approved" | "rejected" | "executed" | "failed";
 export type ProposalRow = {
   id: string;

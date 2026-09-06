@@ -28,6 +28,7 @@ export const TOOL_LABEL: Record<ToolId, string> = {
   token_market: "DEX market data",
   sandbox: "Sandboxed shell",
   deliver: "Deliver",
+  spawn_moonlet: "Spawn a moonlet",
   github_read: "Read GitHub repo",
   open_pull_request: "Open pull request",
   comment_on_issue: "Comment on issue",

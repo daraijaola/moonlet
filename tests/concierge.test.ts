@@ -55,8 +55,23 @@ describe("telegram concierge (real model, owner's key)", () => {
   });
 
   it("declines what it cannot do and points to the site", async () => {
-    const r = await concierge(OWNER, "create a new moonlet that watches my github", { appUrl: "https://16labs.xyz" });
+    const r = await concierge(OWNER, "connect my discord and delete tide", { appUrl: "https://16labs.xyz" });
     console.log("concierge4:", r);
     expect(r).toMatch(/16labs\.xyz/);
+    expect((await store.listMoonlets(OWNER)).map((m) => m.name)).toContain("Tide");
   });
+
+  it("spawns a new moonlet from one sentence and reports what it will do", async () => {
+    await store.setOwnerBag(OWNER, 250_000);
+    const noRpc: typeof fetch = async (u, init) => (String(u).includes("robinhood") ? new Response("{}", { status: 503 }) : fetch(u, init));
+    const r = await concierge(OWNER, "spawn a moonlet called Shadow that watches wallet 0x8366a39cc670b4001a1121b8f6a443a643e40951 and tells me when it moves ORBIO", { appUrl: "https://16labs.xyz", fetch: noRpc });
+    console.log("concierge5:", r);
+    const all = await store.listMoonlets(OWNER);
+    const child = all.find((m) => m.name.toLowerCase() === "shadow");
+    expect(child).toBeTruthy();
+    expect(child!.parentId).toBeNull();
+    expect(child!.spec.sources.join(" ")).toMatch(/0x8366a39cc670b4001a1121b8f6a443a643e40951/i);
+    expect(r).toMatch(/Shadow/);
+    expect(r.toLowerCase()).toMatch(/wallet|0x8366/);
+  }, 90_000);
 });

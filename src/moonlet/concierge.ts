@@ -5,6 +5,9 @@ import { runLoop, type LocalTool } from "./llm";
 import { Cadence, CADENCE_MS } from "./spec";
 import { CADENCE_WORDS, cadenceReply } from "./budget";
 import { runOne } from "./scheduler";
+import { compileJob } from "./compile";
+import { launchMoonlet } from "./launch";
+import { TEMPLATE_IDS } from "./spec";
 
 /**
  * The owner talks to their moonlets in Telegram. Free text from a linked chat
@@ -16,8 +19,9 @@ import { runOne } from "./scheduler";
 
 const CHARACTER = `You are the owner's moonlet concierge in Telegram: the voice of their small agents.
 Terse, warm, concrete. One to four short sentences, no markdown, no emoji, no bullet lists unless listing moonlets.
-You can: list their moonlets and what each does, report the latest result, run a moonlet now, pause or resume one, change how often it runs.
-If they ask for something you cannot do (new moonlet, connections, spending), say so in one line and point to the site.
+You can: list their moonlets and what each does, report the latest result, run a moonlet now, pause or resume one, change how often it runs, and spawn a new moonlet from a one-sentence job ("spawn a moonlet that watches wallet 0x…", "make me one that digests my repo nightly").
+When spawning, pass the owner's words as the sentence; pick the template yourself. Tell them its name, what it will do, how often, and that it is running its first check now. Include the tool's note if there is one.
+If they ask for something you cannot do (connections, spending, deleting), say so in one line and point to the site.
 Never speculate on price or give financial advice. Never ask for keys or wallet access.
 When you run something now, say it started and that the result will arrive here in about a minute.
 Use tool results; do not invent moonlets, runs or numbers.`;
@@ -26,7 +30,7 @@ Use tool results; do not invent moonlets, runs or numbers.`;
 export async function concierge(owner: string, text: string, opts: { appUrl: string; fetch?: typeof fetch; runNow?: (id: string) => Promise<unknown> } ): Promise<string> {
   const moonlets = await store.listMoonlets(owner);
   const key = moonlets.find((m) => m.key?.key)?.key?.key ?? process.env.COMPILE_API_KEY;
-  if (!moonlets.length) return `You have no moonlets yet. Launch one at ${opts.appUrl}/app/new and I'll report here.`;
+  if (!moonlets.length && !/\b(spawn|make|create|launch|start|new)\b/i.test(text)) return `You have no moonlets yet. Launch one at ${opts.appUrl}/app/new, or tell me what it should do ("spawn a moonlet that watches $ORBIO liquidity") and I'll make it.`;
   if (!key) return `Your moonlets haven't claimed a key yet, so I can't think on your behalf until the first run. Ask again after that, or manage them at ${opts.appUrl}/app.`;
 
   const byName = (q: string) => {
@@ -37,7 +41,8 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
     id: m.id,
     name: m.name,
     job: m.spec.objective,
-    cadence: CADENCE_WORDS[m.spec.cadence],
+    cadence: CADENCE_WORDS[m.cadence as Cadence],
+    ...(m.cadence !== m.spec.cadence ? { cadenceNote: `asked for ${CADENCE_WORDS[m.spec.cadence]}, but the bag's income only pays for ${CADENCE_WORDS[m.cadence as Cadence]}` } : {}),
     status: m.status,
     nextRunInMinutes: m.status === "paused" ? null : Math.max(0, Math.round((m.nextRunAt - Date.now()) / 60_000)),
     runs: m.runsTotal,
@@ -89,6 +94,21 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
         if (!m) return { error: "no such moonlet" };
         await store.updateMoonlet(m.id, { spec: { ...m.spec, cadence }, cadence, nextRunAt: Math.min(m.nextRunAt, Date.now() + CADENCE_MS[cadence]) });
         return { ok: true, tellOwner: cadenceReply(m.name, m.spec, cadence, m.earnPerDayUsd) };
+      },
+    }),
+    tool({
+      name: "spawn_moonlet",
+      description: "Create a new moonlet for the owner from one plain sentence describing its job. It is compiled, planned against the bag, and starts its first run at once. Use only when the owner asks for a new moonlet.",
+      inputSchema: z.object({
+        sentence: z.string().min(8).max(400).describe("The job, in the owner's words"),
+        template: z.enum(TEMPLATE_IDS).describe("market-watch for tokens/pools/wallets on Robinhood Chain, repo-mechanic for a GitHub repo, digest for reading sources, custom otherwise"),
+        name: z.string().min(2).max(24).optional().describe("Only if the owner named it"),
+      }),
+      execute: async ({ sentence, template, name }) => {
+        const spec = await compileJob(key, { sentence, template, name });
+        const r = await launchMoonlet(owner, spec, { fetch: opts.fetch });
+        if (!r.ok) return { error: r.error };
+        return { ok: true, moonlet: describe(r.moonlet), firstRunStarted: r.firstRunStarted, note: r.familyNote || undefined };
       },
     }),
     tool({

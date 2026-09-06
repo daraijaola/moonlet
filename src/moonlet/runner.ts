@@ -6,6 +6,7 @@ import { OrbioAuthError, type OrbioClient } from "./orbio";
 import { buildInstructions } from "./personality";
 import { RunOutput, RunOutputJsonSchema, type JobSpec } from "./spec";
 import { buildTools, type DeliverySink, type ToolDeps } from "./tools";
+import { compileJob } from "./compile";
 
 /**
  * One moonlet run, end to end:
@@ -32,6 +33,8 @@ export type MoonletState = {
   connections?: ToolDeps["connections"];
   memory?: string | null;
   runId?: string | null;
+  /** Set when this moonlet was itself spawned; children do not spawn (no chain reactions). */
+  parentId?: string | null;
 };
 
 export type TraceEvent = { at: number; tool: string; summary: string };
@@ -87,12 +90,13 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   }
 
   const attempt = async (k: NonNullable<KeyState>) => {
-    const built = buildTools(m.spec.tools, {
+    const built = buildTools(m.parentId ? m.spec.tools : [...m.spec.tools, "spawn_moonlet"], {
       fetch: deps.fetch,
       deliver: deps.deliver,
       delivery: m.delivery,
       connections: m.connections,
       propose: { owner: m.owner, moonletId: m.id, moonletName: m.spec.name, runId: m.runId ?? null, autopilot: !!m.autopilot },
+      compile: m.parentId ? undefined : (i) => compileJob(k.key, i),
       trace: (e) => trace.push({ at: Date.now() - t0, ...e }),
     });
     const r = await runLoop({

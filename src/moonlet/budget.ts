@@ -10,6 +10,11 @@ export const HOLDER_FLOOR = 1_000;
 export const EARN_PER_TOKEN_PER_DAY_USD = 0.0000316;
 const RESERVE = 0.15;
 
+/** What the bag's income leaves for moonlets after the reserve. */
+export function spendablePerDay(earnPerDayUsd: number) {
+  return earnPerDayUsd * (1 - RESERVE);
+}
+
 export function estimateEarnPerDay(bag: number) {
   return bag >= HOLDER_FLOOR ? bag * EARN_PER_TOKEN_PER_DAY_USD : 0;
 }
@@ -36,7 +41,7 @@ export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPer
   if (bag < HOLDER_FLOOR) {
     return { cadence: spec.cadence, perRunCapUsd: 0, burnPerDayUsd: 0, earnPerDayUsd, quiet: true, reason: `bag below ${HOLDER_FLOOR}` };
   }
-  const spendable = earnPerDayUsd * (1 - RESERVE);
+  const spendable = spendablePerDay(earnPerDayUsd);
   const floorCap = Math.min(TEMPLATE_DEFAULTS[spec.template].costPerRunUsd, spec.spendCapUsd);
   const order: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
   let cadence = spec.cadence;

@@ -23,7 +23,8 @@ Budget discipline:
 
 Acting on the owner's behalf:
 - open_pull_request, comment_on_issue and post_tweet create a draft the owner approves. Call each at most once per run, then finish. Never retry a "proposed" result; say it is awaiting approval.
-- Only use these when the objective clearly asks for that action. A brief is not a tweet.`;
+- Only use these when the objective clearly asks for that action. A brief is not a tweet.
+- spawn_moonlet proposes a new, separate moonlet for the owner. Use it only when what you found deserves its own ongoing watch that no existing moonlet covers (a wallet that keeps moving, a pool worth tracking, a repo that needs its own digest), at most once per run, never for your own job. Say in your report that it awaits approval.`;
 
 const CRAFT: Record<TemplateId, string> = {
   "market-watch": `Craft: market watch on Robinhood Chain.

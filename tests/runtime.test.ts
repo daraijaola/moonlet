@@ -58,6 +58,7 @@ describe("runner", () => {
     expect(r.keyEvents.map((e) => e.kind)).toContain("claimed");
     expect(orbio.state.calls).toEqual(expect.arrayContaining(["status", "balance", "create"]));
     expect(r.costUsd).toBeLessThan(r.plan.perRunCapUsd * 4);
+    expect(r.trace.map((t) => t.tool)).not.toContain("spawn_moonlet");
   });
 
   it("2. cost cap stops a greedy job and still yields output", async () => {
@@ -140,6 +141,32 @@ describe("runner", () => {
     expect(r.output?.nothingHappened).toBe(false);
     expect(r.output?.summary.toLowerCase()).toMatch(/moonlet|orbio|agent/);
   });
+
+  it("9. a job that calls for a separate watcher → the moonlet proposes a child (once) and says it awaits approval", async () => {
+    process.env.DATABASE_URL = "file:/tmp/moonlet-runtime.db";
+    process.env.SECRET_KEY = "test";
+    const store = await import("@/moonlet/store");
+    const orbio = fakeOrbio({ realKey: KEY });
+    const spec: Spec = {
+      ...marketWatch,
+      name: "Scout",
+      objective: `Find the single largest recent $ORBIO (${ORBIO_CA}) transfer on Robinhood Chain and set up a separate moonlet that watches that wallet's ORBIO moves from now on. Report the wallet, the amount, and that the watcher awaits my approval.`,
+      spendCapUsd: 0.05,
+      model: "openai/gpt-5.6-terra",
+    };
+    const r = await runMoonlet({ id: "m_t9", owner: OWNER, bag: 1_250_000, spec, delivery: {}, key: null, runId: null }, { orbio: orbio.client });
+    console.log("run9:", r.status, r.error, "\n", r.output?.title, "\n", r.output?.summary, "\n", r.trace.map((t) => `${t.tool}: ${t.summary}`));
+    expect(r.status).toBe("done");
+    const spawns = r.trace.filter((t) => t.tool === "spawn_moonlet");
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0].summary).toMatch(/^pending · p_/);
+    const pending = await store.listProposals(OWNER, "pending");
+    expect(pending.some((p) => p.kind === "spawn_moonlet" && p.moonletId === "m_t9")).toBe(true);
+    const payload = pending.find((p) => p.kind === "spawn_moonlet")!.payload as { spec: Spec; reason: string };
+    expect(payload.spec.sources.join(" ")).toMatch(/0x[0-9a-fA-F]{40}/);
+    expect(payload.reason.length).toBeGreaterThan(8);
+    expect(r.output?.summary.toLowerCase()).toMatch(/approv|awaiting|pending/);
+  }, 180_000);
 
   it("delivery tool refuses channels the owner didn't configure, and uses the sink when they did", async () => {
     const orbio = fakeOrbio({ realKey: KEY });

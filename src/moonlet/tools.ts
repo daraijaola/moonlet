@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { webFetchTool, type LocalTool } from "./llm";
-import type { ToolId } from "./spec";
+import { TEMPLATE_IDS, type JobSpec, type TemplateId, type ToolId } from "./spec";
 import { readRepo, type GitHubConn } from "./connections/github";
 import { propose, type ProposeCtx } from "./proposals";
 
@@ -26,6 +26,8 @@ export type ToolDeps = {
   /** Connections the owner has made. A tool that needs one is simply not offered without it. */
   connections?: { github?: GitHubConn; telegram?: boolean; x?: boolean };
   propose?: ProposeCtx;
+  /** Turns one sentence into a JobSpec (the launch compiler on the run's key). Without it, spawn_moonlet is not offered. */
+  compile?: (input: { sentence: string; template: TemplateId; name?: string }) => Promise<JobSpec>;
   /** Called after every local tool call with a one-line summary of what it did. */
   trace?: (e: { tool: string; summary: string }) => void;
 };
@@ -264,7 +266,7 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     }),
   });
 
-  const gate = <T,>(toInput: (a: T) => Parameters<typeof propose>[0]) =>
+  const gate = <T,>(toInput: (a: T) => Exclude<Parameters<typeof propose>[0], { kind: "spawn_moonlet" }>) =>
     async (a: T) => {
       if (!deps.propose) return { error: "acting tools are unavailable in this environment" };
       const input = toInput(a);
@@ -304,6 +306,30 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     execute: gate((a: { text: string }) => ({ kind: "tweet", text: a.text })),
   });
 
+  let spawned = false;
+  const spawnMoonlet = tool({
+    name: "spawn_moonlet",
+    description:
+      "Propose a new, separate moonlet for the owner when the job you are doing reveals something that deserves its own ongoing watch (a wallet that keeps moving, a repo that needs a nightly digest, a pool worth tracking). Describe the child's job in one plain sentence; it is compiled into a job, and the owner approves before it exists. At most once per run. Never spawn a copy of your own job or of a moonlet the owner already has.",
+    inputSchema: z.object({
+      sentence: z.string().min(12).max(400).describe("What the new moonlet should do, in one sentence, as the owner would say it"),
+      template: z.enum(TEMPLATE_IDS).describe("market-watch for tokens/pools/wallets on Robinhood Chain, repo-mechanic for a GitHub repo, digest for reading sources, custom otherwise"),
+      name: z.string().min(2).max(24).optional().describe("A short name for it"),
+      reason: z.string().min(8).max(300).describe("One sentence for the owner: why this deserves its own moonlet, citing what you saw"),
+    }),
+    execute: async (a: { sentence: string; template: TemplateId; name?: string; reason: string }) => {
+      if (!deps.propose || !deps.compile) return { error: "spawning is unavailable in this environment" };
+      if (spawned) return { error: "already proposed one this run; do not retry" };
+      spawned = true;
+      const spec = await deps.compile({ sentence: a.sentence, template: a.template, name: a.name });
+      const r = await propose({ kind: "spawn_moonlet", spec, reason: a.reason }, { ...deps.propose, fetch: f });
+      deps.trace?.({ tool: "spawn_moonlet", summary: `${r.status}${r.proposalId ? " · " + r.proposalId : ""} · ${brief(spec.name + ": " + spec.objective, 90)}` });
+      if (r.status === "pending") return { proposed: true, proposalId: r.proposalId, name: spec.name, note: "Drafted for the owner. Do not retry; mention in your report that it awaits their approval." };
+      if (r.status === "failed") return { executed: false, error: (r.result as { error?: string })?.error ?? "failed", note: "Do not retry." };
+      return { executed: true, proposalId: r.proposalId, result: r.result };
+    },
+  });
+
   const webFetch: LocalTool = { ...webFetchTool(f), execute: traced("web_fetch", (a: { url: string }, r: unknown) => `${a.url} · ${brief(r, 90)}`, webFetchTool(f).execute as never) as never };
 
   const all: Partial<Record<ToolId, LocalTool>> = {
@@ -315,11 +341,13 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     open_pull_request: openPr,
     comment_on_issue: commentIssue,
     post_tweet: postTweet,
+    spawn_moonlet: spawnMoonlet,
   };
 
   const available = (id: ToolId) => {
     if (id === "github_read" || id === "open_pull_request" || id === "comment_on_issue") return !!ghToken;
     if (id === "post_tweet") return !!deps.connections?.x;
+    if (id === "spawn_moonlet") return !!deps.compile && !!deps.propose;
     return true;
   };
   const tools = ids.filter(available).map((id) => all[id]).filter((t): t is LocalTool => !!t);
