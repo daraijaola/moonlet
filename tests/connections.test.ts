@@ -12,7 +12,7 @@ const OTHER = "0x00000000000000000000000000000000000000bb";
 
 /** A fake Telegram Bot API: records sends, hands out queued updates. */
 function fakeTelegram() {
-  const sent: Array<{ chat_id: string; text: string; buttons?: string[] }> = [];
+  const sent: Array<{ chat_id: string; text: string; id?: string; replyTo?: number; buttons?: string[] }> = [];
   const edited: Array<{ message_id: number; text: string }> = [];
   const configured: string[] = [];
   const webhooks: Array<{ url: string; secret_token: string }> = [];
@@ -23,7 +23,7 @@ function fakeTelegram() {
     const body = JSON.parse(String(init?.body ?? "{}"));
     const ok = (result: unknown) => new Response(JSON.stringify({ ok: true, result }), { headers: { "content-type": "application/json" } });
     if (url.endsWith("/sendMessage")) {
-      sent.push({ chat_id: String(body.chat_id), text: body.text, buttons: body.reply_markup?.inline_keyboard?.flat().map((b: { callback_data: string }) => b.callback_data) });
+      sent.push({ chat_id: String(body.chat_id), text: body.text, id: String(nextId), replyTo: body.reply_parameters?.message_id, buttons: body.reply_markup?.inline_keyboard?.flat().map((b: { callback_data: string }) => b.callback_data) });
       return ok({ message_id: nextId++ });
     }
     if (url.endsWith("/editMessageText")) {
@@ -224,6 +224,31 @@ describe("connections + proposals", () => {
     const r = await propose({ kind: "pull_request", plan: { repo: "a/b", title: "t", body: "", files: [{ path: "x", content: "y" }] } }, { owner: OTHER, moonletId: "m", moonletName: "N", runId: null, autopilot: false });
     expect(r.status).toBe("failed");
     expect(r.proposalId).toBeNull();
+  });
+
+  it("free text gets a Thinking… bubble under the question, which turns into the answer with the time taken", async () => {
+    const t = fakeTelegram();
+    tg.setChatHandler(async (owner, text, ctx) => {
+      await new Promise((r) => setTimeout(r, 30));
+      return `${owner.slice(0, 4)} asked "${text}" (reply to ${ctx.replyToMessageId ?? "none"})`;
+    });
+    try {
+      t.push({ update_id: 30, message: { message_id: 77, text: "what did it find?", reply_to_message: { message_id: 70 }, chat: { id: 4242, type: "private" } } });
+      await tg.processUpdates(telegramCallback, t.fetchImpl);
+      expect(t.sent.at(-1)).toMatchObject({ chat_id: "4242", text: "<i>Reading that report…</i>", replyTo: 77 });
+      expect(t.edited.at(-1)?.message_id).toBe(Number(t.sent.at(-1)!.id));
+      expect(t.edited.at(-1)?.text).toMatch(/^0x00 asked "what did it find\?" \(reply to 70\)\n\n<i>\d+s<\/i>$/);
+
+      tg.setChatHandler(async () => {
+        throw new Error("model down");
+      });
+      t.push({ update_id: 31, message: { message_id: 78, text: "hello?", chat: { id: 4242, type: "private" } } });
+      await tg.processUpdates(telegramCallback, t.fetchImpl);
+      expect(t.sent.at(-1)?.text).toBe("<i>Thinking…</i>");
+      expect(t.edited.at(-1)?.text).toMatch(/couldn't think just now \(model down\)/);
+    } finally {
+      tg.setChatHandler(null);
+    }
   });
 
   it("a Telegram 409 (another poller / webhook) is skipped, not thrown", async () => {

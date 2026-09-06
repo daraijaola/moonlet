@@ -36,7 +36,7 @@ async function call<T = unknown>(method: string, body: Record<string, unknown>, 
 export async function sendMessage(
   chatId: string,
   text: string,
-  opts: { buttons?: Array<Array<{ text: string; data: string }>>; fetch?: typeof fetch } = {},
+  opts: { buttons?: Array<Array<{ text: string; data: string }>>; replyTo?: number; fetch?: typeof fetch } = {},
 ) {
   const r = await call<{ message_id: number }>(
     "sendMessage",
@@ -45,6 +45,7 @@ export async function sendMessage(
       text: text.slice(0, 4000),
       parse_mode: "HTML",
       disable_web_page_preview: true,
+      ...(opts.replyTo ? { reply_parameters: { message_id: opts.replyTo, allow_sending_without_reply: true } } : {}),
       ...(opts.buttons ? { reply_markup: { inline_keyboard: opts.buttons.map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))) } } : {}),
     },
     opts.fetch,
@@ -100,6 +101,37 @@ export function webhookUrl() {
 /** Telegram echoes this in X-Telegram-Bot-Api-Secret-Token so the route can reject anyone else. */
 export function webhookSecret() {
   return createHash("sha256").update(`telegram-webhook:${process.env.SECRET_KEY ?? ""}:${process.env.TELEGRAM_BOT_TOKEN ?? ""}`).digest("hex");
+}
+
+/**
+ * The chat equivalent of a spinner: a "Thinking…" bubble under the owner's
+ * message and a live typing indicator while the model works; when the answer
+ * lands, the bubble becomes the answer with how long it took. Nothing is left
+ * behind and nothing arrives twice.
+ */
+export async function withThinking(chatId: string, replyTo: number, label: string, fetchImpl: typeof fetch, work: () => Promise<string>) {
+  const t0 = Date.now();
+  const placeholder = await sendMessage(chatId, `<i>${esc(label)}</i>`, { replyTo, fetch: fetchImpl }).catch(() => null);
+  const typing = () => call("sendChatAction", { chat_id: chatId, action: "typing" }, fetchImpl).catch(() => undefined);
+  void typing();
+  const timer = setInterval(typing, 4_000);
+  let reply: string;
+  try {
+    reply = await work();
+  } catch (e) {
+    reply = `I couldn't think just now (${(e as Error).message.slice(0, 80)}). Try again in a minute, or use ${APP()}/app.`;
+  } finally {
+    clearInterval(timer);
+  }
+  const secs = Math.max(1, Math.round((Date.now() - t0) / 1000));
+  const html = `${esc(reply).slice(0, 3900)}\n\n<i>answered in ${secs}s</i>`;
+  if (placeholder) {
+    const edited = await call("editMessageText", { chat_id: chatId, message_id: Number(placeholder.id), text: html, parse_mode: "HTML", disable_web_page_preview: true }, fetchImpl).then(() => true, () => false);
+    if (edited) return reply;
+    await call("deleteMessage", { chat_id: chatId, message_id: Number(placeholder.id) }, fetchImpl).catch(() => undefined);
+  }
+  await sendMessage(chatId, html, { replyTo, fetch: fetchImpl });
+  return reply;
 }
 
 export async function ownerOfChat(chatId: string) {
@@ -230,11 +262,13 @@ export async function handleUpdate(u: Update, onCallback: CallbackHandler, fetch
             { fetch: fetchImpl },
           );
         } else {
-          await call("sendChatAction", { chat_id: chatId, action: "typing" }, fetchImpl).catch(() => undefined);
           const photo = u.message.photo?.length ? u.message.photo[u.message.photo.length - 1] : undefined;
-          const imageUrl = photo ? await fileUrl(photo.file_id, fetchImpl).catch(() => undefined) : undefined;
-          const reply = await chatHandler(owner, text, { chatId, replyToMessageId: u.message.reply_to_message?.message_id, imageUrl }).catch((e) => `I couldn't think just now (${(e as Error).message.slice(0, 80)}). Try again in a minute, or use ${APP()}/app.`);
-          await sendMessage(chatId, esc(reply), { fetch: fetchImpl });
+          const replyToMessageId = u.message.reply_to_message?.message_id;
+          const handler = chatHandler;
+          await withThinking(chatId, u.message.message_id, photo ? "Looking at your photo…" : replyToMessageId ? "Reading that report…" : "Thinking…", fetchImpl, async () => {
+            const imageUrl = photo ? await fileUrl(photo.file_id, fetchImpl).catch(() => undefined) : undefined;
+            return handler(owner, text, { chatId, replyToMessageId, imageUrl });
+          });
         }
       }
     } else if (u.callback_query?.data && u.callback_query.message) {
