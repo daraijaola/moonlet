@@ -252,8 +252,11 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
         ? `\n\n${tg.esc(o.body.slice(0, 2500))}`
         : "";
     const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
-    const sent = await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch(() => null);
-    if (sent) await store.rememberTelegramMessage(tgConn.data.chatId, Number(sent.id), m.id, runId).catch(() => undefined);
+    const sent = await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch((e) => {
+      console.error("telegram delivery failed", m.id, (e as Error).message);
+      return null;
+    });
+    if (sent) await store.rememberTelegramMessage(tgConn.data.chatId, Number(sent.id), m.id, runId).catch((e) => console.error("tg_messages insert failed", (e as Error).message));
   } else if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && !alreadyDelivered) {
     await deliver({ channel: "telegram", text: `${result.output.title}\n\n${result.output.summary}` }).catch(() => undefined);
   }
