@@ -100,10 +100,10 @@ const b64 = (s: string) => Buffer.from(s.replace(/-/g, "+").replace(/_/g, "/"), 
 
 /** Best readable text of a message: text/plain first, else stripped HTML. Attachments listed by name. */
 function bodyOf(payload: Part | undefined) {
-  const plain: string[] = [], html: string[] = [], attachments: Array<{ name: string; mime: string; size: number }> = [];
+  const plain: string[] = [], html: string[] = [], attachments: Array<{ attachmentId: string; name: string; mime: string; size: number }> = [];
   const walk = (p: Part | undefined) => {
     if (!p) return;
-    if (p.filename && p.body?.attachmentId) attachments.push({ name: p.filename, mime: p.mimeType ?? "", size: p.body.size ?? 0 });
+    if (p.filename && p.body?.attachmentId) attachments.push({ attachmentId: p.body.attachmentId, name: p.filename, mime: p.mimeType ?? "", size: p.body.size ?? 0 });
     else if (p.mimeType === "text/plain" && p.body?.data) plain.push(b64(p.body.data));
     else if (p.mimeType === "text/html" && p.body?.data) html.push(b64(p.body.data));
     p.parts?.forEach(walk);
@@ -155,7 +155,29 @@ export async function overview(token: string, fetchImpl?: typeof fetch) {
 export async function readMessage(token: string, id: string, fetchImpl?: typeof fetch) {
   const m = await api<Message>(token, `/messages/${id}?format=full`, {}, fetchImpl);
   const { text, attachments } = bodyOf(m.payload);
-  return { ...summarise(m), cc: header(m.payload, "Cc"), messageIdHeader: header(m.payload, "Message-ID"), body: text.slice(0, 12_000), truncated: text.length > 12_000, attachments };
+  const unsubscribe = header(m.payload, "List-Unsubscribe");
+  return { ...summarise(m), cc: header(m.payload, "Cc"), replyTo: header(m.payload, "Reply-To"), messageIdHeader: header(m.payload, "Message-ID"), body: text.slice(0, 12_000), truncated: text.length > 12_000, attachments, ...(unsubscribe ? { unsubscribe: unsubscribe.match(/<(https?:[^>]+)>/)?.[1] ?? unsubscribe } : {}) };
+}
+
+/** One attachment's bytes, for saving as a file or forwarding. Gmail caps single attachments at 25 MB; we stop at 10. */
+export async function getAttachment(token: string, messageId: string, attachmentId: string, fetchImpl?: typeof fetch) {
+  const a = await api<{ size: number; data: string }>(token, `/messages/${messageId}/attachments/${attachmentId}`, {}, fetchImpl);
+  if (a.size > 10_000_000) throw new Error("attachment over 10 MB");
+  return Buffer.from(a.data.replace(/-/g, "+").replace(/_/g, "/"), "base64");
+}
+
+export async function listDrafts(token: string, limit = 15, fetchImpl?: typeof fetch) {
+  const r = await api<{ drafts?: Array<{ id: string; message: { id: string; threadId: string } }> }>(token, `/drafts?maxResults=${Math.min(50, limit)}`, {}, fetchImpl);
+  const drafts = await Promise.all((r.drafts ?? []).map(async (d) => {
+    const m = await api<Message>(token, `/messages/${d.message.id}?format=metadata&metadataHeaders=To&metadataHeaders=Subject&metadataHeaders=Date`, {}, fetchImpl);
+    return { draftId: d.id, messageId: d.message.id, threadId: d.message.threadId, to: header(m.payload, "To"), subject: header(m.payload, "Subject") || "(no subject)", snippet: (m.snippet ?? "").slice(0, 160) };
+  }));
+  return { drafts };
+}
+
+export async function deleteDraft(token: string, draftId: string, fetchImpl?: typeof fetch) {
+  await api(token, `/drafts/${draftId}`, { method: "DELETE" }, fetchImpl);
+  return { deleted: true, draftId };
 }
 
 export async function readThread(token: string, id: string, fetchImpl?: typeof fetch) {
@@ -182,6 +204,8 @@ export type Outgoing = {
   /** Reply into an existing thread: Gmail thread id plus the Message-ID header of the mail being answered. */
   threadId?: string;
   inReplyTo?: string;
+  /** Files to attach (forwarding keeps the original's attachments this way). */
+  attachments?: Array<{ name: string; mime: string; bytes: Uint8Array }>;
 };
 
 const encodeHeader = (s: string) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, "utf8").toString("base64")}?=`);
@@ -196,11 +220,26 @@ export function buildRaw(from: string, o: Outgoing) {
     o.inReplyTo ? `In-Reply-To: ${o.inReplyTo}` : "",
     o.inReplyTo ? `References: ${o.inReplyTo}` : "",
     "MIME-Version: 1.0",
-    'Content-Type: text/plain; charset="UTF-8"',
-    "Content-Transfer-Encoding: base64",
   ].filter(Boolean);
-  const body = Buffer.from(o.body, "utf8").toString("base64").replace(/(.{76})/g, "$1\r\n");
-  return Buffer.from(`${headers.join("\r\n")}\r\n\r\n${body}`, "utf8").toString("base64url");
+  const wrap76 = (s: string) => s.replace(/(.{76})/g, "$1\r\n");
+  const textPart = ['Content-Type: text/plain; charset="UTF-8"', "Content-Transfer-Encoding: base64", "", wrap76(Buffer.from(o.body, "utf8").toString("base64"))].join("\r\n");
+  let message: string;
+  if (o.attachments?.length) {
+    const boundary = `moonlet_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
+    const parts = o.attachments.map((a) => [`Content-Type: ${a.mime || "application/octet-stream"}; name="${a.name.replace(/"/g, "")}"`, `Content-Disposition: attachment; filename="${a.name.replace(/"/g, "")}"`, "Content-Transfer-Encoding: base64", "", wrap76(Buffer.from(a.bytes).toString("base64"))].join("\r\n"));
+    message = [...headers, `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, textPart, ...parts.flatMap((p) => [`--${boundary}`, p]), `--${boundary}--`, ""].join("\r\n");
+  } else {
+    message = `${headers.join("\r\n")}\r\n${textPart}`;
+  }
+  return Buffer.from(message, "utf8").toString("base64url");
+}
+
+/** Forward a message: original text quoted under the note, original attachments re-attached. */
+export async function forwardMessage(token: string, from: string, messageId: string, to: string, note: string, fetchImpl?: typeof fetch) {
+  const m = await readMessage(token, messageId, fetchImpl);
+  const attachments = await Promise.all(m.attachments.map(async (a) => ({ name: a.name, mime: a.mime, bytes: new Uint8Array(await getAttachment(token, messageId, a.attachmentId, fetchImpl)) })));
+  const body = `${note.trim()}\n\n---------- Forwarded message ----------\nFrom: ${m.from}\nDate: ${m.date}\nSubject: ${m.subject}\nTo: ${m.to}\n\n${m.body}`;
+  return sendMail(token, from, { to, subject: /^fwd?:/i.test(m.subject) ? m.subject : `Fwd: ${m.subject}`, body, attachments }, fetchImpl);
 }
 
 export async function createDraft(token: string, from: string, o: Outgoing, fetchImpl?: typeof fetch) {
@@ -213,21 +252,39 @@ export async function sendMail(token: string, from: string, o: Outgoing, fetchIm
   return { messageId: r.id, threadId: r.threadId, url: `https://mail.google.com/mail/u/0/#all/${r.threadId}` };
 }
 
-export type Organize = { messageIds: string[]; action: "archive" | "mark_read" | "mark_unread" | "star" | "trash" | "label"; label?: string };
+export type OrganizeAction = "archive" | "unarchive" | "mark_read" | "mark_unread" | "star" | "unstar" | "important" | "not_important" | "spam" | "not_spam" | "trash" | "untrash" | "label" | "unlabel";
+export type Organize = { messageIds?: string[]; q?: string; action: OrganizeAction; label?: string };
 
-/** Tidy up. Label names are resolved (and created) by name; archive is "remove INBOX"; trash is reversible for 30 days. */
+/** Tidy up, by explicit ids or by a Gmail search (up to 500 at a time). Labels resolve (and are created) by name; archive is "remove INBOX"; trash is reversible for 30 days. */
 export async function organize(token: string, o: Organize, fetchImpl?: typeof fetch) {
-  const ids = o.messageIds.slice(0, 100);
-  if (!ids.length) return { changed: 0 };
-  if (o.action === "trash") {
-    await Promise.all(ids.map((id) => api(token, `/messages/${id}/trash`, { method: "POST" }, fetchImpl)));
-    return { changed: ids.length, action: o.action };
+  if (!o.messageIds?.length && !o.q) throw new Error("messageIds or q required");
+  let ids = (o.messageIds ?? []).slice(0, 500);
+  if (!ids.length && o.q) {
+    const list = await api<{ messages?: Array<{ id: string }> }>(token, `/messages?q=${encodeURIComponent(o.q)}&maxResults=500`, {}, fetchImpl);
+    ids = (list.messages ?? []).map((m) => m.id);
+  }
+  if (!ids.length) return { changed: 0, action: o.action, q: o.q };
+  if (o.action === "trash" || o.action === "untrash") {
+    for (let i = 0; i < ids.length; i += 10) await Promise.all(ids.slice(i, i + 10).map((id) => api(token, `/messages/${id}/${o.action}`, { method: "POST" }, fetchImpl)));
+    return { changed: ids.length, action: o.action, q: o.q };
   }
   let add: string[] = [], remove: string[] = [];
   if (o.action === "archive") remove = ["INBOX"];
+  if (o.action === "unarchive") add = ["INBOX"];
   if (o.action === "mark_read") remove = ["UNREAD"];
   if (o.action === "mark_unread") add = ["UNREAD"];
   if (o.action === "star") add = ["STARRED"];
+  if (o.action === "unstar") remove = ["STARRED"];
+  if (o.action === "important") add = ["IMPORTANT"];
+  if (o.action === "not_important") remove = ["IMPORTANT"];
+  if (o.action === "spam") { add = ["SPAM"]; remove = ["INBOX"]; }
+  if (o.action === "not_spam") { remove = ["SPAM"]; add = ["INBOX"]; }
+  if (o.action === "unlabel") {
+    if (!o.label) throw new Error("label name required");
+    const found = (await labels(token, fetchImpl)).find((l) => l.name.toLowerCase() === o.label!.toLowerCase());
+    if (!found) return { changed: 0, action: o.action, note: "no such label" };
+    remove = [found.id];
+  }
   if (o.action === "label") {
     if (!o.label) throw new Error("label name required");
     const all = await labels(token, fetchImpl);
@@ -235,6 +292,8 @@ export async function organize(token: string, o: Organize, fetchImpl?: typeof fe
     const id = found?.id ?? (await api<{ id: string }>(token, "/labels", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name: o.label, labelListVisibility: "labelShow", messageListVisibility: "show" }) }, fetchImpl)).id;
     add = [id];
   }
-  await api(token, "/messages/batchModify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids, addLabelIds: add, removeLabelIds: remove }) }, fetchImpl);
-  return { changed: ids.length, action: o.action, label: o.label };
+  for (let i = 0; i < ids.length; i += 100) {
+    await api(token, "/messages/batchModify", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ids: ids.slice(i, i + 100), addLabelIds: add, removeLabelIds: remove }) }, fetchImpl);
+  }
+  return { changed: ids.length, action: o.action, label: o.label, q: o.q };
 }

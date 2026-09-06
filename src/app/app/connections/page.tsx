@@ -172,7 +172,7 @@ function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: strin
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
-    <Shell mark={<GitHubMark size={24} />} name="GitHub" blurb="Sign in with GitHub once. A moonlet can then read your repos and open pull requests or comments; the first one waits for your approval, then it acts on its own." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
+    <Shell mark={<GitHubMark size={24} />} name="GitHub" blurb="Sign in with GitHub once. A moonlet can then read your repos and open pull requests, issues or comments; the first one waits for your approval, then it acts on its own." unlocks="github_read, open_pull_request, open_issue, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
       {!conn && (oauth ? (
         <button
           disabled={busy}

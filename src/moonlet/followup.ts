@@ -5,6 +5,7 @@ import { CADENCE_MS, Cadence } from "./spec";
 import { cadenceReply } from "./budget";
 import type { GitHubConn } from "./connections/github";
 import type { TelegramConn } from "./connections/telegram";
+import type { GmailConn } from "./connections/gmail";
 import { fileSink } from "./files";
 
 /**
@@ -58,12 +59,12 @@ export async function followup(input: FollowupInput): Promise<string> {
   const runs = await store.listRuns(m.id, 3);
   const run = (input.runId && runs.find((r) => r.id === input.runId)) ?? (input.runId ? await store.getRun(input.runId) : null) ?? runs[0] ?? null;
   const gh = await store.getConnection<GitHubConn>(m.owner, "github");
-  const readOnly = m.spec.tools.filter((t) => !["deliver", "open_pull_request", "comment_on_issue", "post_tweet", "spawn_moonlet"].includes(t));
-  const tgConn = await store.getConnection<TelegramConn>(m.owner, "telegram");
+  const readOnly = m.spec.tools.filter((t) => !["deliver", "open_pull_request", "comment_on_issue", "open_issue", "post_tweet", "spawn_moonlet", "gmail_send", "gmail_forward", "gmail_organize"].includes(t));
+  const [tgConn, gmConn] = await Promise.all([store.getConnection<TelegramConn>(m.owner, "telegram"), store.getConnection<GmailConn>(m.owner, "gmail")]);
   const built = buildTools([...readOnly, "write_document"], {
     fetch: input.fetch,
     delivery: {},
-    connections: { github: gh?.data },
+    connections: { github: gh?.data, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
     files: fileSink({ owner: m.owner, moonletId: m.id, runId: run ? run.id : null, chatId: tgConn?.data.chatId, fetch: input.fetch }),
   });
 

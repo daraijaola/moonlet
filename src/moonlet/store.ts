@@ -491,7 +491,7 @@ export async function takeLinkCode(code: string) {
 
 // ---- proposals (draft → approve → act) --------------------------------------
 
-export type ProposalKind = "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize";
+export type ProposalKind = "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create";
 export type ProposalStatus = "pending" | "approved" | "rejected" | "executed" | "failed";
 export type ProposalRow = {
   id: string;

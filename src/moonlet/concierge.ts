@@ -25,7 +25,7 @@ import { buildTools } from "./tools";
 const CHARACTER = `You are the owner's moonlet concierge in Telegram: the voice of their small agents.
 Terse, warm, concrete. One to four short sentences, no markdown, no emoji, no bullet lists unless listing moonlets.
 You can: list their moonlets and what each does, report the latest result, run a moonlet now, pause or resume one, change how often it runs, send a moonlet's latest report as a file (pdf, docx, txt or md) to this chat and its page, and spawn a new moonlet from a one-sentence job ("spawn a moonlet that watches wallet 0x…", "make me one that digests my repo nightly").
-When Gmail is connected you can also work in their inbox right now: gmail_read for "what's in my email", "anything from X?", "find the invoice"; gmail_draft when they ask you to draft or prepare a reply (it lands in their Gmail drafts); gmail_send when they say send or reply for them, and gmail_organize for archive, label, mark read, trash. Sending and tidying always ask them first: a card with Approve / Reject appears here; say so in one line and stop. Read a message before replying to it. Never quote one-time codes, passwords or bank details. When something recurring is asked ("every morning tell me what came in"), spawn an inbox moonlet instead of doing it once.
+When Gmail is connected you can also work in their inbox right now: gmail_read for "what's in my email", "anything from X?", "find the invoice"; gmail_draft when they ask you to draft or prepare a reply (it lands in their Gmail drafts); gmail_send when they say send or reply for them, gmail_forward to pass an email on, and gmail_organize for archive, label, star, mark read, spam, trash ("delete" means trash; it empties itself after 30 days). For bulk asks ("clear my spam", "archive all the newsletters") use gmail_organize with a search q rather than reading each one. Sending, forwarding and tidying always ask them first: a card with Approve / Reject appears here; say so in one line and stop. Read a message before replying to it. "Send me a PDF/report of my email": read what's needed, then write_document with the report; it lands in this chat. Never quote one-time codes, passwords or bank details. When something recurring is asked ("every morning tell me what came in"), spawn an inbox moonlet instead of doing it once.
 When spawning, pass the owner's words as the sentence; pick the template yourself. Tell them its name, what it will do, how often, and that it is running its first check now. Include the tool's note if there is one.
 If they ask for something you cannot do (connections, spending, deleting), say so in one line and point to the site.
 Never speculate on price or give financial advice. Never ask for keys or wallet access.
@@ -60,12 +60,14 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
   });
 
   const tool = <S extends z.ZodType>(t: { name: string; description: string; inputSchema: S; execute: (a: z.infer<S>) => Promise<unknown> }): LocalTool => ({ name: t.name, description: t.description, schema: t.inputSchema, execute: t.execute as never });
+  const tgConnForFiles = gm ? await store.getConnection<TelegramConn>(owner, "telegram") : null;
   const gmailTools = gm
-    ? buildTools(["gmail_read", "gmail_draft", "gmail_send", "gmail_organize"], {
+    ? buildTools(["gmail_read", "gmail_draft", "gmail_send", "gmail_forward", "gmail_organize", "write_document"], {
         fetch: opts.fetch,
         delivery: {},
         connections: { gmail: { owner, email: gm.data.email } },
         propose: { owner, moonletId: "concierge", moonletName: "Your concierge", runId: null, autopilot: false, fetch: opts.fetch },
+        files: fileSink({ owner, moonletId: "concierge", runId: null, chatId: tgConnForFiles?.data.chatId, fetch: opts.fetch }),
       }).tools
     : [];
   const tools = [

@@ -211,7 +211,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   ]);
   let ghConn = ghConnStored;
   // A revoked GitHub token would make every repo job fail quietly; check it before the run and tell the owner once.
-  if (ghConn && m.spec.tools.some((t) => t.startsWith("github") || t === "open_pull_request" || t === "comment_on_issue")) {
+  if (ghConn && m.spec.tools.some((t) => t.startsWith("github") || t === "open_pull_request" || t === "comment_on_issue" || t === "open_issue")) {
     const probe = await (deps.fetch ?? fetch)("https://api.github.com/user", { headers: { authorization: `Bearer ${ghConn.data.token}`, "user-agent": "moonlet" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
     if (probe?.status === 401) {
       await store.deleteConnection(m.owner, "github");
@@ -221,7 +221,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
       ghConn = null;
     }
   }
-  if (!ghConn && m.spec.tools.some((t) => t === "github_read" || t === "open_pull_request" || t === "comment_on_issue") && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read")) {
+  if (!ghConn && m.spec.tools.some((t) => t === "github_read" || t === "open_pull_request" || t === "comment_on_issue" || t === "open_issue") && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read")) {
     // A repo job without GitHub access has nothing to read; park it rather than burn credits reporting 404s.
     await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
     await recordRun(m.id, now(), { status: "quiet", error: "GitHub isn't connected; reconnect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "GitHub isn't connected. Reconnect it under Connections and this moonlet resumes on its own." }] });

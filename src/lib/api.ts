@@ -63,7 +63,7 @@ export type Connections = {
 export type Proposal = {
   id: string;
   moonletId: string;
-  kind: "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize";
+  kind: "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create";
   status: "pending" | "approved" | "rejected" | "executed" | "failed";
   title: string;
   body: string;

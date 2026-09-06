@@ -19,9 +19,11 @@ export type ProposalInput =
   | { kind: "tweet"; text: string }
   | { kind: "pull_request"; plan: gh.PullRequestPlan }
   | { kind: "issue_comment"; repo: string; number: number; body: string }
+  | { kind: "issue_create"; repo: string; title: string; body: string; labels?: string[] }
   | { kind: "spawn_moonlet"; spec: JobSpec; reason: string }
   | { kind: "email_send"; mail: gmail.Outgoing }
-  | { kind: "email_organize"; organize: gmail.Organize; why: string };
+  | { kind: "email_organize"; organize: gmail.Organize; why: string }
+  | { kind: "email_forward"; messageId: string; to: string; note: string; subject: string };
 
 export type ProposeCtx = { owner: string; moonletId: string; moonletName: string; runId: string | null; autopilot: boolean; fetch?: typeof fetch };
 
@@ -35,14 +37,23 @@ export function describe(kind: store.ProposalKind, payload: Record<string, unkno
     const { spec, reason } = payload as { spec: JobSpec; reason: string };
     return { title: `Spawn a moonlet: ${spec.name}`, body: `${reason}\n\n${describeSpec(spec)}` };
   }
+  if (kind === "issue_create") {
+    const i = payload as { repo: string; title: string; body: string };
+    return { title: `Open issue on ${i.repo}: ${i.title}`, body: i.body };
+  }
   if (kind === "email_send") {
     const m = payload.mail as gmail.Outgoing;
     return { title: m.threadId ? `Reply to ${m.to}` : `Email ${m.to}`, body: `Subject: ${m.subject}\n\n${m.body}` };
   }
   if (kind === "email_organize") {
     const { organize: o, why } = payload as { organize: gmail.Organize; why: string };
-    const verb = { archive: "Archive", mark_read: "Mark as read", mark_unread: "Mark as unread", star: "Star", trash: "Move to trash", label: `Label "${o.label ?? ""}"` }[o.action];
-    return { title: `${verb} ${o.messageIds.length} email${o.messageIds.length === 1 ? "" : "s"}`, body: why };
+    const verb: Record<gmail.OrganizeAction, string> = { archive: "Archive", unarchive: "Move back to inbox", mark_read: "Mark as read", mark_unread: "Mark as unread", star: "Star", unstar: "Unstar", important: "Mark important", not_important: "Mark not important", spam: "Report as spam", not_spam: "Not spam", trash: "Move to trash", untrash: "Restore from trash", label: `Label "${o.label ?? ""}"`, unlabel: `Remove label "${o.label ?? ""}"` };
+    const what = o.messageIds?.length ? `${o.messageIds.length} email${o.messageIds.length === 1 ? "" : "s"}` : `everything matching "${o.q ?? ""}"`;
+    return { title: `${verb[o.action]}: ${what}`, body: why };
+  }
+  if (kind === "email_forward") {
+    const f = payload as { messageId: string; to: string; note: string; subject: string };
+    return { title: `Forward "${f.subject}" to ${f.to}`, body: f.note };
   }
   const c = payload as { repo: string; number: number; body: string };
   return { title: `Comment on ${c.repo}#${c.number}`, body: c.body };
@@ -50,7 +61,7 @@ export function describe(kind: store.ProposalKind, payload: Record<string, unkno
 
 /** Create the proposal (or act immediately on autopilot). Returns what the tool should tell the model. */
 export async function propose(input: ProposalInput, ctx: ProposeCtx) {
-  const needs = input.kind === "tweet" ? "x" : input.kind === "spawn_moonlet" ? null : input.kind === "email_send" || input.kind === "email_organize" ? "gmail" : "github";
+  const needs = input.kind === "tweet" ? "x" : input.kind === "spawn_moonlet" ? null : input.kind === "email_send" || input.kind === "email_organize" || input.kind === "email_forward" ? "gmail" : "github";
   if (needs && !(await store.getConnection(ctx.owner, needs))) return { proposalId: null, status: "failed" as const, result: { error: `${needs === "x" ? "X" : needs === "gmail" ? "Gmail" : "GitHub"} is not connected` } };
   const payload: Record<string, unknown> =
     input.kind === "tweet" ? { text: input.text }
@@ -58,6 +69,8 @@ export async function propose(input: ProposalInput, ctx: ProposeCtx) {
     : input.kind === "spawn_moonlet" ? { spec: input.spec, reason: input.reason }
     : input.kind === "email_send" ? { mail: input.mail }
     : input.kind === "email_organize" ? { organize: input.organize, why: input.why }
+    : input.kind === "email_forward" ? { messageId: input.messageId, to: input.to, note: input.note, subject: input.subject }
+    : input.kind === "issue_create" ? { repo: input.repo, title: input.title, body: input.body, labels: input.labels ?? [] }
     : { repo: input.repo, number: input.number, body: input.body };
   const id = store.newId("p");
   await store.insertProposal({ id, owner: ctx.owner, moonletId: ctx.moonletId, runId: ctx.runId, kind: input.kind, payload });
@@ -123,9 +136,18 @@ async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ s
     } else if (p.kind === "email_send") {
       const { token, email } = await gmail.accessToken(p.owner, fetchImpl);
       result = await gmail.sendMail(token, email, p.payload.mail as gmail.Outgoing, fetchImpl);
+    } else if (p.kind === "email_forward") {
+      const { token, email } = await gmail.accessToken(p.owner, fetchImpl);
+      const f = p.payload as { messageId: string; to: string; note: string };
+      result = await gmail.forwardMessage(token, email, f.messageId, f.to, f.note, fetchImpl);
     } else if (p.kind === "email_organize") {
       const { token } = await gmail.accessToken(p.owner, fetchImpl);
       result = await gmail.organize(token, p.payload.organize as gmail.Organize, fetchImpl);
+    } else if (p.kind === "issue_create") {
+      const c = await gh.connectionFor(p.owner);
+      if (!c) throw new Error("GitHub not connected");
+      const i = p.payload as { repo: string; title: string; body: string; labels?: string[] };
+      result = await gh.openIssue(c.data.token, i.repo, i.title, i.body, i.labels ?? [], fetchImpl);
     } else if (p.kind === "pull_request") {
       const c = await gh.connectionFor(p.owner);
       if (!c) throw new Error("GitHub not connected");
@@ -153,13 +175,13 @@ export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   if (!(await tg.chatOwns(ctx.chatId, p.owner))) return "This chat isn't linked to the wallet that owns this draft.";
   const r = await decide(id, action);
   if (!r.ok) return `<b>${tg.esc(d.title)}</b>\n\n${tg.esc(r.error)}.`;
-  if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : p.kind === "email_send" ? "was sent" : p.kind === "email_organize" ? "changed in your inbox" : "was posted"}.`;
+  if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : p.kind === "email_send" || p.kind === "email_forward" ? "was sent" : p.kind === "email_organize" ? "changed in your inbox" : "was posted"}.`;
   if (r.status === "executed") {
     const { url, name, familyNote } = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string };
     if (p.kind === "spawn_moonlet") return `<b>${tg.esc(d.title)}</b>\n\n✓ <b>${tg.esc(name ?? "")}</b> is live and running its first check now; its reports will land here too.${familyNote ? `\n\n${tg.esc(familyNote)}` : ""}\n${tg.esc(url ?? "")}`;
     const m = await store.getMoonlet(p.moonletId);
     const note = r.autopilotOn && m ? `\n\n<i>${tg.esc(m.name)} is on autopilot now: it acts on its own without asking. Switch it off under More… on its page.</i>` : "";
-    if (p.kind === "email_send") return `<b>${tg.esc(d.title)}</b>\n\n✓ Sent from your Gmail.${url ? ` ${tg.esc(url)}` : ""}${note}`;
+    if (p.kind === "email_send" || p.kind === "email_forward") return `<b>${tg.esc(d.title)}</b>\n\n✓ Sent from your Gmail.${url ? ` ${tg.esc(url)}` : ""}${note}`;
     if (p.kind === "email_organize") return `<b>${tg.esc(d.title)}</b>\n\n✓ Done in your Gmail.${note}`;
     return `<b>${tg.esc(d.title)}</b>\n\n✓ Done.${url ? ` ${tg.esc(url)}` : ""}${note}`;
   }

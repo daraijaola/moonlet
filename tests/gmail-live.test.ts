@@ -33,6 +33,8 @@ describe("gmail on real models", () => {
     delete process.env.TELEGRAM_BOT_TOKEN;
     await store.migrate();
     await store.setConnection(OWNER, "gmail", "micheal@gmail.com", { email: "micheal@gmail.com", refreshToken: "1//r", accessToken: "ya29.live", expiresAt: Date.now() + 3_600_000, scope: "gmail.modify" } satisfies GmailConn);
+    const now = Date.now();
+    await store.insertMoonlet({ id: "m_live_tide", owner: OWNER, name: "Tide", spec: { name: "Tide", template: "market-watch", objective: "watch", cadence: "6h", sources: [], checks: [], tools: ["token_market", "deliver"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "", spendCapUsd: 0.02, model: "auto" }, status: "idle", delivery: {}, key: { key: KEY, limitUsd: 5, spentUsd: 0 }, cadence: "6h", perRunCapUsd: 0.02, earnPerDayUsd: 1, burnPerDayUsd: 0.08, nextRunAt: now + 3_600_000, createdAt: now });
   });
 
   it("compiler: 'what's been going on in my email' → inbox tools, no web search, daily", async () => {
@@ -54,10 +56,53 @@ describe("gmail on real models", () => {
     expect(spec.cadence).toBe("7d");
   }, 60_000);
 
+  it("compiler: 'weekly PDF report of my inbox' adds write_document", async () => {
+    const spec = await compileJob(KEY, { sentence: "Every Sunday send me a PDF report of what came into my email that week and what I never answered.", template: "inbox" });
+    console.log("pdf spec:", spec.tools, spec.cadence);
+    expect(spec.tools).toContain("gmail_read");
+    expect(spec.tools).toContain("write_document");
+    expect(spec.cadence).toBe("7d");
+  }, 60_000);
+
+  it("concierge: 'clear my spam' proposes one bulk trash by search, nothing happens before approval", async () => {
+    const g = fakeGoogle();
+    const r = await concierge(OWNER, "check my spam folder and delete all of it", { appUrl: "https://16labs.xyz", fetch: split(g) });
+    console.log("concierge spam:", r);
+    expect(g.log.some((l) => l.path.endsWith("/trash"))).toBe(false);
+    const p = (await store.listProposals(OWNER, "pending")).find((x) => x.kind === "email_organize");
+    expect(p).toBeTruthy();
+    const o = p!.payload.organize as { q?: string; messageIds?: string[]; action: string };
+    expect(o.action).toBe("trash");
+    expect((o.q ?? "").includes("in:spam") || (o.messageIds?.length ?? 0) === 3).toBe(true);
+    expect(r.toLowerCase()).toMatch(/approv|confirm|ok/);
+  }, 90_000);
+
+  it("concierge: 'send me a pdf of my inbox' writes the document and it reaches Telegram", async () => {
+    const g = fakeGoogle();
+    process.env.TELEGRAM_BOT_TOKEN = "test-token";
+    const uploads: string[] = [];
+    const f: typeof fetch = async (u, init) => {
+      if (String(u).endsWith("/sendDocument")) {
+        uploads.push((((init!.body as FormData).get("document")) as File).name);
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 77 } }), { headers: { "content-type": "application/json" } });
+      }
+      if (String(u).includes("api.telegram.org")) return new Response(JSON.stringify({ ok: true, result: { message_id: 78 } }), { headers: { "content-type": "application/json" } });
+      return split(g)(u, init);
+    };
+    try {
+      await store.setConnection(OWNER, "telegram", "@t", { chatId: "4242" });
+      const r = await concierge(OWNER, "send me a pdf report of what's in my inbox right now", { appUrl: "https://16labs.xyz", fetch: f });
+      console.log("concierge pdf:", r, uploads);
+      expect(uploads.length).toBe(1);
+      expect(uploads[0]).toMatch(/\.pdf$/);
+    } finally {
+      delete process.env.TELEGRAM_BOT_TOKEN;
+      await store.deleteConnection(OWNER, "telegram");
+    }
+  }, 120_000);
+
   it("concierge: 'what's in my email?' reads the inbox and names what is actually there", async () => {
     const g = fakeGoogle();
-    const now = Date.now();
-    await store.insertMoonlet({ id: "m_live_tide", owner: OWNER, name: "Tide", spec: { name: "Tide", template: "market-watch", objective: "watch", cadence: "6h", sources: [], checks: [], tools: ["token_market", "deliver"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "", spendCapUsd: 0.02, model: "auto" }, status: "idle", delivery: {}, key: { key: KEY, limitUsd: 5, spentUsd: 0 }, cadence: "6h", perRunCapUsd: 0.02, earnPerDayUsd: 1, burnPerDayUsd: 0.08, nextRunAt: now + 3_600_000, createdAt: now });
     const r = await concierge(OWNER, "what's been going on in my email?", { appUrl: "https://16labs.xyz", fetch: split(g) });
     console.log("concierge inbox:", r);
     expect(g.log.some((l) => l.path.endsWith("/messages") || l.path.endsWith("/labels/INBOX"))).toBe(true);
@@ -82,7 +127,7 @@ describe("gmail on real models", () => {
 
   it("inbox moonlet: briefs on what needs an answer, drafts the reply in-thread, remembers where it got to", async () => {
     const g = fakeGoogle();
-    const spec: JobSpec = { name: "Postie", template: "inbox", objective: "Tell me what came into my email that needs an answer, and draft a reply to each.", cadence: "24h", sources: [], checks: ["unread mail from people that needs a reply", "newsletters and notifications to skip"], tools: ["gmail_read", "gmail_draft", "deliver"], output: { kind: "digest", maxWords: 200, alwaysReport: true }, voice: "terse", spendCapUsd: 0.03, model: "auto" };
+    const spec: JobSpec = { name: "Postie", template: "inbox", objective: "Tell me what came into my email that needs an answer, and draft a reply to each.", cadence: "24h", sources: [], checks: ["unread mail from people that needs a reply", "newsletters and notifications to skip"], tools: ["gmail_read", "gmail_draft", "deliver"], output: { kind: "digest", maxWords: 200, alwaysReport: true }, voice: "terse", spendCapUsd: 0.05, model: "auto" };
     const r = await runMoonlet(
       { id: "m_postie_live", owner: OWNER, bag: 1_000_000, spec, key: { key: KEY, limitUsd: 5, spentUsd: 0 }, autopilot: false, runId: "run_pl", memory: null, parentId: null, delivery: {}, connections: { gmail: { owner: OWNER, email: "micheal@gmail.com" } } },
       { orbio: fakeOrbio({ realKey: KEY }).client, fetch: split(g), bagOf: async () => 1_000_000 },

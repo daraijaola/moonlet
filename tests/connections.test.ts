@@ -225,6 +225,25 @@ describe("connections + proposals", () => {
     expect(String((await store.getProposal(r.proposalId!))?.result?.error)).toMatch(/^X post failed: X refused \(403\): Forbidden/);
   });
 
+  it("open_issue: proposed, approved, opened on GitHub with title, body and labels", async () => {
+    await store.setConnection(OWNER, "github", "@dara", { token: "ghp_test", login: "dara" });
+    let created: Record<string, unknown> | null = null;
+    const ghFetch: typeof fetch = async (i, init) => {
+      if (String(i).endsWith("/repos/dara/moonlet/issues") && init?.method === "POST") {
+        created = JSON.parse(String(init.body));
+        return new Response(JSON.stringify({ html_url: "https://github.com/dara/moonlet/issues/7", number: 7 }), { status: 201 });
+      }
+      return new Response("{}", { status: 404 });
+    };
+    const r = await propose({ kind: "issue_create", repo: "dara/moonlet", title: "Webhook 401 on restart", body: "Seen twice after deploy.", labels: ["bug"] }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: ghFetch });
+    expect(r.status).toBe("pending");
+    expect(created).toBeNull();
+    const d = await decide(r.proposalId!, "approve", ghFetch);
+    expect(d).toMatchObject({ ok: true, status: "executed", result: { url: "https://github.com/dara/moonlet/issues/7", number: 7 } });
+    expect(created).toEqual({ title: "Webhook 401 on restart", body: "Seen twice after deploy.", labels: ["bug"] });
+    await store.deleteConnection(OWNER, "github");
+  });
+
   it("proposing without the connection fails fast instead of queueing a doomed draft", async () => {
     const r = await propose({ kind: "pull_request", plan: { repo: "a/b", title: "t", body: "", files: [{ path: "x", content: "y" }] } }, { owner: OTHER, moonletId: "m", moonletName: "N", runId: null, autopilot: false });
     expect(r.status).toBe("failed");

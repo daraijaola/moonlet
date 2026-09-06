@@ -36,10 +36,12 @@ export const TOOL_LABEL: Record<ToolId, string> = {
   github_read: "Read GitHub repo",
   open_pull_request: "Open pull request",
   comment_on_issue: "Comment on issue",
+  open_issue: "Open issue",
   post_tweet: "Post on X",
   gmail_read: "Read Gmail",
   gmail_draft: "Draft in Gmail",
   gmail_send: "Send email",
+  gmail_forward: "Forward email",
   gmail_organize: "Tidy inbox",
 };
 

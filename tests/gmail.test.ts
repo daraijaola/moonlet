@@ -72,7 +72,9 @@ describe("gmail connection", () => {
     expect(m1.messageIdHeader).toBe("<abc@mail.orbio.so>");
     const m2 = await gmail.readMessage("ya29.x", "m2", g.fetchImpl);
     expect(m2.body).toBe("Digest\nLine one & two\n\nThree");
-    expect(m2.attachments).toEqual([{ name: "digest.pdf", mime: "application/pdf", size: 1234 }]);
+    expect(m2.attachments).toEqual([{ attachmentId: "att1", name: "digest.pdf", mime: "application/pdf", size: 1234 }]);
+    expect(m2.unsubscribe).toBe("https://substack.com/unsub/abc");
+    expect(await gmail.listDrafts("ya29.x", 5, g.fetchImpl)).toEqual({ drafts: [{ draftId: "d9", messageId: "m1", threadId: "t1", to: "micheal@gmail.com", subject: "Demo slot", snippet: "Can you confirm Thursday works for the demo?" }] });
     const th = await gmail.readThread("ya29.x", "t1", g.fetchImpl);
     expect(th.count).toBe(1);
     expect(g.log.find((l) => l.path.endsWith("/messages") && l.method === "GET")).toBeTruthy();
@@ -140,6 +142,47 @@ describe("gmail connection", () => {
     expect(g.log.find((l) => l.path.endsWith("/labels") && l.method === "POST")!.body).toMatchObject({ name: "Orbio" });
     const last = g.log.filter((l) => l.path.endsWith("/batchModify")).pop()!;
     expect(last.body).toEqual({ ids: ["m1"], addLabelIds: ["Label_4"], removeLabelIds: [] });
+  });
+
+  it("bulk tidy by search: 'clear my spam' trashes everything in:spam; spam/untrash/important map to the right labels", async () => {
+    const g = fakeGoogle();
+    const r = await gmail.organize("ya29.x", { q: "in:spam", action: "trash" }, g.fetchImpl);
+    expect(r).toEqual({ changed: 3, action: "trash", q: "in:spam" });
+    expect(g.log.filter((l) => l.path.endsWith("/trash")).map((l) => l.path.split("/").at(-2))).toEqual(["s1", "s2", "s3"]);
+    await gmail.organize("ya29.x", { messageIds: ["m2"], action: "spam" }, g.fetchImpl);
+    expect(g.log.filter((l) => l.path.endsWith("/batchModify")).pop()!.body).toEqual({ ids: ["m2"], addLabelIds: ["SPAM"], removeLabelIds: ["INBOX"] });
+    await gmail.organize("ya29.x", { messageIds: ["m1"], action: "important" }, g.fetchImpl);
+    expect(g.log.filter((l) => l.path.endsWith("/batchModify")).pop()!.body).toEqual({ ids: ["m1"], addLabelIds: ["IMPORTANT"], removeLabelIds: [] });
+    await gmail.organize("ya29.x", { messageIds: ["m1"], action: "untrash" }, g.fetchImpl);
+    expect(g.log.some((l) => l.path.endsWith("/m1/untrash"))).toBe(true);
+    await expect(gmail.organize("ya29.x", { action: "archive" }, g.fetchImpl)).rejects.toThrow(/messageIds or q/);
+  });
+
+  it("attachments come out as files; forwarding re-attaches them and quotes the original", async () => {
+    const g = fakeGoogle();
+    const saved: Array<{ name: string; mime: string; size: number; caption: string }> = [];
+    const built = buildTools(["gmail_read", "gmail_forward"], {
+      fetch: g.fetchImpl,
+      delivery: {},
+      connections: { gmail: { owner: OWNER, email: "micheal@gmail.com" } },
+      files: async (f) => { saved.push({ name: f.name, mime: f.mime, size: f.bytes.byteLength, caption: f.caption }); return { ok: true, id: "f1", sentTo: ["moonlet page", "telegram"] }; },
+      propose: { owner: OWNER, moonletId: "m_inbox", moonletName: "Postie", runId: null, autopilot: true },
+    });
+    const att = await call<{ saved: boolean; file: string; sentTo: string[] }>(built.tools.find((t) => t.name === "gmail_read")!, { action: "attachment", id: "m2", attachmentId: "att1" });
+    expect(att).toMatchObject({ saved: true, file: "digest.pdf", sentTo: ["moonlet page", "telegram"] });
+    expect(saved[0]).toMatchObject({ name: "digest.pdf", mime: "application/pdf", size: 4, caption: "digest.pdf · from Substack <no-reply@substack.com> · Weekly digest" });
+
+    const fwd = await call<{ executed: boolean; result: { messageId: string } }>(built.tools.find((t) => t.name === "gmail_forward")!, { messageId: "m2", to: "accountant@firm.com", note: "For the books.", subject: "Weekly digest" });
+    expect(fwd).toMatchObject({ executed: true, result: { messageId: "sent1" } });
+    const sent = g.log.find((l) => l.path.endsWith("/messages/send"))!;
+    const raw = Buffer.from(sent.body!.raw as string, "base64url").toString("utf8");
+    expect(raw).toContain("To: accountant@firm.com");
+    expect(raw).toContain("Subject: Fwd: Weekly digest");
+    expect(raw).toContain('Content-Type: multipart/mixed; boundary="');
+    expect(raw).toContain('Content-Disposition: attachment; filename="digest.pdf"');
+    expect(raw).toContain(Buffer.from("%PDF").toString("base64"));
+    const textB64 = raw.split("Content-Transfer-Encoding: base64\r\n\r\n")[1].split("\r\n--")[0].replace(/\r\n/g, "");
+    expect(Buffer.from(textB64, "base64").toString("utf8")).toContain("For the books.\n\n---------- Forwarded message ----------\nFrom: Substack");
   });
 
   it("without Gmail connected the gmail tools are simply not offered, and a send fails plainly", async () => {

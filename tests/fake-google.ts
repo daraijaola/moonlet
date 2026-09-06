@@ -24,7 +24,7 @@ export function fakeGoogle(opts: { revoked?: boolean } = {}) {
       id: "m2", threadId: "t2", labelIds: ["INBOX"], snippet: "Your weekly digest", internalDate: "1787990000000",
       payload: {
         mimeType: "multipart/mixed",
-        headers: [{ name: "From", value: "Substack <no-reply@substack.com>" }, { name: "Subject", value: "Weekly digest" }],
+        headers: [{ name: "From", value: "Substack <no-reply@substack.com>" }, { name: "Subject", value: "Weekly digest" }, { name: "List-Unsubscribe", value: "<mailto:u@substack.com>, <https://substack.com/unsub/abc>" }],
         parts: [
           { mimeType: "text/html", body: { data: b64u("<html><style>p{}</style><body><h1>Digest</h1><p>Line one &amp; two</p><br><p>Three</p></body></html>") } },
           { mimeType: "application/pdf", filename: "digest.pdf", body: { attachmentId: "att1", size: 1234 } },
@@ -50,7 +50,14 @@ export function fakeGoogle(opts: { revoked?: boolean } = {}) {
     if (!auth || !/^Bearer ya29\./.test(auth)) return Response.json({ error: { message: "Invalid Credentials" } }, { status: 401 });
     const p = url.pathname.replace("/gmail/v1/users/me", "");
     if (p === "/profile") return Response.json({ emailAddress: "Micheal@gmail.com", messagesTotal: 2 });
-    if (p === "/messages" && method === "GET") return Response.json({ messages: Object.keys(messages).map((id) => ({ id })), resultSizeEstimate: 2 });
+    if (p === "/messages" && method === "GET") {
+      const q = url.searchParams.get("q") ?? "";
+      const ids = q.includes("in:spam") ? ["s1", "s2", "s3"] : Object.keys(messages);
+      return Response.json({ messages: ids.map((id) => ({ id })), resultSizeEstimate: ids.length });
+    }
+    if (p === "/drafts" && method === "GET") return Response.json({ drafts: [{ id: "d9", message: { id: "m1", threadId: "t1" } }] });
+    if (p.startsWith("/drafts/") && method === "DELETE") return new Response(null, { status: 204 });
+    if (p === "/messages/m2/attachments/att1") return Response.json({ size: 4, data: Buffer.from("%PDF").toString("base64url") });
     if (p === "/labels" && method === "GET") return Response.json({ labels });
     if (p === "/labels" && method === "POST") {
       const l = { id: `Label_${labels.length + 1}`, name: body!.name as string, type: "user" };
@@ -58,7 +65,7 @@ export function fakeGoogle(opts: { revoked?: boolean } = {}) {
       return Response.json(l);
     }
     if (p === "/labels/INBOX") return Response.json({ messagesUnread: 1, threadsUnread: 1 });
-    if (p.startsWith("/messages/") && p.endsWith("/trash")) return Response.json({ id: p.split("/")[2] });
+    if (p.startsWith("/messages/") && (p.endsWith("/trash") || p.endsWith("/untrash"))) return Response.json({ id: p.split("/")[2] });
     if (p === "/messages/batchModify") return new Response(null, { status: 204 });
     if (p === "/messages/send") return Response.json({ id: "sent1", threadId: (body!.threadId as string) ?? "tNew" });
     if (p === "/drafts") return Response.json({ id: "d1", message: { id: "dm1", threadId: (body!.message as { threadId?: string }).threadId ?? "tDraft" } });

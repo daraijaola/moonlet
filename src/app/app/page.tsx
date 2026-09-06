@@ -112,7 +112,7 @@ function Queue({ owner }: { owner: string }) {
     };
   }, [load]);
   if (!items.length) return note ? <p className="mb-6 rounded-lg border border-moss/30 bg-moss/5 px-4 py-3 font-mono text-[12.5px] text-moss">{note}</p> : null;
-  const KIND = { tweet: "Post on X", pull_request: "Pull request", issue_comment: "Comment", spawn_moonlet: "New moonlet", email_send: "Email", email_organize: "Inbox tidy" } as const;
+  const KIND = { tweet: "Post on X", pull_request: "Pull request", issue_comment: "Comment", spawn_moonlet: "New moonlet", email_send: "Email", email_organize: "Inbox tidy", email_forward: "Forward", issue_create: "New issue" } as const;
   return (
     <section className="mb-6 rounded-lg border border-gold bg-gold/10 p-4">
       <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink">Waiting for your OK · {items.length}</h2>

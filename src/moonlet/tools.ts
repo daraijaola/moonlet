@@ -276,8 +276,8 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
       if (!deps.propose) return { error: "acting tools are unavailable in this environment" };
       const input = toInput(a);
       const r = await propose(input, { ...deps.propose, fetch: f });
-      const TOOL_OF = { tweet: "post_tweet", pull_request: "open_pull_request", issue_comment: "comment_on_issue", email_send: "gmail_send", email_organize: "gmail_organize" } as const;
-      const what = input.kind === "pull_request" ? input.plan.title : input.kind === "tweet" ? input.text : input.kind === "email_send" ? `${input.mail.to} · ${input.mail.subject}` : input.kind === "email_organize" ? `${input.organize.action} ×${input.organize.messageIds.length}` : input.body;
+      const TOOL_OF = { tweet: "post_tweet", pull_request: "open_pull_request", issue_comment: "comment_on_issue", issue_create: "open_issue", email_send: "gmail_send", email_organize: "gmail_organize", email_forward: "gmail_forward" } as const;
+      const what = input.kind === "pull_request" ? input.plan.title : input.kind === "tweet" ? input.text : input.kind === "issue_create" ? input.title : input.kind === "email_send" ? `${input.mail.to} · ${input.mail.subject}` : input.kind === "email_forward" ? `fwd ${input.subject} → ${input.to}` : input.kind === "email_organize" ? `${input.organize.action} ${input.organize.q ? `q=${input.organize.q}` : `×${input.organize.messageIds?.length ?? 0}`}` : input.body;
       deps.trace?.({ tool: TOOL_OF[input.kind], summary: `${r.status}${r.proposalId ? " · " + r.proposalId : ""} · ${brief(what, 90)}` });
       if (r.status === "pending") return { proposed: true, proposalId: r.proposalId, note: "Drafted for the owner. Do not retry; tell them it is waiting for approval." };
       if (r.status === "failed") return { executed: false, error: (r.result as { error?: string })?.error ?? "failed", note: "Do not retry." };
@@ -303,6 +303,13 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     execute: gate((a: { repo: string; number: number; body: string }) => ({ kind: "issue_comment", repo: a.repo, number: a.number, body: a.body })),
   });
 
+  const openIssue = tool({
+    name: "open_issue",
+    description: "Propose a new GitHub issue in a connected repo: title, body, optional labels. The owner approves before it is opened. Use for a bug or task you found that is not already an open issue (check with github_read issues first).",
+    inputSchema: z.object({ repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/), title: z.string().min(4).max(120), body: z.string().max(4000), labels: z.array(z.string().max(40)).max(5).optional() }),
+    execute: gate((a: { repo: string; title: string; body: string; labels?: string[] }) => ({ kind: "issue_create", repo: a.repo, title: a.title, body: a.body, labels: a.labels })),
+  });
+
   const postTweet = tool({
     name: "post_tweet",
     description: "Propose a post on the owner's X account (max 280 chars). The owner approves before it posts. No price predictions, no financial advice, no hype.",
@@ -315,21 +322,33 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
   const gmailRead = tool({
     name: "gmail_read",
     description:
-      "Read the owner's Gmail. `overview`: unread count and the newest inbox mail (start here for 'what's going on in my email'). `search`: Gmail search syntax in q (is:unread, from:someone, newer_than:3d, has:attachment, subject:invoice, label:work). `message`: one email's full text by id. `thread`: a whole conversation by threadId, oldest first. `labels`: the owner's labels. Read-only; never quote passwords, codes or bank details back.",
+      "Read the owner's Gmail. `overview`: unread count and the newest inbox mail (start here for 'what's going on in my email'). `search`: Gmail search syntax in q (is:unread, from:someone, newer_than:3d, has:attachment, subject:invoice, label:work, in:spam, in:trash, is:important, category:promotions). `message`: one email's full text by id, with attachment ids and an unsubscribe link when the sender offers one. `thread`: a whole conversation by threadId, oldest first. `attachment`: save one attachment (id + attachmentId) as a file on this run and send it to the owner's Telegram. `drafts`: drafts waiting in Gmail. `labels`: the owner's labels. Read-only; never quote passwords, codes or bank details back.",
     inputSchema: z.object({
-      action: z.enum(["overview", "search", "message", "thread", "labels"]),
+      action: z.enum(["overview", "search", "message", "thread", "attachment", "drafts", "labels"]),
       q: z.string().max(300).optional().describe("for search"),
-      id: z.string().max(64).optional().describe("message id (message) or thread id (thread)"),
+      id: z.string().max(64).optional().describe("message id (message, attachment) or thread id (thread)"),
+      attachmentId: z.string().max(400).optional().describe("for attachment, from message.attachments[].attachmentId"),
       limit: z.number().int().min(1).max(50).optional(),
     }),
-    execute: traced("gmail_read", (a: { action: string; q?: string; id?: string; limit?: number }, r: unknown) => `${a.action}${a.q ? " " + a.q : ""}${a.id ? " " + a.id : ""} · ${brief(r, 90)}`, async ({ action, q, id, limit }) => {
+    execute: traced("gmail_read", (a: { action: string; q?: string; id?: string; attachmentId?: string; limit?: number }, r: unknown) => `${a.action}${a.q ? " " + a.q : ""}${a.id ? " " + a.id : ""} · ${brief(r, 90)}`, async ({ action, q, id, attachmentId, limit }) => {
       if (!gm) return { error: "Gmail not connected" };
       try {
         const token = await gmailToken();
         if (action === "overview") return await gmail.overview(token, f);
         if (action === "search") return await gmail.search(token, q ?? "in:inbox", limit ?? 15, f);
         if (action === "labels") return { labels: await gmail.labels(token, f) };
+        if (action === "drafts") return await gmail.listDrafts(token, limit ?? 15, f);
         if (!id) return { error: "id required" };
+        if (action === "attachment") {
+          if (!attachmentId) return { error: "attachmentId required" };
+          if (!deps.files) return { error: "files are unavailable in this environment" };
+          const m = await gmail.readMessage(token, id, f);
+          const a = m.attachments.find((x) => x.attachmentId === attachmentId);
+          if (!a) return { error: "no such attachment on that message" };
+          const bytes = new Uint8Array(await gmail.getAttachment(token, id, attachmentId, f));
+          const saved = await deps.files({ name: a.name, mime: a.mime || "application/octet-stream", bytes, caption: `${a.name} · from ${m.from} · ${m.subject}` });
+          return { saved: saved.ok, file: a.name, bytes: bytes.byteLength, sentTo: saved.sentTo ?? [] };
+        }
         return action === "message" ? await gmail.readMessage(token, id, f) : await gmail.readThread(token, id, f);
       } catch (e) {
         const msg = (e as Error).message;
@@ -369,16 +388,25 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     execute: gate((a: gmail.Outgoing) => ({ kind: "email_send", mail: a })),
   });
 
+  const gmailForward = tool({
+    name: "gmail_forward",
+    description: "Forward one email (by message id) to someone, attachments included, with a short note on top. The owner approves before it goes out unless the moonlet is on autopilot.",
+    inputSchema: z.object({ messageId: z.string().max(64), to: z.string().min(3).max(300), note: z.string().max(2000).default(""), subject: z.string().max(200).describe("the original subject, for the approval card") }),
+    execute: gate((a: { messageId: string; to: string; note: string; subject: string }) => ({ kind: "email_forward", messageId: a.messageId, to: a.to, note: a.note, subject: a.subject })),
+  });
+
   const gmailOrganize = tool({
     name: "gmail_organize",
-    description: "Tidy the owner's inbox: archive, mark read/unread, star, trash (reversible for 30 days) or apply a label (created if new) to specific messages by id. The owner approves before it happens unless the moonlet is on autopilot. Only touch messages you have actually read the summary of in this run.",
+    description:
+      "Tidy the owner's mailbox. Actions: archive/unarchive, mark_read/mark_unread, star/unstar, important/not_important, spam/not_spam, trash/untrash (trash empties itself after 30 days; that is what 'delete' means here, permanent deletion is not available), label/unlabel (label created if new). Target either specific messageIds you have read, or a Gmail search q for bulk work ('in:spam', 'from:newsletter@x.com older_than:30d', 'category:promotions is:read'). The owner approves before it happens unless the moonlet is on autopilot.",
     inputSchema: z.object({
-      messageIds: z.array(z.string().max(64)).min(1).max(100),
-      action: z.enum(["archive", "mark_read", "mark_unread", "star", "trash", "label"]),
-      label: z.string().max(80).optional().describe("for action=label"),
+      messageIds: z.array(z.string().max(64)).max(500).optional(),
+      q: z.string().max(300).optional().describe("Gmail search selecting the messages, instead of messageIds"),
+      action: z.enum(["archive", "unarchive", "mark_read", "mark_unread", "star", "unstar", "important", "not_important", "spam", "not_spam", "trash", "untrash", "label", "unlabel"]),
+      label: z.string().max(80).optional().describe("for label / unlabel"),
       why: z.string().min(4).max(300).describe("one line for the owner: what these are and why"),
     }),
-    execute: gate((a: { messageIds: string[]; action: gmail.Organize["action"]; label?: string; why: string }) => ({ kind: "email_organize", organize: { messageIds: a.messageIds, action: a.action, label: a.label }, why: a.why })),
+    execute: gate((a: { messageIds?: string[]; q?: string; action: gmail.OrganizeAction; label?: string; why: string }) => ({ kind: "email_organize", organize: { messageIds: a.messageIds, q: a.q, action: a.action, label: a.label }, why: a.why })),
   });
 
   let spawned = false;
@@ -442,17 +470,19 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     github_read: githubRead,
     open_pull_request: openPr,
     comment_on_issue: commentIssue,
+    open_issue: openIssue,
     post_tweet: postTweet,
     spawn_moonlet: spawnMoonlet,
     write_document: writeDocument,
     gmail_read: gmailRead,
     gmail_draft: gmailDraft,
     gmail_send: gmailSend,
+    gmail_forward: gmailForward,
     gmail_organize: gmailOrganize,
   };
 
   const available = (id: ToolId) => {
-    if (id === "github_read" || id === "open_pull_request" || id === "comment_on_issue") return !!ghToken;
+    if (id === "github_read" || id === "open_pull_request" || id === "comment_on_issue" || id === "open_issue") return !!ghToken;
     if (id === "post_tweet") return !!deps.connections?.x;
     if (id.startsWith("gmail_")) return !!gm;
     if (id === "spawn_moonlet") return !!deps.compile && !!deps.propose;
