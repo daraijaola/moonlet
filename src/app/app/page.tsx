@@ -91,7 +91,7 @@ function DashboardInner() {
 
       <div className="min-w-0">
         <Queue owner={address!} />
-        <Detail key={selected.id} m={selected} owner={address!} onChange={load} conns={conns} launched={params.get("launched") === "1"} />
+        <Detail key={selected.id} m={selected} owner={address!} onChange={load} conns={conns} launched={params.get("launched") === "1"} status={status} />
       </div>
     </div>
   );
@@ -233,7 +233,7 @@ const Row = ({ k, v }: { k: string; v: string }) => (
   </div>
 );
 
-function Detail({ m, owner, onChange, conns, launched }: { m: ApiMoonlet; owner: string; onChange: () => Promise<void>; conns: Connections | null; launched?: boolean }) {
+function Detail({ m, owner, onChange, conns, launched, status }: { m: ApiMoonlet; owner: string; onChange: () => Promise<void>; conns: Connections | null; launched?: boolean; status: OrbioStatus | null }) {
   const [runs, setRuns] = useState<ApiRun[] | null>(null);
   const [thread, setThread] = useState<Array<{ q: string; a: string | null; runId?: string }>>([]);
   const [question, setQuestion] = useState("");
@@ -322,13 +322,13 @@ function Detail({ m, owner, onChange, conns, launched }: { m: ApiMoonlet; owner:
 
       <div className="mt-4 grid gap-4 md:grid-cols-[auto_1fr]">
         <div className="rounded-lg border border-ink/10 bg-white p-5">
-          <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={m.keyRemainingUsd} quiet={quiet} size="lg" />
+          <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="lg" />
         </div>
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 md:grid-cols-2 lg:grid-cols-4">
           <Stat label="next run" value={m.status === "paused" ? "paused" : m.status === "running" ? "now" : timeUntil(m.nextRunAt)} hint={m.cadence} />
           <Stat label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : m.lastRunAt ? `last ${timeAgo(m.lastRunAt)}` : "none yet"} />
           <Stat label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)} / run`} />
-          <Stat label="fuel on key" value={fmtUsd(m.keyRemainingUsd)} hint={m.keyLimitUsd ? `of ${fmtUsd(m.keyLimitUsd)}` : "claims on first run"} />
+          <Stat label="fuel" value={status?.idleCreditsUsd != null ? fmtUsd(status.idleCreditsUsd) : fmtUsd(m.keyRemainingUsd)} hint={status?.idleCreditsUsd != null ? "Orbio balance, shared by your moonlets" : m.keyLimitUsd ? "on its key" : "mints a key on first run"} />
         </div>
       </div>
 
@@ -358,7 +358,7 @@ function Detail({ m, owner, onChange, conns, launched }: { m: ApiMoonlet; owner:
             <Ctl danger onClick={() => setConfirmDelete(true)}>Delete</Ctl>
           ) : (
             <span className="inline-flex flex-wrap items-center gap-2 rounded-md border border-ink bg-white px-2 py-1 font-mono text-[12.5px]">
-              Returns {fmtUsd(m.keyRemainingUsd)} unspent to your Orbio balance.
+              Your credits stay in your Orbio balance; only the moonlet goes.
               <button onClick={() => act("delete", () => api.remove(owner, m.id), "Deleted. Unspent credits returned.")} className="rounded bg-ink px-2 py-0.5 text-cream">Confirm</button>
               <button onClick={() => setConfirmDelete(false)} className="text-ink-soft">Cancel</button>
             </span>

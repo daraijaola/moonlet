@@ -1,5 +1,5 @@
-import { tool, serverTool } from "@openrouter/agent";
 import { z } from "zod";
+import { webFetchTool, type LocalTool } from "./llm";
 import type { ToolId } from "./spec";
 import { readRepo, type GitHubConn } from "./connections/github";
 import { propose, type ProposeCtx } from "./proposals";
@@ -9,9 +9,9 @@ import { propose, type ProposeCtx } from "./proposals";
  * holder's credits, so every tool here is read-only against the world except
  * `deliver`, which only writes to channels the owner configured.
  *
- * Server tools (web_search, web_fetch, shell) run inside OpenRouter and are
- * billed to the same key, so they count against the run's maxCost like
- * everything else.
+ * web_search is OpenRouter's web plugin, passed through Orbio's gateway and
+ * billed to the same key; web_fetch is a local fetch. Both count against the
+ * run's cost cap like everything else.
  */
 
 export const RH_RPC = process.env.ROBINHOOD_RPC ?? "https://rpc.mainnet.chain.robinhood.com";
@@ -41,7 +41,14 @@ const j = async (f: typeof fetch, url: string, init?: RequestInit) => {
   return r.json();
 };
 
-export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
+/** Local function tool with a zod schema; `tool` mirrors the old SDK signature so the definitions below read the same. */
+function tool<S extends z.ZodType>(t: { name: string; description: string; inputSchema: S; execute: (a: z.infer<S>) => Promise<unknown> }): LocalTool {
+  return { name: t.name, description: t.description, schema: t.inputSchema, execute: t.execute as never };
+}
+
+export type BuiltTools = { tools: LocalTool[]; webSearch: boolean };
+
+export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
   const f = deps.fetch ?? fetch;
   const traced = <A, R>(name: string, label: (a: A, r: R) => string, run: (a: A) => Promise<R>) => async (a: A) => {
     const r = await run(a);
@@ -297,27 +304,24 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
     execute: gate((a: { text: string }) => ({ kind: "tweet", text: a.text })),
   });
 
-  const webSearch = serverTool({ type: "openrouter:web_search" });
-  const webFetch = serverTool({ type: "openrouter:web_fetch" });
-  const sandbox = serverTool({ type: "openrouter:shell" });
+  const webFetch: LocalTool = { ...webFetchTool(f), execute: traced("web_fetch", (a: { url: string }, r: unknown) => `${a.url} · ${brief(r, 90)}`, webFetchTool(f).execute as never) as never };
 
-  const all = {
+  const all: Partial<Record<ToolId, LocalTool>> = {
     chain_read: chainRead,
     token_market: tokenMarket,
     deliver,
-    web_search: webSearch,
     web_fetch: webFetch,
-    sandbox,
     github_read: githubRead,
     open_pull_request: openPr,
     comment_on_issue: commentIssue,
     post_tweet: postTweet,
-  } as const;
+  };
 
   const available = (id: ToolId) => {
     if (id === "github_read" || id === "open_pull_request" || id === "comment_on_issue") return !!ghToken;
     if (id === "post_tweet") return !!deps.connections?.x;
     return true;
   };
-  return ids.filter(available).map((id) => all[id]);
+  const tools = ids.filter(available).map((id) => all[id]).filter((t): t is LocalTool => !!t);
+  return { tools, webSearch: ids.includes("web_search") };
 }

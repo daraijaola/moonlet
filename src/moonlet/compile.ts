@@ -1,7 +1,6 @@
-import { callModel, stepCountIs } from "@openrouter/agent";
 import { buildCompilerInstructions } from "./personality";
-import type { OpenRouterClient } from "./model";
 import { pickModel } from "./model";
+import { runLoop } from "./llm";
 import { JobSpec, JobSpecJsonSchema, TEMPLATE_DEFAULTS, type Cadence, type TemplateId } from "./spec";
 
 /**
@@ -10,11 +9,12 @@ import { JobSpec, JobSpecJsonSchema, TEMPLATE_DEFAULTS, type Cadence, type Templ
  * good first draft.
  */
 export async function compileJob(
-  client: OpenRouterClient,
+  key: string,
   input: { sentence: string; template: TemplateId; name?: string; repos?: string[] },
 ): Promise<JobSpec> {
   const defaults = TEMPLATE_DEFAULTS[input.template];
-  const result = callModel(client, {
+  const result = await runLoop({
+    key,
     model: pickModel(0, "compile"),
     instructions: buildCompilerInstructions(),
     input: [
@@ -27,10 +27,11 @@ export async function compileJob(
     ]
       .filter(Boolean)
       .join("\n"),
-    text: { format: { type: "json_schema", name: "job_spec", strict: true, schema: JobSpecJsonSchema as Record<string, unknown> } },
-    stopWhen: stepCountIs(1),
+    jsonSchema: { name: "job_spec", schema: JobSpecJsonSchema as Record<string, unknown> },
+    maxCostUsd: 0.02,
+    maxSteps: 1,
   });
-  const text = await result.getText();
+  const text = result.text.replace(/```(?:json)?|```/g, "").trim();
   const parsed = JobSpec.safeParse(JSON.parse(text));
   if (parsed.success) return withDefaults(parsed.data, input);
   return fallbackSpec(input);

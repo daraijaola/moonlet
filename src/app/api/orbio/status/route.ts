@@ -11,11 +11,14 @@ export async function GET(req: Request) {
   if (!owner) return bad("sign in with your wallet first", 401);
   const [orbio, bag] = await Promise.all([orbioFor(owner), bagOf(owner)]);
   let balanceUsd: number | null = null;
+  let legacyUsd: number | null = null;
   let tools: string[] = [];
   let orbioError: string | null = null;
   if (orbio) {
     try {
-      balanceUsd = (await orbio.getBalance()).availableUsd;
+      const [bal, ks] = await Promise.all([orbio.getBalance(), orbio.getKeyStatus()]);
+      balanceUsd = bal.availableUsd;
+      legacyUsd = ks.legacy?.active ? ks.legacy.remainingUsd : null;
       tools = orbio.listTools ? (await orbio.listTools()).map((t) => t.name) : [];
     } catch (e) {
       orbioError = (e as Error).message;
@@ -28,6 +31,7 @@ export async function GET(req: Request) {
     bag,
     earnPerDayUsd: estimateEarnPerDay(bag),
     idleCreditsUsd: balanceUsd,
+    legacyKeyUsd: legacyUsd,
     canWrite,
     orbio: { tools, error: orbioError, expiresAt: o?.orbioExpiresAt ?? null, dev: process.env.ALLOW_DEV_ORBIO === "1" },
   });

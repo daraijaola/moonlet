@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { compileJob } from "@/moonlet/compile";
-import { makeClient } from "@/moonlet/model";
 import { runMoonlet } from "@/moonlet/runner";
 import { JobSpec, type JobSpec as Spec } from "@/moonlet/spec";
 import { fakeOrbio } from "./fakes";
@@ -11,7 +10,7 @@ const OWNER = "0x00000000000000000000000000000000000000dd";
 
 describe("checks + memory (real model)", () => {
   it("compiler splits a watch sentence into 2-5 concrete checks with the right tools", async () => {
-    const spec = await compileJob(makeClient(KEY), {
+    const spec = await compileJob(KEY, {
       sentence: "Every 12 hours: watch $ORBIO price and liquidity, tell me about big transfers of ORBIO, and whether orbio.so/build changed.",
       template: "custom",
     });

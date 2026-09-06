@@ -1,20 +1,7 @@
-import { OpenRouter } from "@openrouter/agent";
-
 /**
- * One OpenRouter client per key. Keys come from Orbio, so a moonlet's client is
- * rebuilt whenever its key rotates. The two headers put Moonlet on OpenRouter's
- * public app rankings.
+ * Model tiers and fallbacks. Requests go through Orbio's gateway (see llm.ts);
+ * these pick which OpenRouter model id to ask for.
  */
-export function makeClient(apiKey: string) {
-  return new OpenRouter({
-    apiKey,
-    serverURL: process.env.OPENROUTER_BASE_URL || undefined,
-    httpReferer: process.env.APP_URL ?? "https://moonlet.sky",
-    appTitle: "Moonlet",
-  });
-}
-
-export type OpenRouterClient = ReturnType<typeof makeClient>;
 
 /**
  * Model tiers by bag size. Cheap models for small bags so a 1,000-token holder

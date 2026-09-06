@@ -30,6 +30,7 @@ const orbios = new Map(owners.map((o) => [o, fakeOrbio({ realKey: KEY, balanceUs
 describe("scheduler", () => {
   beforeAll(async () => {
     rmSync("/tmp/moonlet-test.db", { force: true });
+    process.env.DATABASE_URL = "file:/tmp/moonlet-test.db";
     await store.migrate();
     const now = Date.now();
     for (const o of owners) {
@@ -102,15 +103,15 @@ describe("scheduler", () => {
     expect((await store.getMoonlet(m.id))?.status).toBe("quiet");
   });
 
-  it("12. a second moonlet on a wallet whose balance is already inside a key borrows that key instead of going quiet", async () => {
+  it("12. a second moonlet on a wallet borrows the wallet's account key instead of minting another", async () => {
     const owner = "0x0000000000000000000000000000000000000c0d";
     const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 6 });
     const now = Date.now();
     const p = plan(spec, 1_250_000);
     const mk = (id: string, key: typeof spec extends never ? never : { key: string; limitUsd: number; spentUsd: number } | null) =>
       store.insertMoonlet({ id, owner, name: id, spec, status: "idle", delivery: {}, key, cadence: p.cadence, perRunCapUsd: p.perRunCapUsd, earnPerDayUsd: p.earnPerDayUsd, burnPerDayUsd: p.burnPerDayUsd, nextRunAt: now - 1000, createdAt: now });
-    // First moonlet already holds the wallet's key (claimed everything).
-    await orbio.client.claimKey(6);
+    // First moonlet already holds the wallet's account key.
+    await orbio.client.createKey();
     await mk("m_first", { key: KEY, limitUsd: 6, spentUsd: 0.2 });
     await mk("m_second", null);
     const deps = { orbioFor: async () => orbio.client, bagOf: async () => 1_250_000, anchor: null };
@@ -120,8 +121,8 @@ describe("scheduler", () => {
     console.log("second moonlet:", r.status, second?.key && "has key", orbio.state.calls);
     expect(r.status).toBe("done");
     expect(second?.key?.key).toBe(KEY);
-    // it borrowed, so no rotate happened and the first moonlet's key still works
-    expect(orbio.state.calls.filter((c) => c === "rotate").length).toBe(0);
+    // it borrowed, so no second mint happened and the first moonlet's key still works
+    expect(orbio.state.mints).toBe(1);
   }, 120_000);
 
   it("11. secrets are sealed at rest", async () => {

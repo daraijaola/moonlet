@@ -1,50 +1,47 @@
 import type { OrbioClient } from "@/moonlet/orbio";
 
-/** In-memory Orbio. Hands out the real OpenRouter key so runs hit real inference. */
-export function fakeOrbio(opts: { realKey: string; balanceUsd?: number; badFirstKey?: boolean; inactive?: boolean }) {
+/**
+ * In-memory Orbio on the account-key model. Hands out the real key so runs hit
+ * real inference. `legacy` simulates a holder who still has an old capped
+ * OpenRouter key with money on it.
+ */
+export function fakeOrbio(opts: { realKey: string; balanceUsd?: number; legacy?: { remainingUsd: number; disabled?: boolean } | null; failFirstKey?: boolean }) {
   const state = {
     balance: opts.balanceUsd ?? 25,
-    key: null as null | { key: string; limit: number; spent: number; active: boolean },
+    hasKey: false,
+    mints: 0,
+    legacy: opts.legacy ? { limitUsd: opts.legacy.remainingUsd + 0.5, usageUsd: 0.5, remainingUsd: opts.legacy.remainingUsd, disabled: !!opts.legacy.disabled } : null,
     calls: [] as string[],
-    rotations: 0,
   };
   const client: OrbioClient = {
     async getBalance() {
       state.calls.push("balance");
       return { availableUsd: state.balance, raw: {} };
     },
-    async claimKey(amount = 5) {
-      state.calls.push("claim");
-      if (state.key) throw new Error("Orbio MCP orbio_claim_key: wallet already has an active key");
-      const limit = Math.min(amount, state.balance);
-      state.balance -= limit;
-      state.key = { key: opts.badFirstKey && state.rotations === 0 ? "sk-or-v1-invalid" : opts.realKey, limit, spent: 0, active: !opts.inactive };
-      return { key: state.key.key, limitUsd: limit, raw: {} };
-    },
     async getKeyStatus() {
       state.calls.push("status");
-      const k = state.key;
-      if (!k) throw new Error("Orbio MCP orbio_get_key_status: no key");
-      return { spentUsd: k.spent, limitUsd: k.limit, remainingUsd: k.limit - k.spent, active: k.active, raw: {} };
+      return {
+        hasKey: state.hasKey,
+        prefix: state.hasKey ? (opts.failFirstKey && state.mints === 1 ? "sk-orbio-bad" : opts.realKey.slice(0, 12)) : null,
+        legacy: state.legacy ? { limitUsd: state.legacy.limitUsd, spentUsd: state.legacy.usageUsd, remainingUsd: state.legacy.remainingUsd, active: !state.legacy.disabled } : null,
+        raw: {},
+      };
     },
-    async topUpKey(amount) {
-      state.calls.push("topup");
-      state.balance -= amount;
-      state.key!.limit += amount;
-      return client.getKeyStatus();
+    async createKey() {
+      state.calls.push("create");
+      state.mints++;
+      state.hasKey = true;
+      return { key: opts.failFirstKey && state.mints === 1 ? "sk-orbio-invalid" : opts.realKey, raw: {} };
     },
-    async rotateKey() {
-      state.calls.push("rotate");
-      state.rotations++;
-      const k = state.key!;
-      state.key = { key: opts.realKey, limit: k.limit - k.spent, spent: 0, active: true };
-      return { key: state.key.key, limitUsd: state.key.limit, raw: {} };
+    async revokeKey() {
+      state.calls.push("revoke");
+      state.hasKey = false;
     },
-    async deleteKey() {
-      state.calls.push("delete");
-      const back = state.key ? state.key.limit - state.key.spent : 0;
+    async deleteLegacyKey() {
+      state.calls.push("delete_legacy");
+      const back = state.legacy && !state.legacy.disabled ? state.legacy.remainingUsd : 0;
+      if (state.legacy) state.legacy.disabled = true;
       state.balance += back;
-      state.key = null;
       return { returnedUsd: back };
     },
   };

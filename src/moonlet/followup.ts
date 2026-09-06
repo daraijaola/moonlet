@@ -1,6 +1,5 @@
-import { callModel, maxCost, stepCountIs } from "@openrouter/agent";
 import * as store from "./store";
-import { makeClient } from "./model";
+import { runLoop, type UserContent } from "./llm";
 import { buildTools } from "./tools";
 import { CADENCE_MS, Cadence } from "./spec";
 import type { GitHubConn } from "./connections/github";
@@ -58,7 +57,7 @@ export async function followup(input: FollowupInput): Promise<string> {
   const run = (input.runId && runs.find((r) => r.id === input.runId)) ?? (input.runId ? await store.getRun(input.runId) : null) ?? runs[0] ?? null;
   const gh = await store.getConnection<GitHubConn>(m.owner, "github");
   const readOnly = m.spec.tools.filter((t) => !["deliver", "open_pull_request", "comment_on_issue", "post_tweet"].includes(t));
-  const tools = buildTools(readOnly, { fetch: input.fetch, delivery: {}, connections: { github: gh?.data } });
+  const built = buildTools(readOnly, { fetch: input.fetch, delivery: {}, connections: { github: gh?.data } });
 
   const context = run
     ? [
@@ -99,19 +98,23 @@ export async function followup(input: FollowupInput): Promise<string> {
     }
     if (!imageData) return "I couldn't load that image. Try sending it again as a photo.";
   }
-  const inputContent = imageData
-    ? [{ type: "input_text" as const, text: input.text || "What do you see, and how does it relate to my report?" }, { type: "input_image" as const, imageUrl: imageData, detail: "auto" as const }]
+  const inputContent: UserContent = imageData
+    ? [{ type: "text", text: input.text || "What do you see, and how does it relate to my report?" }, { type: "image_url", image_url: { url: imageData } }]
     : input.text;
 
-  const result = callModel(makeClient(key), {
-    model: imageData ? "google/gemini-3.8-flash" : m.spec.model && m.spec.model !== "auto" ? m.spec.model : "google/gemini-3.8-flash",
-    instructions,
-    input: imageData ? [{ role: "user" as const, content: inputContent as never }] : (inputContent as string),
-    tools,
-    stopWhen: [maxCost(Math.max(0.02, m.spec.spendCapUsd)), stepCountIs(3)],
-  });
   try {
-    const text = (await result.getText()).trim();
+    const r = await runLoop({
+      key,
+      model: imageData ? "google/gemini-3.8-flash" : m.spec.model && m.spec.model !== "auto" ? m.spec.model : "google/gemini-3.8-flash",
+      instructions,
+      input: inputContent,
+      tools: built.tools,
+      webSearch: built.webSearch,
+      maxCostUsd: Math.max(0.02, m.spec.spendCapUsd),
+      maxSteps: 3,
+      fetch: input.fetch,
+    });
+    const text = r.text.trim();
     return text || "I don't have more on that than what the report says.";
   } catch (e) {
     const msg = String((e as Error).message ?? e);

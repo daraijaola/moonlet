@@ -260,9 +260,9 @@ describe("connections + proposals", () => {
 
   it("acting tools are only offered when the connection exists; deliver refuses unlinked channels", async () => {
     const none = buildTools(["post_tweet", "open_pull_request", "github_read", "deliver", "token_market"], { delivery: {} });
-    expect(none.map((t) => (t as { function?: { name: string } }).function?.name ?? "server")).toEqual(["deliver", "token_market"]);
+    expect(none.tools.map((t) => t.name)).toEqual(["deliver", "token_market"]);
     const all = buildTools(["post_tweet", "open_pull_request", "github_read"], { delivery: {}, connections: { github: { token: "t", login: "x" }, x: true } });
-    expect(all.length).toBe(3);
+    expect(all.tools.length).toBe(3);
   });
 
   it("proposals are scoped to their owner", async () => {

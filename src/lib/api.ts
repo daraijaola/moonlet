@@ -68,7 +68,7 @@ export type Proposal = {
   decidedAt: number | null;
 };
 
-export type OrbioStatus = { approved: boolean; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; canWrite: boolean; orbio: { tools: string[]; error: string | null; expiresAt: number | null; dev: boolean } };
+export type OrbioStatus = { approved: boolean; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; legacyKeyUsd?: number | null; canWrite: boolean; orbio: { tools: string[]; error: string | null; expiresAt: number | null; dev: boolean } };
 
 async function req<T>(owner: string | null, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {

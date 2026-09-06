@@ -1,7 +1,7 @@
-import { callModel, stepCountIs, tool, maxCost } from "@openrouter/agent";
 import { z } from "zod";
 import * as store from "./store";
-import { makeClient, pickModel } from "./model";
+import { pickModel } from "./model";
+import { runLoop, type LocalTool } from "./llm";
 import { Cadence, CADENCE_MS } from "./spec";
 import { runOne } from "./scheduler";
 
@@ -47,6 +47,7 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
     page: `${opts.appUrl}/s/${m.id}`,
   });
 
+  const tool = <S extends z.ZodType>(t: { name: string; description: string; inputSchema: S; execute: (a: z.infer<S>) => Promise<unknown> }): LocalTool => ({ name: t.name, description: t.description, schema: t.inputSchema, execute: t.execute as never });
   const tools = [
     tool({
       name: "list_moonlets",
@@ -103,15 +104,18 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
     }),
   ];
 
-  const result = callModel(makeClient(key), {
-    model: pickModel(0, "compile"),
-    instructions: `${CHARACTER}\n\nIt is ${new Date().toISOString()}. The owner has ${moonlets.length} moonlet${moonlets.length === 1 ? "" : "s"}: ${moonlets.map((m) => `${m.name} (${CADENCE_WORDS[m.spec.cadence]}, ${m.status})`).join(", ")}. Site: ${opts.appUrl}`,
-    input: text,
-    tools,
-    stopWhen: [maxCost(0.02), stepCountIs(4)],
-  });
   try {
-    const reply = (await result.getText()).trim();
+    const r = await runLoop({
+      key,
+      model: pickModel(0, "compile"),
+      instructions: `${CHARACTER}\n\nIt is ${new Date().toISOString()}. The owner has ${moonlets.length} moonlet${moonlets.length === 1 ? "" : "s"}: ${moonlets.map((m) => `${m.name} (${CADENCE_WORDS[m.spec.cadence]}, ${m.status})`).join(", ")}. Site: ${opts.appUrl}`,
+      input: text,
+      tools,
+      maxCostUsd: 0.02,
+      maxSteps: 4,
+      fetch: opts.fetch,
+    });
+    const reply = r.text.trim();
     return reply || "Done.";
   } catch (e) {
     const msg = String((e as Error).message ?? e);

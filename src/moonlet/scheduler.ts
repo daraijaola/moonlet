@@ -3,7 +3,7 @@ import { makeAnchorer, type Anchorer } from "./anchor";
 import { estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
 import { makeOrbioClient, OrbioAuthError, refreshOrbioToken, type OrbioClient } from "./orbio";
 import { devOrbio } from "./orbio-dev";
-import { runMoonlet, type RunDeps } from "./runner";
+import { runMoonlet } from "./runner";
 import { CADENCE_MS, type Cadence } from "./spec";
 import * as store from "./store";
 import { RH_RPC, type DeliverySink } from "./tools";
@@ -26,7 +26,6 @@ export type SchedulerDeps = {
   anchor?: Anchorer | null;
   deliver?: DeliverySink;
   run?: typeof runMoonlet;
-  clientFor?: RunDeps["clientFor"];
   fetch?: typeof fetch;
   now?: () => number;
 };
@@ -206,7 +205,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn },
     },
-    { orbio, clientFor: deps.clientFor, fetch: deps.fetch, deliver, bagOf: async () => bag },
+    { orbio, fetch: deps.fetch, deliver, bagOf: async () => bag },
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;

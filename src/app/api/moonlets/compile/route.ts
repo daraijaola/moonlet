@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { compileJob, fallbackSpec } from "@/moonlet/compile";
 import { bad, ownerFrom } from "@/moonlet/http";
-import { makeClient } from "@/moonlet/model";
 import { TEMPLATE_IDS } from "@/moonlet/spec";
 import { connectionFor, listRepos } from "@/moonlet/connections/github";
 import * as store from "@/moonlet/store";
@@ -25,7 +24,7 @@ export async function POST(req: Request) {
   try {
     const gh = await connectionFor(owner);
     const repos = gh ? await listRepos(gh.data.token, 30).then((r) => r.map((x) => x.repo)).catch(() => []) : [];
-    const spec = await compileJob(makeClient(key), { ...body.data, repos });
+    const spec = await compileJob(key, { ...body.data, repos });
     return NextResponse.json({ spec, compiled: true });
   } catch {
     return NextResponse.json({ spec: fallbackSpec(body.data), compiled: false });
