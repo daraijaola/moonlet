@@ -9,7 +9,7 @@ export const TEMPLATE_LABEL: Record<TemplateId, string> = {
 
 export const TEMPLATE_BLURB: Record<TemplateId, string> = {
   "market-watch": "Liquidity, whales, new pools on Robinhood Chain. Briefs you when something actually moved.",
-  "repo-mechanic": "Reads your repos on a schedule: commits, issues, PRs, files. Can draft pull requests and comments; you approve each one.",
+  "repo-mechanic": "Reads your repos on a schedule: commits, issues, PRs, files. Can open pull requests and comments; you approve the first, then it acts on its own.",
   digest: "Reads the pages you name and sends one short brief. No guessing unread sources.",
   custom: "One sentence. Tools we actually have: search, fetch, chain, market, sandbox.",
 };

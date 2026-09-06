@@ -101,6 +101,7 @@ function DashboardInner() {
 function Queue({ owner }: { owner: string }) {
   const [items, setItems] = useState<Proposal[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [note, setNote] = useState<string | null>(null);
   const load = useCallback(async () => setItems((await api.proposals(owner, "pending")).proposals), [owner]);
   useEffect(() => {
     const first = setTimeout(load, 0);
@@ -110,7 +111,7 @@ function Queue({ owner }: { owner: string }) {
       clearInterval(t);
     };
   }, [load]);
-  if (!items.length) return null;
+  if (!items.length) return note ? <p className="mb-6 rounded-lg border border-moss/30 bg-moss/5 px-4 py-3 font-mono text-[12.5px] text-moss">{note}</p> : null;
   const KIND = { tweet: "Post on X", pull_request: "Pull request", issue_comment: "Comment", spawn_moonlet: "New moonlet" } as const;
   return (
     <section className="mb-6 rounded-lg border border-gold bg-gold/10 p-4">
@@ -133,7 +134,8 @@ function Queue({ owner }: { owner: string }) {
                 disabled={!!busy}
                 onClick={async () => {
                   setBusy(p.id);
-                  await api.decide(owner, p.id, "approve").catch(() => undefined);
+                  const r = await api.decide(owner, p.id, "approve").catch(() => null);
+                  if (r?.autopilotOn) setNote("Done. This moonlet is on autopilot now: it acts on its own. Switch it off under More… on its page.");
                   await load();
                   setBusy(null);
                 }}

@@ -68,15 +68,28 @@ export async function propose(input: ProposalInput, ctx: ProposeCtx) {
   return { proposalId: id, status: "pending" as const, note: "Waiting for the owner's approval. It will run once they approve." };
 }
 
-/** Owner decided. Executes on approve. Safe to call twice (second call is a no-op). */
+/**
+ * Owner decided. Executes on approve. Safe to call twice (second call is a no-op).
+ * One approval is consent for the moonlet: its first approved action switches it
+ * to autopilot, so it acts on its own from then on (the owner can switch it back
+ * on the moonlet page). Spawns are the exception: a new moonlet is always asked.
+ */
 export async function decide(id: string, action: "approve" | "reject", fetchImpl?: typeof fetch) {
   const p = await store.getProposal(id);
   if (!p) return { ok: false as const, error: "not found" };
   const moved = await store.decideProposal(id, action === "approve" ? "approved" : "rejected");
   if (!moved) return { ok: false as const, error: `already ${p.status}` };
-  if (action === "reject") return { ok: true as const, status: "rejected" as const };
+  if (action === "reject") return { ok: true as const, status: "rejected" as const, autopilotOn: false };
   const r = await execute(id, fetchImpl);
-  return { ok: true as const, status: r.status, result: r.result };
+  let autopilotOn = false;
+  if (r.status === "executed" && p.kind !== "spawn_moonlet") {
+    const m = await store.getMoonlet(p.moonletId);
+    if (m && !m.autopilot) {
+      await store.updateMoonlet(m.id, { autopilot: true });
+      autopilotOn = true;
+    }
+  }
+  return { ok: true as const, status: r.status, result: r.result, autopilotOn };
 }
 
 async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ status: "executed" | "failed"; result: Record<string, unknown> }> {
@@ -121,7 +134,9 @@ export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   if (r.status === "executed") {
     const { url, name, familyNote } = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string };
     if (p.kind === "spawn_moonlet") return `<b>${tg.esc(d.title)}</b>\n\n✓ <b>${tg.esc(name ?? "")}</b> is live and running its first check now; its reports will land here too.${familyNote ? `\n\n${tg.esc(familyNote)}` : ""}\n${tg.esc(url ?? "")}`;
-    return `<b>${tg.esc(d.title)}</b>\n\n✓ Done.${url ? ` ${tg.esc(url)}` : ""}`;
+    const m = await store.getMoonlet(p.moonletId);
+    const note = r.autopilotOn && m ? `\n\n<i>${tg.esc(m.name)} is on autopilot now: it acts on its own without asking. Switch it off under More… on its page.</i>` : "";
+    return `<b>${tg.esc(d.title)}</b>\n\n✓ Done.${url ? ` ${tg.esc(url)}` : ""}${note}`;
   }
   return `<b>${tg.esc(d.title)}</b>\n\n⚠ Approved, but it failed: ${tg.esc(String((r.result as { error?: string })?.error ?? "unknown"))}`;
 };

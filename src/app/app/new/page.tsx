@@ -188,10 +188,10 @@ function NewInner() {
                     <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink">{k === "x" ? <XMark size={16} /> : <GitHubMark size={18} />}</span>
                     <div className="min-w-0">
                       <p className="text-[14px] font-semibold text-ink">{k === "x" ? "X" : "GitHub"} <span className="ml-1 font-mono text-[11px] font-normal text-ink-faint">{linked(k)!.label}</span></p>
-                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">{k === "x" ? (autopilot ? "It may post on its own, the moment it decides to." : "It may draft posts. Each one waits for your approval before it goes out.") : autopilot ? "It may read repos and open pull requests or comments on its own." : "It may read repos and draft pull requests or comments. Each one waits for your approval."}</p>
+                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">{k === "x" ? (autopilot ? "It may post on its own, the moment it decides to." : "It drafts its first post for your approval; once you approve, it posts on its own.") : autopilot ? "It may read repos and open pull requests or comments on its own." : "It drafts its first pull request or comment for your approval; once you approve, it acts on its own."}</p>
                     </div>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[11px] ${autopilot ? "bg-ink text-cream" : "bg-moss/10 text-moss"}`}>{autopilot ? "acts on its own" : "asks first"}</span>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[11px] ${autopilot ? "bg-ink text-cream" : "bg-moss/10 text-moss"}`}>{autopilot ? "acts on its own" : "asks once"}</span>
                 </li>
               ))}
             </ul>
@@ -202,7 +202,7 @@ function NewInner() {
                   <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft">
                     {autopilot
                       ? "Posts, pull requests and comments go out the moment the moonlet decides, in your name. Reading never needs approval either way."
-                      : "Anything that speaks for you is drafted first and sent to Telegram with Approve / Reject; one tap and it goes out. You can switch this any time on the moonlet page."}
+                      : "Its first action that speaks for you is drafted and sent to Telegram with Approve / Reject. One approval and it's on autopilot from then on. You can switch this any time on the moonlet page."}
                   </p>
                 </div>
                 <button
@@ -217,7 +217,7 @@ function NewInner() {
               </div>
             )}
             {!linked("x") && !linked("github") && (
-              <p className="mt-3 font-mono text-[11.5px] text-ink-faint">Want it to post on X or open pull requests? Connect those under <Link href="/app/connections" className="underline">Connections</Link>; it will always ask you first.</p>
+              <p className="mt-3 font-mono text-[11.5px] text-ink-faint">Want it to post on X or open pull requests? Connect those under <Link href="/app/connections" className="underline">Connections</Link>; it asks once, then acts on its own.</p>
             )}
           </>
         )}

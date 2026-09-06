@@ -46,7 +46,7 @@ function ConnectionsInner() {
       <header className="mt-4">
         <h1 className="text-[1.6rem] font-semibold tracking-[-0.02em] text-ink">What your moonlets may touch</h1>
         <p className="mt-1.5 max-w-[46rem] text-[14px] leading-[1.6] text-ink-soft">
-          Each connection unlocks a tool. Nothing connected, nothing pretended. Anything a moonlet wants to <em>do</em> on your behalf, a post or a pull request, is drafted first and waits for your OK unless you turn on autopilot for that moonlet.
+          Each connection unlocks a tool. Nothing connected, nothing pretended. Anything a moonlet wants to <em>do</em> on your behalf, a post or a pull request, is drafted first and waits for your OK. One approval puts that moonlet on autopilot; switch it back any time on its page.
         </p>
       </header>
       {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{err}</p>}
@@ -168,7 +168,7 @@ function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: strin
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
-    <Shell mark={<GitHubMark size={24} />} name="GitHub" blurb="Sign in with GitHub once. A moonlet can then read your repos and draft pull requests or comments; each one waits for your approval before it lands." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
+    <Shell mark={<GitHubMark size={24} />} name="GitHub" blurb="Sign in with GitHub once. A moonlet can then read your repos and open pull requests or comments; the first one waits for your approval, then it acts on its own." unlocks="github_read, open_pull_request, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
       {!conn && (oauth ? (
         <button
           disabled={busy}

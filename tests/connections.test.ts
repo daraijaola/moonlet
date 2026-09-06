@@ -60,6 +60,8 @@ beforeAll(async () => {
   rmSync("/tmp/moonlet-conn.db", { force: true });
   process.env.DATABASE_URL = "file:/tmp/moonlet-conn.db";
   await store.migrate();
+  const spec = { name: "Lumen", template: "market-watch", objective: "watch", cadence: "6h", sources: [], checks: [], tools: ["token_market", "deliver", "post_tweet"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto" } as unknown as import("@/moonlet/spec").JobSpec;
+  await store.insertMoonlet({ id: "m1", owner: OWNER, name: "Lumen", spec, status: "idle", delivery: {}, key: null, cadence: "6h", perRunCapUsd: 0.02, earnPerDayUsd: 0.05, burnPerDayUsd: 0.02, nextRunAt: Date.now(), createdAt: Date.now() });
 });
 
 describe("x: own developer app keys (OAuth 1.0a)", () => {
@@ -180,6 +182,9 @@ describe("connections + proposals", () => {
     expect(p?.status).toBe("executed");
     expect((p?.result as { url: string }).url).toBe("https://x.com/dara/status/777");
     expect(t.edited.at(-1)?.text).toContain("Done");
+    // one approval is consent: the moonlet is on autopilot from here
+    expect((await store.getMoonlet("m1"))?.autopilot).toBe(true);
+    expect((await decide(pid, "approve", xFetch)).ok).toBe(false);
 
     // a second tap on the same button does nothing
     const again = await decide(pid, "approve", xFetch);
