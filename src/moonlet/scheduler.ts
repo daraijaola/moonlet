@@ -232,6 +232,12 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
       ghConn = null;
     }
   }
+  if (!ghConn && m.spec.tools.some((t) => t === "github_read" || t === "open_pull_request" || t === "comment_on_issue") && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read")) {
+    // A repo job without GitHub access has nothing to read; park it rather than burn credits reporting 404s.
+    await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
+    await recordRun(m.id, now(), { status: "quiet", error: "GitHub isn't connected; reconnect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "GitHub isn't connected. Reconnect it under Connections and this moonlet resumes on its own." }] });
+    return { status: "quiet" };
+  }
   const deliver: DeliverySink | undefined =
     deps.deliver ??
     (tgConn && tg.telegramConfigured()
