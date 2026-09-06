@@ -79,6 +79,27 @@ export function esc(s: string) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
+/** The light markdown a moonlet writes, as Telegram HTML: headings bold, bullets kept, **bold**, [text](url). Everything else escaped. */
+export function mdToHtml(md: string) {
+  return md
+    .replace(/\r/g, "")
+    .split("\n")
+    .map((line) => {
+      const h = /^#{1,3}\s+(.*)$/.exec(line);
+      if (h) return `<b>${esc(h[1].replace(/\*\*/g, ""))}</b>`;
+      const li = /^\s*(?:[-*•]|\d+[.)])\s+(.*)$/.exec(line);
+      const body = li ? li[1] : line;
+      const html = esc(body)
+        .replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2">$1</a>')
+        .replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>")
+        .replace(/`([^`]+)`/g, "<code>$1</code>");
+      return li ? `• ${html}` : html;
+    })
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 const APP = () => process.env.APP_URL ?? "https://moonlet.16labs.xyz";
 
 /**

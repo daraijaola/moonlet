@@ -302,10 +302,11 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   if (result.status === "done" && result.output && !result.output.nothingHappened && tgConn && tg.telegramConfigured() && !deps.deliver && !alreadyDelivered) {
     const o = result.output;
     const page = `${process.env.APP_URL ?? "https://moonlet.16labs.xyz"}/s/${m.id}`;
-    const sections = (o.sections ?? []).length
+    // Inbox reports are written for reading (links to each email), so the body goes out; other jobs read best as their per-check sections.
+    const sections = (o.sections ?? []).length && !(m.spec.template === "inbox" && o.body.trim())
       ? "\n\n" + o.sections.map((sec) => `${sec.changed ? "●" : "○"} <b>${tg.esc(sec.check)}</b>\n${tg.esc(sec.finding)}`).join("\n\n")
       : o.body.trim() && o.body.trim() !== o.summary.trim()
-        ? `\n\n${tg.esc(o.body.slice(0, 2500))}`
+        ? `\n\n${tg.mdToHtml(o.body.slice(0, 2500))}`
         : "";
     const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
     const sent = await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch((e) => {

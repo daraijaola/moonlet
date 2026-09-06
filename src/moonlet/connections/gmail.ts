@@ -135,6 +135,7 @@ const summarise = (m: Message) => ({
   unread: !!m.labelIds?.includes("UNREAD"),
   labels: (m.labelIds ?? []).filter((l) => !["UNREAD", "CATEGORY_PERSONAL"].includes(l)),
   snippet: (m.snippet ?? "").slice(0, 200),
+  url: `https://mail.google.com/mail/u/0/#all/${m.threadId}`,
 });
 export type MessageSummary = ReturnType<typeof summarise>;
 

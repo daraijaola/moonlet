@@ -133,7 +133,7 @@ describe("gmail on real models", () => {
       { id: "m_postie_live", owner: OWNER, bag: 1_000_000, spec, key: { key: KEY, limitUsd: 5, spentUsd: 0 }, autopilot: false, runId: "run_pl", memory: null, parentId: null, delivery: {}, connections: { gmail: { owner: OWNER, email: "micheal@gmail.com" } } },
       { orbio: fakeOrbio({ realKey: KEY }).client, fetch: split(g), bagOf: async () => 1_000_000 },
     );
-    console.log("postie:", r.status, r.output?.title, r.output?.summary, r.output?.remember, r.trace.map((t) => t.tool + ": " + t.summary));
+    console.log("postie:", r.status, r.output?.title, "\n" + r.output?.body, "\n", r.output?.remember);
     expect(r.status).toBe("done");
     expect(r.trace.some((t) => t.tool === "gmail_read")).toBe(true);
     expect((r.output!.title + r.output!.summary + r.output!.body).toLowerCase()).toMatch(/yash|demo|thursday/);

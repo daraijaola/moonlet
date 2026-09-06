@@ -9,6 +9,7 @@ import { buildInstructions } from "@/moonlet/personality";
 import type { JobSpec } from "@/moonlet/spec";
 import type { LocalTool } from "@/moonlet/llm";
 import { fakeGoogle } from "./fake-google";
+import { mdToHtml } from "@/moonlet/connections/telegram";
 
 const OWNER = "0x00000000000000000000000000000000000000f1";
 const call = <T = unknown>(t: LocalTool, a: unknown) => (t.execute as (a: unknown) => Promise<T>)(a);
@@ -230,5 +231,10 @@ describe("gmail connection", () => {
     const sent = g.log.find((l) => l.path.endsWith("/messages/send"))!;
     const raw = Buffer.from(sent.body!.raw as string, "base64url").toString("utf8");
     expect(raw).toContain("From: o@gmail.com\r\nTo: o@gmail.com\r\nSubject: Postie: Two threads need you: Yash about Thursday, and the accountant.");
+  });
+
+  it("inbox markdown becomes Telegram HTML: headings bold, links clickable, angle brackets escaped", () => {
+    const html = mdToHtml("## Needs you\n- **Yash** <yash@orbio.so> · Demo slot · [open](https://mail.google.com/mail/u/0/#all/t1)\n\n## Done this run\n- Archived 15 newsletters");
+    expect(html).toBe('<b>Needs you</b>\n• <b>Yash</b> &lt;yash@orbio.so&gt; · Demo slot · <a href="https://mail.google.com/mail/u/0/#all/t1">open</a>\n\n<b>Done this run</b>\n• Archived 15 newsletters');
   });
 });

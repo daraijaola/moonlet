@@ -1,5 +1,6 @@
 "use client";
 
+import { LightMarkdown } from "@/components/light-markdown";
 import { useState } from "react";
 import { fmtUsd, shortenHexes, timeAgo, type ApiRun } from "@/lib/api";
 
@@ -45,7 +46,7 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
               ))}
             </ul>
           )}
-          {open && hasBody && <pre className="mt-3 whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-[13px] leading-[1.6] text-ink [overflow-wrap:anywhere]">{run.body}</pre>}
+          {open && hasBody && <LightMarkdown text={run.body} className="mt-3 rounded-md bg-paper p-3 text-[13px] leading-[1.6] text-ink" />}
           {open && (run.trace?.length ?? 0) > 0 && (
             <ol className="mt-3 space-y-1 rounded-md border border-ink/[0.07] bg-paper/60 p-3 font-mono text-[11.5px]">
               <li className="mb-1.5 text-[10.5px] uppercase tracking-[0.14em] text-ink-soft">Steps · {run.trace!.length} tool calls</li>

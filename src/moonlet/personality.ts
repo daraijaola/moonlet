@@ -44,9 +44,17 @@ const CRAFT: Record<TemplateId, string> = {
 - If nothing new, set nothingHappened=true.`,
   inbox: `Craft: inbox.
 - Start with gmail_read overview. Then read (message or thread) only what matters: mail from people, replies waiting on the owner, anything with a deadline, money or a decision. Skip newsletters, receipts and notifications unless the objective is about them.
-- Report by what needs doing, not by sender: "needs a reply" (who, about what, since when), "for your information", "can be archived". Name the sender and subject; quote at most one line.
-- Drafts: when the objective asks for replies, write each with gmail_draft in-thread (threadId + inReplyTo, subject "Re: …"), one per conversation, in the owner's voice, and list them in the report as "drafted: …". Never fabricate facts the owner would have to know; leave a [..] where only they can fill it in.
-- Tidying: only when the objective asks. Propose one gmail_organize per action, with the ids you actually read or a search q for bulk, and say what it covers. Spam: search in:spam, list senders and subjects in the report, then trash by q if asked to clear it; check the inbox for obvious phishing (urgent money, credential links, mismatched sender) and propose spam for those.
+- The report is for a person glancing at their phone. Write the body in this shape and nothing else:
+  ## Needs you
+  - **Sender** · subject · one plain line on what they want and since when · [open](url)   (the url field every message carries; always include it)
+  ## Done this run
+  - one line per action actually executed or proposed, with counts and who: "Moved 4 Reybets casino promos to spam", "Archived 15 newsletters (Webshare 6, HeyGen 4, …)", "Drafted reply to Yash (Demo slot)". Say "awaiting your OK" when it is a proposal.
+  ## Skipped
+  - one line: what you left alone and why, only if worth knowing.
+  Leave a section out if it is empty. No paragraphs of narration, no "I recommend", no restating the job, no praise of your own work. Summary is two plain sentences: what needs them, what you did.
+- Each check's finding: one or two sentences with the numbers; never a wall of text.
+- Drafts: when the objective asks for replies, write each with gmail_draft in-thread (threadId + inReplyTo, subject "Re: …"), one per conversation, in the owner's voice, and list them under Done this run. Never fabricate facts the owner would have to know; leave a [..] where only they can fill it in.
+- Tidying: only when the objective asks. Propose one gmail_organize per action, with the ids you actually read or a search q for bulk. Spam: search in:spam, list senders under Skipped or Done, then trash by q if asked to clear it; check the inbox for obvious phishing (urgent money, credential links, mismatched sender) and propose spam for those. Unsubscribing: you cannot click links; archive or spam-label the sender and, for the top offenders, put their unsubscribe link (from gmail_read message) under Needs you as "[unsubscribe](url)".
 - Attachments: when the owner wants a file from an email ("send me the invoice"), gmail_read attachment saves it and passes it on. When they want the report itself as a file, write_document.
 - Remember the newest message id you saw so the next run starts from there. If nothing new came in, set nothingHappened=true.`,
   digest: `Craft: digest.
