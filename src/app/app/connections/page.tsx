@@ -54,26 +54,36 @@ function ConnectionsInner() {
       {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{err}</p>}
 
       <div className="mt-6 space-y-3">
-        <Shell
-          mark={<OrbioMark size={22} />}
-          name="Orbio"
-          blurb="The budget. Once approved on orbio.so, your moonlets mint one capped inference key for your wallet from the credits your $ORBIO earns. Moonlet can read the balance, mint and revoke that key, nothing else."
-          unlocks="get_balance, create_key, revoke_key"
-          conn={orbio?.approved ? { label: orbio.orbio.dev ? "dev stub" : `${orbio.orbio.tools.length || "MCP"} tools`, createdAt: 0 } : undefined}
-          onDisconnect={orbio?.approved ? async () => { await api.orbioDisconnect(address); await load(); } : undefined}
-        >
-          {orbio && !orbio.approved && (
-            <button onClick={() => approveOrbio("/app/connections").catch((e) => setErr((e as Error).message))} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[13px] font-medium text-midnight">
-              <OrbioMark size={14} /> Approve on Orbio
-            </button>
-          )}
-          {orbio?.orbio.error && <p className="font-mono text-[11.5px] text-red-700">{orbio.orbio.error}</p>}
-        </Shell>
-        <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} setErr={setErr} />
-        <DiscordCard owner={address} conn={has("discord")} onChange={load} setErr={setErr} />
-        <GmailCard owner={address} conn={has("gmail")} oauth={data.available.gmailOAuth} onChange={load} />
-        <GitHubCard owner={address} conn={has("github")} oauth={data.available.githubOAuth} onChange={load} />
-        <XCard owner={address} conn={has("x")} onChange={load} setErr={setErr} />
+        {[
+          {
+            key: "orbio",
+            on: !!orbio?.approved,
+            node: (
+              <Shell
+                mark={<OrbioMark size={22} />}
+                name="Orbio"
+                blurb="The budget. Once approved on orbio.so, your moonlets mint one capped inference key for your wallet from the credits your $ORBIO earns. Moonlet can read the balance, mint and revoke that key, nothing else."
+                unlocks="get_balance, create_key, revoke_key"
+                conn={orbio?.approved ? { label: orbio.orbio.dev ? "dev stub" : `${orbio.orbio.tools.length || "MCP"} tools`, createdAt: 0 } : undefined}
+                onDisconnect={orbio?.approved ? async () => { await api.orbioDisconnect(address); await load(); } : undefined}
+              >
+                {orbio && !orbio.approved && (
+                  <button onClick={() => approveOrbio("/app/connections").catch((e) => setErr((e as Error).message))} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[13px] font-medium text-midnight">
+                    <OrbioMark size={14} /> Approve on Orbio
+                  </button>
+                )}
+                {orbio?.orbio.error && <p className="font-mono text-[11.5px] text-red-700">{orbio.orbio.error}</p>}
+              </Shell>
+            ),
+          },
+          { key: "telegram", on: !!has("telegram"), node: <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} setErr={setErr} /> },
+          { key: "gmail", on: !!has("gmail"), node: <GmailCard owner={address} conn={has("gmail")} oauth={data.available.gmailOAuth} onChange={load} /> },
+          { key: "discord", on: !!has("discord"), node: <DiscordCard owner={address} conn={has("discord")} onChange={load} setErr={setErr} /> },
+          { key: "github", on: !!has("github"), node: <GitHubCard owner={address} conn={has("github")} oauth={data.available.githubOAuth} onChange={load} /> },
+          { key: "x", on: !!has("x"), node: <XCard owner={address} conn={has("x")} onChange={load} setErr={setErr} /> },
+        ]
+          .sort((a, b) => Number(b.on) - Number(a.on))
+          .map((c) => <div key={c.key}>{c.node}</div>)}
       </div>
 
       <p className="mt-8 text-[12px] leading-[1.6] text-ink-faint">
@@ -103,9 +113,12 @@ function Shell({ mark, name, blurb, unlocks, conn, children, onDisconnect }: { m
           <p className="mt-1.5 font-mono text-[11.5px] text-ink-faint">unlocks: {unlocks}</p>
           <div className="mt-3">{children}</div>
           {conn && onDisconnect && (
-            <button onClick={onDisconnect} className="mt-3 font-mono text-[11.5px] text-ink-faint hover:text-red-700">
-              Disconnect{conn.createdAt ? ` · linked ${timeAgo(conn.createdAt)}` : ""}
-            </button>
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button onClick={onDisconnect} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink/60 bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink hover:border-red-700 hover:text-red-700">
+                Disconnect
+              </button>
+              {conn.createdAt ? <span className="font-mono text-[11.5px] text-ink-faint">linked {timeAgo(conn.createdAt)}</span> : null}
+            </div>
           )}
         </div>
       </div>
