@@ -60,13 +60,24 @@ export function fallbackSpec(input: { sentence: string; template: TemplateId; na
     objective: s.trim(),
     cadence: cadenceFrom(s, alert ? "4h" : d.cadence),
     sources: extractSources(s),
-    checks: [],
+    checks: checksFrom(s),
     tools: d.tools,
     output: { ...d.output, alwaysReport: alert ? false : d.output.alwaysReport },
     voice: "terse, concrete, sources named, no hype",
     spendCapUsd: d.costPerRunUsd,
     model: "auto",
   };
+}
+
+/** Without a model: split on "and"/commas/";" into up to 5 concrete checks when the sentence reads like a watch list. */
+function checksFrom(s: string): string[] {
+  const body = s
+    .replace(/^(every|each)\s+\d*\s*(minutes?|min|hours?|h|days?|mornings?|nights?|weeks?)\b[,:]?\s*/i, "")
+    .replace(/\b(and\s+)?(tell|ping|alert|notify|message|brief)\s+me\b.*$/i, "")
+    .trim();
+  const parts = body.split(/\s*(?:;|,|\band\b)\s*/i).map((p) => p.replace(/^(watch|check|track|monitor|read)\s+/i, "").trim()).filter((p) => p.length >= 4);
+  if (parts.length < 2) return [];
+  return parts.slice(0, 5).map((p) => `${p.charAt(0).toUpperCase()}${p.slice(1)} vs last run`);
 }
 
 function cadenceFrom(s: string, fallback: Cadence): Cadence {

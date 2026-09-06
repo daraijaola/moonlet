@@ -110,6 +110,12 @@ export async function followup(input: FollowupInput): Promise<string> {
     tools,
     stopWhen: [maxCost(Math.max(0.02, m.spec.spendCapUsd)), stepCountIs(3)],
   });
-  const text = (await result.getText()).trim();
-  return text || "I don't have more on that than what the report says.";
+  try {
+    const text = (await result.getText()).trim();
+    return text || "I don't have more on that than what the report says.";
+  } catch (e) {
+    const msg = String((e as Error).message ?? e);
+    if (/401|user not found|unauthorized|402|insufficient/i.test(msg)) return `${m.name}'s key isn't working right now (${/401|not found|unauthorized/i.test(msg) ? "rejected" : "out of credit"}). It rotates on its next run; ask again after that.`;
+    throw e;
+  }
 }

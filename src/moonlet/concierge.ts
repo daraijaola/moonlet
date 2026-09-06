@@ -110,6 +110,12 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
     tools,
     stopWhen: [maxCost(0.02), stepCountIs(4)],
   });
-  const reply = (await result.getText()).trim();
-  return reply || "Done.";
+  try {
+    const reply = (await result.getText()).trim();
+    return reply || "Done.";
+  } catch (e) {
+    const msg = String((e as Error).message ?? e);
+    if (/401|user not found|unauthorized|402|insufficient/i.test(msg)) return `Your moonlets' key isn't working right now; it rotates on the next run. Meanwhile: ${opts.appUrl}/app`;
+    throw e;
+  }
 }
