@@ -19,6 +19,7 @@ const marketWatch: Spec = {
   objective: `Brief me on $ORBIO (${ORBIO_CA}) on Robinhood Chain: price, liquidity, volume and holder changes in the last day.`,
   cadence: "6h",
   sources: ["$ORBIO", ORBIO_CA],
+  checks: [],
   tools: ["token_market", "chain_read", "deliver"],
   output: { kind: "brief", maxWords: 150, alwaysReport: true },
   voice: "terse, concrete, sources named, no hype",

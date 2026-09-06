@@ -12,6 +12,7 @@ const spec: JobSpec = {
   objective: "Brief me on $ORBIO liquidity and volume on Robinhood Chain.",
   cadence: "6h",
   sources: ["$ORBIO"],
+  checks: [],
   tools: ["token_market", "chain_read", "deliver"],
   output: { kind: "brief", maxWords: 120, alwaysReport: true },
   voice: "terse",

@@ -29,6 +29,8 @@ export type MoonletRow = {
   status: "running" | "idle" | "paused" | "quiet" | "deleted";
   delivery: { telegram?: string; x?: string };
   autopilot: boolean;
+  /** Compact notes the moonlet carries between runs (last values, seen ids). */
+  memory: string | null;
   key: KeyState;
   cadence: string;
   perRunCapUsd: number;
@@ -62,6 +64,7 @@ export type RunRow = {
   txHash: string | null;
   keyEvents: KeyEvent[];
   trace?: TraceEvent[];
+  sections?: Array<{ check: string; finding: string; changed: boolean }>;
   error: string | null;
 };
 
@@ -132,6 +135,8 @@ export function migrate() {
     );
     await c.execute(`ALTER TABLE moonlets ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN memory TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
   })();
   return ready;
 }
@@ -224,6 +229,7 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
     status: row.status as MoonletRow["status"],
     delivery: JSON.parse(row.delivery as string),
     autopilot: !!row.autopilot,
+    memory: (row.memory as string | null) ?? null,
     key: row.key ? (JSON.parse(open(row.key as string)) as KeyState) : null,
     cadence: row.cadence as string,
     perRunCapUsd: Number(row.per_run_cap_usd),
@@ -239,7 +245,7 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
   };
 }
 
-export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot"> & { autopilot?: boolean }) {
+export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory"> & { autopilot?: boolean }) {
   await migrate();
   await db().execute({
     sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at)
@@ -283,6 +289,7 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
     status: (v) => v,
     delivery: (v) => JSON.stringify(v),
     autopilot: (v) => (v ? 1 : 0),
+    memory: (v) => v,
     key: (v) => (v ? seal(JSON.stringify(v)) : null),
     cadence: (v) => v,
     perRunCapUsd: (v) => v,
@@ -296,7 +303,7 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
     spentTotalUsd: (v) => v,
   };
   const cols: Record<string, string> = {
-    name: "name", spec: "spec", status: "status", delivery: "delivery", autopilot: "autopilot", key: "key", cadence: "cadence",
+    name: "name", spec: "spec", status: "status", delivery: "delivery", autopilot: "autopilot", memory: "memory", key: "key", cadence: "cadence",
     perRunCapUsd: "per_run_cap_usd", earnPerDayUsd: "earn_per_day_usd", burnPerDayUsd: "burn_per_day_usd",
     nextRunAt: "next_run_at", lastRunAt: "last_run_at", keysRotated: "keys_rotated", runsTotal: "runs_total",
     runsFailed: "runs_failed", spentTotalUsd: "spent_total_usd",
@@ -334,11 +341,11 @@ export async function claimForRun(id: string, now = Date.now()) {
 export async function insertRun(r: RunRow) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace,sections)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
       r.id, r.moonletId, r.at, r.status, r.title, r.summary, r.body, JSON.stringify(r.sources), r.signal, r.nothingHappened ? 1 : 0,
-      r.costUsd, r.model, r.modelCalls, r.durationMs, r.outputHash, r.txHash, JSON.stringify(r.keyEvents), r.error, JSON.stringify(r.trace ?? []),
+      r.costUsd, r.model, r.modelCalls, r.durationMs, r.outputHash, r.txHash, JSON.stringify(r.keyEvents), r.error, JSON.stringify(r.trace ?? []), JSON.stringify(r.sections ?? []),
     ],
   });
 }
@@ -368,6 +375,7 @@ function rowToRun(row: Record<string, unknown>): RunRow {
     txHash: (row.tx_hash as string) ?? null,
     keyEvents: JSON.parse(row.key_events as string),
     trace: row.trace ? JSON.parse(row.trace as string) : [],
+    sections: row.sections ? JSON.parse(row.sections as string) : [],
     error: (row.error as string) ?? null,
   };
 }

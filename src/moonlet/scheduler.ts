@@ -185,7 +185,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const runId = store.newId("run");
   const result = await run(
     {
-      id: m.id, owner: m.owner, bag, spec: m.spec, key: m.key, autopilot: m.autopilot, runId,
+      id: m.id, owner: m.owner, bag, spec: m.spec, key: m.key, autopilot: m.autopilot, runId, memory: m.memory,
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn },
     },
@@ -213,6 +213,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   await store.updateMoonlet(id, {
     status: result.status === "quiet" ? "quiet" : "idle",
     key: result.key,
+    ...(result.status === "done" && result.output ? { memory: result.output.remember?.slice(0, 1200) || m.memory } : {}),
     cadence,
     perRunCapUsd: result.plan.perRunCapUsd,
     earnPerDayUsd: result.plan.earnPerDayUsd || estimateEarnPerDay(bag),
@@ -235,7 +236,12 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   if (result.status === "done" && result.output && !result.output.nothingHappened && tgConn && tg.telegramConfigured() && !deps.deliver && !alreadyDelivered) {
     const o = result.output;
     const page = `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}`;
-    const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${o.body.trim() && o.body.trim() !== o.summary.trim() ? `\n\n${tg.esc(o.body.slice(0, 2500))}` : ""}\n\n$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · ${tg.esc(page)}`;
+    const sections = (o.sections ?? []).length
+      ? "\n\n" + o.sections.map((sec) => `${sec.changed ? "●" : "○"} <b>${tg.esc(sec.check)}</b>\n${tg.esc(sec.finding)}`).join("\n\n")
+      : o.body.trim() && o.body.trim() !== o.summary.trim()
+        ? `\n\n${tg.esc(o.body.slice(0, 2500))}`
+        : "";
+    const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
     await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch(() => undefined);
   } else if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && !alreadyDelivered) {
     await deliver({ channel: "telegram", text: `${result.output.title}\n\n${result.output.summary}` }).catch(() => undefined);
@@ -254,7 +260,7 @@ async function recordRun(
   r: {
     id?: string;
     status: "done" | "quiet" | "failed";
-    output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean };
+    output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean; sections?: Array<{ check: string; finding: string; changed: boolean }> };
     outputHash?: string;
     error?: string;
     model: string;
@@ -278,6 +284,7 @@ async function recordRun(
     sources: r.output?.sources ?? [],
     signal: r.output?.signal ?? "none",
     nothingHappened: r.output?.nothingHappened ?? true,
+    sections: r.output?.sections ?? [],
     costUsd: r.costUsd,
     model: r.model,
     modelCalls: r.modelCalls,

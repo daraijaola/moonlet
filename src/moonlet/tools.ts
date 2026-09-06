@@ -49,14 +49,22 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
     return r;
   };
 
-  const rpc = async (method: string, params: unknown[]) => {
-    const r = (await j(f, RH_RPC, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    })) as { result?: unknown; error?: { message?: string } };
-    if (r.error) throw new Error(r.error.message ?? "rpc error");
-    return r.result;
+  const rpc = async (method: string, params: unknown[]): Promise<unknown> => {
+    // The public RPC rate-limits aggressively (429) and times out on wide log scans; retry with backoff.
+    let last: unknown;
+    for (const wait of [0, 700, 1500, 3000]) {
+      if (wait) await new Promise((r) => setTimeout(r, wait));
+      const r = (await j(f, RH_RPC, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      })) as { result?: unknown; error?: { message?: string; code?: number } | string };
+      if (!r.error) return r.result;
+      const msg = typeof r.error === "string" ? r.error : `${r.error.code ?? ""} ${r.error.message ?? ""}`;
+      last = msg;
+      if (!/429|Too Many|deadline|timeout|HTTP 5/i.test(msg)) break;
+    }
+    throw new Error(String(last || "rpc error"));
   };
   const call = async (to: string, data: string) => (await rpc("eth_call", [{ to, data }, "latest"])) as string;
   const decodeStr = (hex: string) => {
@@ -71,15 +79,82 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps) {
   const chainRead = tool({
     name: "chain_read",
     description:
-      "Read Robinhood Chain (chain id 4663) straight from the RPC. token_info: name, symbol, decimals, total supply. balance_of: a wallet's token balance. token_transfers: the largest recent ERC-20 transfers (roughly the last few thousand blocks), useful for spotting whale moves. Read-only.",
+      "Read Robinhood Chain (chain id 4663) straight from the RPC. token_info: name, symbol, decimals, total supply. balance_of: a wallet's token balance. token_transfers: the largest recent ERC-20 transfers of a token (last few thousand blocks), for whale moves. wallet_activity: every ERC-20 transfer in or out of a wallet over the last few thousand blocks (~hours), grouped by token, plus its native balance — use it to watch a wallet. Read-only.",
     inputSchema: z.object({
-      action: z.enum(["token_info", "token_transfers", "balance_of"]),
-      token: z.string().regex(/^0x[0-9a-fA-F]{40}$/).describe("ERC-20 contract address"),
-      wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional().describe("Wallet address, for balance_of"),
+      action: z.enum(["token_info", "token_transfers", "balance_of", "wallet_activity"]),
+      token: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional().describe("ERC-20 contract address (not needed for wallet_activity)"),
+      wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional().describe("Wallet address, for balance_of and wallet_activity"),
+      fromBlock: z.number().int().min(0).optional().describe("wallet_activity: scan from this block (use the latestBlock you remembered last run)"),
       limit: z.number().int().min(1).max(50).default(15),
     }),
-    execute: traced("chain_read", (a: { action: string; token: string; wallet?: string; limit?: number }, r: unknown) => `${a.action} ${a.token.slice(0, 6)}…${a.token.slice(-4)} · ${brief(r, 90)}`, async ({ action, token, wallet, limit }) => {
+    execute: traced("chain_read", (a: { action: string; token?: string; wallet?: string; fromBlock?: number; limit?: number }, r: unknown) => `${a.action} ${(a.wallet ?? a.token ?? "").slice(0, 6)}…${(a.wallet ?? a.token ?? "").slice(-4)} · ${brief(r, 90)}`, async ({ action, token, wallet, fromBlock, limit }) => {
       try {
+        const lim = limit ?? 15;
+        if (action === "wallet_activity") {
+          if (!wallet) return { error: "wallet required" };
+          const latest = parseInt((await rpc("eth_blockNumber", [])) as string, 16);
+          const padded = `0x${wallet.slice(2).toLowerCase().padStart(64, "0")}`;
+          type Log = { address: string; topics: string[]; data: string; transactionHash: string; blockNumber: string };
+          // The public RPC caps log scans at a few hundred blocks per call; walk back in chunks under a time budget.
+          const CHUNK = 350, BUDGET_MS = 9000, MAX_BLOCKS = fromBlock ? Math.max(0, latest - fromBlock) : 6000;
+          const t0 = Date.now();
+          const outL: Log[] = [], inL: Log[] = [];
+          let scanned = 0, to = latest;
+          while (scanned < MAX_BLOCKS && Date.now() - t0 < BUDGET_MS) {
+            const from = Math.max(fromBlock ?? 0, to - CHUNK + 1);
+            try {
+              const o = (await rpc("eth_getLogs", [{ topics: [TRANSFER, padded], fromBlock: `0x${from.toString(16)}`, toBlock: `0x${to.toString(16)}` }])) as Log[];
+              const i = (await rpc("eth_getLogs", [{ topics: [TRANSFER, null, padded], fromBlock: `0x${from.toString(16)}`, toBlock: `0x${to.toString(16)}` }])) as Log[];
+              outL.push(...o);
+              inL.push(...i);
+            } catch {
+              break;
+            }
+            scanned += to - from + 1;
+            to = from - 1;
+            if (to < (fromBlock ?? 0)) break;
+          }
+          const meta = new Map<string, { symbol: string; decimals: number }>();
+          const info = async (t: string) => {
+            if (!meta.has(t)) {
+              const [sym, dec] = await Promise.all([call(t, "0x95d89b41").catch(() => "0x"), call(t, "0x313ce567").catch(() => "0x")]);
+              meta.set(t, { symbol: decodeStr(sym) || t.slice(0, 8), decimals: parseInt(dec, 16) || 18 });
+            }
+            return meta.get(t)!;
+          };
+          const rows = [...outL.map((l) => ({ l, dir: "out" as const })), ...inL.map((l) => ({ l, dir: "in" as const }))].sort((a, b) => parseInt(b.l.blockNumber, 16) - parseInt(a.l.blockNumber, 16));
+          const transfers = [];
+          for (const { l, dir } of rows.slice(0, lim * 2)) {
+            const m = await info(l.address);
+            transfers.push({ dir, token: l.address, symbol: m.symbol, amount: Number(BigInt(l.data || "0x0")) / 10 ** m.decimals, counterparty: dir === "out" ? `0x${l.topics[2].slice(26)}` : `0x${l.topics[1].slice(26)}`, block: parseInt(l.blockNumber, 16), tx: l.transactionHash });
+          }
+          // Group raw, then resolve metadata only for the busiest tokens (routers touch hundreds).
+          const rawByToken: Record<string, { in: bigint; out: bigint; count: number }> = {};
+          for (const { l, dir } of rows) {
+            const b = (rawByToken[l.address] ??= { in: 0n, out: 0n, count: 0 });
+            b[dir] += BigInt(l.data || "0x0");
+            b.count++;
+          }
+          const byToken: Record<string, { symbol: string; in: number; out: number; count: number }> = {};
+          for (const [addr, b] of Object.entries(rawByToken).sort((a, c) => c[1].count - a[1].count).slice(0, 12)) {
+            const m = await info(addr);
+            byToken[addr] = { symbol: m.symbol, in: Number(b.in) / 10 ** m.decimals, out: Number(b.out) / 10 ** m.decimals, count: b.count };
+          }
+          const tokenCount = Object.keys(rawByToken).length;
+          const native = Number(BigInt((await rpc("eth_getBalance", [wallet, "latest"])) as string)) / 1e18;
+          return {
+            wallet,
+            scannedBlocks: scanned ? `${to + 1}-${latest}` : "none",
+            latestBlock: latest,
+            note: fromBlock ? undefined : "Covers roughly the last few hours. Pass fromBlock (the latestBlock you remembered) next run to scan only what is new.",
+            nativeBalance: native,
+            transferCount: rows.length,
+            tokenCount,
+            byToken,
+            recent: transfers.slice(0, lim),
+          };
+        }
+        if (!token) return { error: "token required" };
         if (action === "balance_of") {
           if (!wallet) return { error: "wallet required" };
           const dec = parseInt(await call(token, "0x313ce567"), 16) || 18;

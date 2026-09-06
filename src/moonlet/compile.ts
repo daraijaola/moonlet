@@ -43,6 +43,7 @@ function withDefaults(spec: JobSpec, input: { sentence: string; template: Templa
     template: input.template,
     name: input.name?.trim() || spec.name,
     tools: Array.from(new Set([...(spec.tools.length ? spec.tools : d.tools), "deliver" as const])),
+    checks: (spec.checks ?? []).slice(0, 6),
     spendCapUsd: Math.min(Math.max(spec.spendCapUsd, d.costPerRunUsd), d.costPerRunUsd * 3),
     model: spec.model ?? "auto",
   };
@@ -59,6 +60,7 @@ export function fallbackSpec(input: { sentence: string; template: TemplateId; na
     objective: s.trim(),
     cadence: cadenceFrom(s, alert ? "4h" : d.cadence),
     sources: extractSources(s),
+    checks: [],
     tools: d.tools,
     output: { ...d.output, alwaysReport: alert ? false : d.output.alwaysReport },
     voice: "terse, concrete, sources named, no hype",

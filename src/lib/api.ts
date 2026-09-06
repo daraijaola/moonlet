@@ -47,6 +47,7 @@ export type ApiRun = {
   explorerUrl: string | null;
   keyEvents: Array<{ kind: string; detail: string; amountUsd?: number }>;
   trace?: Array<{ at: number; tool: string; summary: string }>;
+  sections?: Array<{ check: string; finding: string; changed: boolean }>;
   error: string | null;
 };
 

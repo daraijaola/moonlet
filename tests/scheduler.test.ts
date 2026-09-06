@@ -15,6 +15,7 @@ const spec: JobSpec = {
   objective: `One-paragraph brief on $ORBIO (${ORBIO_CA}): price and 24h change only.`,
   cadence: "6h",
   sources: ["$ORBIO"],
+  checks: [],
   tools: ["token_market", "deliver"],
   output: { kind: "brief", maxWords: 60, alwaysReport: true },
   voice: "one sentence",

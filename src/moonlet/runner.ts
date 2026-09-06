@@ -30,6 +30,7 @@ export type MoonletState = {
   key: KeyState;
   autopilot?: boolean;
   connections?: ToolDeps["connections"];
+  memory?: string | null;
   runId?: string | null;
 };
 
@@ -100,7 +101,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
     const result = callModel(client, {
       model,
       models: fallbackModels(model),
-      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login }),
+      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, memory: m.memory ?? undefined }),
       input: `Run your job now. Finish with the structured output.`,
       tools,
       stopWhen: [maxCost(p.perRunCapUsd), stepCountIs(8)],
@@ -222,19 +223,42 @@ function isKeyExhausted(e: unknown) {
 }
 
 function safeParseOutput(text: string): RunOutput | null {
-  try {
-    const r = RunOutput.safeParse(JSON.parse(text));
-    return r.success ? r.data : null;
-  } catch {
-    const m = text.match(/\{[\s\S]*\}/);
-    if (!m) return null;
+  const candidates: string[] = [text.trim()];
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
+  if (fenced) candidates.unshift(fenced.trim());
+  const first = text.indexOf("{"), last = text.lastIndexOf("}");
+  if (first >= 0 && last > first) candidates.push(text.slice(first, last + 1));
+  for (const c of candidates) {
     try {
-      const r = RunOutput.safeParse(JSON.parse(m[0]));
-      return r.success ? r.data : null;
+      const r = RunOutput.safeParse(coerceOutput(JSON.parse(c)));
+      if (r.success) return r.data;
     } catch {
-      return null;
+      continue;
     }
   }
+  return null;
+}
+
+/** Models drift from the schema in small, predictable ways; repair those before validating. */
+function coerceOutput(o: unknown): unknown {
+  if (!o || typeof o !== "object") return o;
+  const x = { ...(o as Record<string, unknown>) };
+  const str = (v: unknown) => (typeof v === "string" ? v : v == null ? "" : typeof v === "object" ? JSON.stringify(v) : String(v));
+  x.title = str(x.title).slice(0, 90) || "Run";
+  x.summary = str(x.summary).slice(0, 600) || str(x.title);
+  x.body = str(x.body).slice(0, 4000);
+  x.remember = str(x.remember ?? x.memory ?? x.notes).slice(0, 1200);
+  x.sources = Array.isArray(x.sources) ? x.sources.filter((u) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 12) : [];
+  if (!["none", "low", "medium", "high"].includes(x.signal as string)) x.signal = "low";
+  x.nothingHappened = !!x.nothingHappened;
+  x.sections = Array.isArray(x.sections)
+    ? x.sections.slice(0, 6).map((sec) => {
+        const s = (sec ?? {}) as Record<string, unknown>;
+        const finding = str(s.finding ?? s.result ?? s.summary ?? s.value ?? s.note);
+        return { check: str(s.check ?? s.name ?? s.title).slice(0, 160), finding: finding.slice(0, 700), changed: !!s.changed };
+      })
+    : [];
+  return x;
 }
 
 /** The model answered in prose instead of the schema. Keep the work; the owner reads it as a note. */
@@ -247,14 +271,19 @@ function salvageOutput(text: string, name: string): RunOutput | null {
     summary: t.replace(/\s+/g, " ").slice(0, 600),
     body: t.slice(0, 4000),
     sources: [...t.matchAll(/https?:\/\/[^\s)>"']+/g)].map((x) => x[0]).slice(0, 12),
+    sections: [],
+    remember: "",
     signal: "low",
     nothingHappened: false,
   });
   return r.success ? r.data : null;
 }
 
+/** The receipt hash covers what the owner sees; private carry-over notes are not part of it. */
 export function hashOutput(o: RunOutput) {
-  return "0x" + createHash("sha256").update(JSON.stringify(o)).digest("hex");
+  const { remember: _remember, ...pub } = o;
+  void _remember;
+  return "0x" + createHash("sha256").update(JSON.stringify(pub)).digest("hex");
 }
 
 function fail(
