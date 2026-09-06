@@ -27,7 +27,7 @@ export type MoonletRow = {
   name: string;
   spec: JobSpec;
   status: "running" | "idle" | "paused" | "quiet" | "deleted";
-  delivery: { telegram?: string; x?: string; discord?: string };
+  delivery: { telegram?: string; x?: string; discord?: string; email?: string };
   autopilot: boolean;
   /** Compact notes the moonlet carries between runs (last values, seen ids). */
   memory: string | null;
@@ -440,7 +440,7 @@ export async function skyStats() {
 
 // ---- connections -----------------------------------------------------------
 
-export type ConnectionKind = "telegram" | "github" | "x" | "discord";
+export type ConnectionKind = "telegram" | "github" | "x" | "discord" | "email";
 export type ConnectionRow<T = Record<string, unknown>> = { owner: string; kind: ConnectionKind; label: string; data: T; createdAt: number };
 
 export async function setConnection(owner: string, kind: ConnectionKind, label: string, data: Record<string, unknown>) {

@@ -14,6 +14,8 @@ import * as tg from "./connections/telegram";
 import type { GitHubConn } from "./connections/github";
 import * as discord from "./connections/discord";
 import type { DiscordConn } from "./connections/discord";
+import * as email from "./connections/email";
+import type { EmailConn } from "./connections/email";
 import { telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
 import { followup } from "./followup";
@@ -200,12 +202,14 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
         return minted;
       }),
   };
-  const [ghConnStored, tgConn, xConn, dcConn] = await Promise.all([
+  const [ghConnStored, tgConn, xConn, dcConn, emConnStored] = await Promise.all([
     store.getConnection<GitHubConn>(m.owner, "github"),
     store.getConnection<tg.TelegramConn>(m.owner, "telegram"),
     store.getConnection(m.owner, "x"),
     store.getConnection<DiscordConn>(m.owner, "discord"),
+    store.getConnection<EmailConn>(m.owner, "email"),
   ]);
+  const emConn = email.emailConfigured() ? emConnStored : null;
   let ghConn = ghConnStored;
   // A revoked GitHub token would make every repo job fail quietly; check it before the run and tell the owner once.
   if (ghConn && m.spec.tools.some((t) => t.startsWith("github") || t === "open_pull_request" || t === "comment_on_issue")) {
@@ -226,20 +230,21 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   }
   const deliver: DeliverySink | undefined =
     deps.deliver ??
-    ((tgConn && tg.telegramConfigured()) || dcConn
+    ((tgConn && tg.telegramConfigured()) || dcConn || emConn
       ? async ({ channel, text }) => {
           if (channel === "telegram" && tgConn && tg.telegramConfigured()) return tg.sendMessage(tgConn.data.chatId, tg.esc(text), { fetch: deps.fetch });
           if (channel === "discord" && dcConn) return discord.postText(dcConn.data.webhookUrl, text, deps.fetch);
+          if (channel === "email" && emConn) return email.send(email.textMail(emConn.data.address, m.spec.name, text), deps.fetch);
           return { ok: false };
         }
       : undefined);
   const runId = store.newId("run");
-  const files = fileSink({ owner: m.owner, moonletId: m.id, runId, chatId: tgConn?.data.chatId, discordWebhook: dcConn?.data.webhookUrl, fetch: deps.fetch });
+  const files = fileSink({ owner: m.owner, moonletId: m.id, runId, chatId: tgConn?.data.chatId, discordWebhook: dcConn?.data.webhookUrl, email: emConn ? { address: emConn.data.address, moonletName: m.spec.name } : undefined, fetch: deps.fetch });
   const result = await run(
     {
       id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
-      delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined },
-      connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn },
+      delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: emConn ? "connected" : undefined },
+      connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, email: !!emConn },
     },
     { orbio: guardedOrbio, fetch: deps.fetch, deliver, files, bagOf: async () => bag },
   );
@@ -309,6 +314,14 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     await discord
       .postEmbed(dcConn.data.webhookUrl, discord.reportEmbed({ moonletName: m.spec.name, title: o.title, summary: o.summary, sections: o.sections, sources: o.sources, costUsd: result.costUsd, hashed: !!result.outputHash, publicUrl: `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}`, at: now(), signal: o.signal }), deps.fetch)
       .catch((e) => console.error("discord delivery failed", m.id, (e as Error).message));
+  }
+  // Email too: the same report, readable in any inbox.
+  const mailed = result.trace.some((t) => t.tool === "deliver" && t.summary.startsWith("email"));
+  if (result.status === "done" && result.output && !result.output.nothingHappened && emConn && !deps.deliver && !mailed) {
+    const o = result.output;
+    await email
+      .send(email.reportMail(emConn.data.address, { moonletName: m.spec.name, title: o.title, summary: o.summary, body: o.body, sections: o.sections, sources: o.sources, costUsd: result.costUsd, hashed: !!result.outputHash, publicUrl: `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}` }), deps.fetch)
+      .catch((e) => console.error("email delivery failed", m.id, (e as Error).message));
   }
 
   if ((result.error ?? "").includes("authorization expired")) {

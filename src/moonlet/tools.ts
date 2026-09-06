@@ -18,16 +18,16 @@ import { propose, type ProposeCtx } from "./proposals";
 export const RH_RPC = process.env.ROBINHOOD_RPC ?? "https://rpc.mainnet.chain.robinhood.com";
 const DEXSCREENER = "https://api.dexscreener.com";
 
-export type DeliverySink = (msg: { channel: "telegram" | "x" | "discord"; text: string }) => Promise<{ ok: boolean; id?: string }>;
+export type DeliverySink = (msg: { channel: "telegram" | "x" | "discord" | "email"; text: string }) => Promise<{ ok: boolean; id?: string }>;
 /** Keeps a rendered file on the run and pushes a copy to the owner's channel. */
 export type FileSink = (file: { name: string; mime: string; bytes: Uint8Array; caption: string }) => Promise<{ ok: boolean; id?: string; sentTo?: string[]; error?: string }>;
 
 export type ToolDeps = {
   fetch?: typeof fetch;
   deliver?: DeliverySink;
-  delivery: { telegram?: string; x?: string; discord?: string };
+  delivery: { telegram?: string; x?: string; discord?: string; email?: string };
   /** Connections the owner has made. A tool that needs one is simply not offered without it. */
-  connections?: { github?: GitHubConn; telegram?: boolean; x?: boolean; discord?: boolean };
+  connections?: { github?: GitHubConn; telegram?: boolean; x?: boolean; discord?: boolean; email?: boolean };
   propose?: ProposeCtx;
   /** Turns one sentence into a JobSpec (the launch compiler on the run's key). Without it, spawn_moonlet is not offered. */
   compile?: (input: { sentence: string; template: TemplateId; name?: string }) => Promise<JobSpec>;
@@ -235,13 +235,12 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
 
   const deliver = tool({
     name: "deliver",
-    description:
-      "Send a short message to the owner on a configured channel. Only channels the owner set up are available. Use once per run at most, and only when there is something worth interrupting them for.",
+    description: `Send a short message to the owner on a configured channel. Configured now: ${Object.entries(deps.delivery).filter(([, v]) => v).map(([k]) => k).join(", ") || "none"}. Use once per run at most, and only when there is something worth interrupting them for; the finished report is delivered on every channel anyway.`,
     inputSchema: z.object({
-      channel: z.enum(["telegram", "x", "discord"]),
+      channel: z.enum(["telegram", "x", "discord", "email"]),
       text: z.string().min(1).max(1200),
     }),
-    execute: traced("deliver", (a: { channel: "telegram" | "x" | "discord"; text: string }) => `${a.channel} · ${brief(a.text, 90)}`, async ({ channel, text }) => {
+    execute: traced("deliver", (a: { channel: "telegram" | "x" | "discord" | "email"; text: string }) => `${a.channel} · ${brief(a.text, 90)}`, async ({ channel, text }) => {
       if (!deps.delivery[channel]) return { ok: false, error: `${channel} not configured by owner` };
       if (!deps.deliver) return { ok: false, error: "delivery not available in this environment" };
       return deps.deliver({ channel, text });

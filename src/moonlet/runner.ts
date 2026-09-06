@@ -27,7 +27,7 @@ export type MoonletState = {
   owner: string;
   bag: number;
   spec: JobSpec;
-  delivery: { telegram?: string; x?: string; discord?: string };
+  delivery: { telegram?: string; x?: string; discord?: string; email?: string };
   key: KeyState;
   autopilot?: boolean;
   connections?: ToolDeps["connections"];

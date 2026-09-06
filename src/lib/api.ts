@@ -55,10 +55,10 @@ export type ApiRun = {
   files?: Array<{ id: string; name: string; mime: string; size: number; url: string }>;
 };
 
-export type ConnectionKind = "telegram" | "github" | "x" | "discord";
+export type ConnectionKind = "telegram" | "github" | "x" | "discord" | "email";
 export type Connections = {
   connections: Array<{ kind: ConnectionKind; label: string; createdAt: number }>;
-  available: { telegram: boolean; telegramBot: string | null; github: boolean; githubOAuth: boolean; x: boolean };
+  available: { telegram: boolean; telegramBot: string | null; github: boolean; githubOAuth: boolean; x: boolean; discord: boolean; email: boolean };
 };
 export type Proposal = {
   id: string;
@@ -111,6 +111,8 @@ export const api = {
   telegramPoll: (owner: string) => req<{ linked: boolean; label: string | null }>(owner, "/api/connections/telegram"),
   githubStart: (owner: string) => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
   githubConnect: (owner: string, token: string) => req<{ ok: boolean; login: string }>(owner, "/api/connections/github", { method: "POST", body: JSON.stringify({ token }) }),
+  emailBegin: (owner: string, email: string) => req<{ ok: boolean; address: string }>(owner, "/api/connections/email", { method: "POST", body: JSON.stringify({ email }) }),
+  emailFinish: (owner: string, code: string) => req<{ ok: boolean; label: string }>(owner, "/api/connections/email", { method: "POST", body: JSON.stringify({ code }) }),
   discordConnect: (owner: string, webhookUrl: string) => req<{ ok: boolean; label: string }>(owner, "/api/connections/discord", { method: "POST", body: JSON.stringify({ webhookUrl }) }),
   xConnect: (owner: string, keys: { apiKey: string; apiSecret: string; accessToken: string; accessSecret: string }) => req<{ ok: boolean; username: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify(keys) }),
   ask: (owner: string, id: string, text: string, runId?: string) => req<{ reply: string }>(owner, `/api/moonlets/${id}/ask`, { method: "POST", body: JSON.stringify({ text, runId }) }),

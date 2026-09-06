@@ -9,7 +9,7 @@ import { plan, HOLDER_FLOOR } from "@/moonlet/budget";
 import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
 import { FuelGauge } from "@/components/fuel-gauge";
 import { CADENCE_LABEL, MODEL_LABEL, TEMPLATE_BLURB, TEMPLATE_EXAMPLE, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
-import { GitHubMark, OpenRouterMark, TelegramMark, VENDOR_MARK, XMark, DiscordMark } from "@/components/marks";
+import { GitHubMark, OpenRouterMark, TelegramMark, VENDOR_MARK, XMark, DiscordMark, EmailMark } from "@/components/marks";
 
 const ORDER: TemplateId[] = ["market-watch", "repo-mechanic", "digest", "custom"];
 const CADENCES: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
@@ -55,7 +55,7 @@ function NewInner() {
 
   const bag = status?.bag ?? 0;
   const p = useMemo(() => (spec ? plan(spec, bag) : null), [spec, bag]);
-  const linked = (k: "telegram" | "x" | "github" | "discord") => conns?.connections.find((c) => c.kind === k) ?? null;
+  const linked = (k: "telegram" | "x" | "github" | "discord" | "email") => conns?.connections.find((c) => c.kind === k) ?? null;
 
   const compile = async () => {
     if (!address) return;
@@ -189,6 +189,18 @@ function NewInner() {
                     <div className="min-w-0">
                       <p className="text-[14px] font-semibold text-ink">Discord <span className="ml-1 font-mono text-[11px] font-normal text-ink-faint">{linked("discord")!.label}</span></p>
                       <p className="text-[12.5px] leading-[1.5] text-ink-soft">Every report is posted in the channel as a card, files as attachments. Free to send.</p>
+                    </div>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">on</span>
+                </li>
+              )}
+              {linked("email") && (
+                <li className="flex items-center justify-between gap-3 rounded-lg border border-moss/40 bg-white p-3.5">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink"><EmailMark size={18} /></span>
+                    <div className="min-w-0">
+                      <p className="text-[14px] font-semibold text-ink">Email <span className="ml-1 font-mono text-[11px] font-normal text-ink-faint">{linked("email")!.label}</span></p>
+                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">Every report arrives as a readable email, files attached. Free to send.</p>
                     </div>
                   </div>
                   <span className="shrink-0 rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">on</span>
