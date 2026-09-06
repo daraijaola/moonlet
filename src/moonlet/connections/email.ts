@@ -1,12 +1,16 @@
 import { createHash, randomInt } from "node:crypto";
+import nodemailer, { type Transporter } from "nodemailer";
 import * as store from "../store";
 
 /**
- * Email, through Resend. The holder types an address, we mail a six-digit
- * code, they type it back; only then is the address stored. Reports arrive
- * as a plain, readable email with the same sections Telegram gets; files as
- * attachments. Email cannot carry buttons, so approvals stay on Telegram and
- * the dashboard.
+ * Email. The holder types an address, we mail a six-digit code, they type it
+ * back; only then is the address stored. Reports arrive as a plain, readable
+ * email with the same sections Telegram gets; files as attachments. Email
+ * cannot carry buttons, so approvals stay on Telegram and the dashboard.
+ *
+ * Two senders, chosen by what the server has:
+ *   GMAIL_USER + GMAIL_APP_PASSWORD  → Gmail SMTP (no DNS; 500 mails a day)
+ *   RESEND_API_KEY (+ EMAIL_FROM)    → Resend, from a verified domain
  */
 
 export type EmailConn = { address: string };
@@ -16,11 +20,13 @@ const CODE_TTL_MS = 15 * 60_000;
 const MAX_ATTEMPTS = 5;
 
 export function emailConfigured() {
-  return !!process.env.RESEND_API_KEY;
+  return !!(process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) || !!process.env.RESEND_API_KEY;
 }
 
 export function fromAddress() {
-  return process.env.EMAIL_FROM ?? "Moonlet <moonlet@16labs.xyz>";
+  if (process.env.EMAIL_FROM) return process.env.EMAIL_FROM;
+  if (process.env.GMAIL_USER) return `Moonlet <${process.env.GMAIL_USER}>`;
+  return "Moonlet <moonlet@16labs.xyz>";
 }
 
 const ADDRESS_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -42,8 +48,35 @@ export type Mail = {
   attachments?: Array<{ name: string; mime: string; bytes: Uint8Array }>;
 };
 
-/** One call to Resend. Attachments are base64 inline; Resend caps the whole message at 40 MB. */
+let smtp: Transporter | null = null;
+/** Gmail over SMTP with an app password. One pooled transporter per process; tests swap it. */
+export function smtpTransport() {
+  if (smtp) return smtp;
+  smtp = nodemailer.createTransport({ host: "smtp.gmail.com", port: 465, secure: true, pool: true, maxConnections: 2, auth: { user: process.env.GMAIL_USER, pass: process.env.GMAIL_APP_PASSWORD }, connectionTimeout: 15_000, socketTimeout: 60_000 });
+  return smtp;
+}
+export function setSmtpTransportForTests(t: Transporter | null) {
+  smtp = t;
+}
+
+/** Send one mail through whichever sender is configured. Gmail caps a message at 25 MB, Resend at 40 MB. */
 export async function send(mail: Mail, fetchImpl: typeof fetch = fetch) {
+  if (process.env.GMAIL_USER && process.env.GMAIL_APP_PASSWORD) {
+    try {
+      const info = await smtpTransport().sendMail({
+        from: fromAddress(),
+        to: mail.to,
+        subject: clip(mail.subject, 200),
+        text: mail.text,
+        html: mail.html,
+        attachments: mail.attachments?.map((a) => ({ filename: a.name, content: Buffer.from(a.bytes), contentType: a.mime })),
+      });
+      return { ok: true as const, id: String(info.messageId ?? "") };
+    } catch (e) {
+      const msg = (e as Error & { responseCode?: number }).responseCode ? `Gmail ${(e as Error & { responseCode?: number }).responseCode}: ${(e as Error).message}` : `Gmail: ${(e as Error).message}`;
+      throw new Error(msg.slice(0, 240));
+    }
+  }
   const key = process.env.RESEND_API_KEY;
   if (!key) throw new Error("email isn't configured on this server");
   const res = await fetchImpl(`${RESEND}/emails`, {

@@ -7,6 +7,7 @@ import { fileSink } from "@/moonlet/files";
 import { runOne } from "@/moonlet/scheduler";
 import type { JobSpec } from "@/moonlet/spec";
 import type { LocalTool } from "@/moonlet/llm";
+import nodemailer from "nodemailer";
 
 const OWNER = "0x00000000000000000000000000000000000000ee";
 
@@ -35,6 +36,8 @@ describe("email connection", () => {
     process.env.SECRET_KEY = "test";
     process.env.RESEND_API_KEY = "re_test";
     delete process.env.EMAIL_FROM;
+    delete process.env.GMAIL_USER;
+    delete process.env.GMAIL_APP_PASSWORD;
     delete process.env.TELEGRAM_BOT_TOKEN;
     await store.migrate();
   });
@@ -148,7 +151,28 @@ describe("email connection", () => {
     expect(r.sent[0].text).toContain("https://16labs.xyz/s/m_em");
   });
 
-  it("with no RESEND_API_KEY a stored inbox is simply skipped", async () => {
+  it("with Gmail configured, mail goes over SMTP from the Gmail address, attachments intact", async () => {
+    process.env.GMAIL_USER = "moonletbot@gmail.com";
+    process.env.GMAIL_APP_PASSWORD = "abcd efgh ijkl mnop";
+    const captured: Array<Record<string, unknown>> = [];
+    const t = nodemailer.createTransport({ streamTransport: true, newline: "unix", buffer: true });
+    const real = t.sendMail.bind(t);
+    t.sendMail = (async (opts: Record<string, unknown>) => { captured.push(opts); return real(opts as never); }) as never;
+    email.setSmtpTransportForTests(t);
+    expect(email.emailConfigured()).toBe(true);
+    expect(email.fromAddress()).toBe("Moonlet <moonletbot@gmail.com>");
+    const dead = fakeResend({ status: 500 });
+    const r = await email.send(email.fileMail("x@y.zz", "Sentry", { name: "brief.pdf", mime: "application/pdf", bytes: new Uint8Array([0x25, 0x50, 0x44, 0x46]), caption: "Sentry · brief" }), dead.fetchImpl);
+    expect(r.ok).toBe(true);
+    expect(r.id).toMatch(/@gmail\.com>$/);
+    expect(captured[0]).toMatchObject({ from: "Moonlet <moonletbot@gmail.com>", to: "x@y.zz", subject: "Sentry: Sentry · brief" });
+    expect((captured[0].attachments as Array<{ filename: string; contentType: string }>)[0]).toMatchObject({ filename: "brief.pdf", contentType: "application/pdf" });
+    email.setSmtpTransportForTests(null);
+    delete process.env.GMAIL_USER;
+    delete process.env.GMAIL_APP_PASSWORD;
+  });
+
+  it("with no sender configured a stored inbox is simply skipped", async () => {
     delete process.env.RESEND_API_KEY;
     const r = fakeResend();
     const now = Date.now();
