@@ -125,6 +125,25 @@ describe("scheduler", () => {
     expect(orbio.state.mints).toBe(1);
   }, 120_000);
 
+  it("13. two moonlets of one wallet due at the same time mint exactly one key between them", async () => {
+    const owner = "0x0000000000000000000000000000000000000c0e";
+    const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 6 });
+    const now = Date.now();
+    const p = plan(spec, 1_250_000);
+    for (const id of ["m_race1", "m_race2"]) {
+      await store.insertMoonlet({ id, owner, name: id, spec, status: "idle", delivery: {}, key: null, cadence: p.cadence, perRunCapUsd: p.perRunCapUsd, earnPerDayUsd: p.earnPerDayUsd, burnPerDayUsd: p.burnPerDayUsd, nextRunAt: now - 1000, createdAt: now });
+      await store.claimForRun(id);
+    }
+    const deps = { orbioFor: async () => orbio.client, bagOf: async () => 1_250_000, anchor: null };
+    const [a, b] = await Promise.all([runOne("m_race1", deps), runOne("m_race2", deps)]);
+    console.log("race:", a.status, b.status, orbio.state.calls.filter((c) => c === "create").length, "mints");
+    expect(a.status).toBe("done");
+    expect(b.status).toBe("done");
+    expect(orbio.state.mints).toBe(1);
+    expect((await store.getMoonlet("m_race1"))?.key?.key).toBe(KEY);
+    expect((await store.getMoonlet("m_race2"))?.key?.key).toBe(KEY);
+  }, 180_000);
+
   it("11. secrets are sealed at rest", async () => {
     const m = (await store.listMoonlets(owners[2]))[0];
     const raw = await store.db().execute({ sql: "SELECT key FROM moonlets WHERE id=?", args: [m.id] });

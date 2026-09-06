@@ -33,6 +33,14 @@ export type SchedulerDeps = {
 const ORBIO_TOKEN = "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3";
 
 /** Live ERC-20 balance read; cached per owner for 10 minutes in the owners table. */
+const ownerLocks = new Map<string, Promise<unknown>>();
+async function withOwnerLock<T>(owner: string, fn: () => Promise<T>): Promise<T> {
+  const prev = ownerLocks.get(owner) ?? Promise.resolve();
+  const next = prev.then(fn, fn);
+  ownerLocks.set(owner, next.catch(() => undefined));
+  return next;
+}
+
 export async function bagOf(owner: string, fetchImpl: typeof fetch = fetch): Promise<number> {
   const cached = await store.getOwner(owner);
   if (cached && Date.now() - cached.bagCheckedAt < 10 * 60_000) return cached.bag;
@@ -188,11 +196,42 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     const sibling = (await store.listMoonlets(m.owner)).find((x) => x.id !== m.id && x.key?.key);
     if (sibling?.key) startKey = { ...sibling.key };
   }
-  const [ghConn, tgConn, xConn] = await Promise.all([
+  // Minting retires the wallet's previous key, so concurrent moonlets must not race to mint.
+  // Serialize per owner; whoever mints first writes the secret to every sibling, and later
+  // callers reuse it instead of minting again.
+  const guardedOrbio: OrbioClient = {
+    ...orbio,
+    createKey: (label) =>
+      withOwnerLock(m.owner, async () => {
+        const fresh = (await store.listMoonlets(m.owner)).find((x) => x.key?.key.startsWith("sk-orbio-"))?.key;
+        if (fresh && fresh.key !== startKey?.key && (!m.key || fresh.key !== m.key.key)) {
+          return { key: fresh.key, raw: { reused: true } };
+        }
+        const minted = await orbio.createKey(label);
+        const bal = await orbio.getBalance().catch(() => ({ availableUsd: 0 }));
+        for (const sib of await store.listMoonlets(m.owner)) {
+          await store.updateMoonlet(sib.id, { key: { key: minted.key, limitUsd: bal.availableUsd, spentUsd: 0 } });
+        }
+        return minted;
+      }),
+  };
+  const [ghConnStored, tgConn, xConn] = await Promise.all([
     store.getConnection<GitHubConn>(m.owner, "github"),
     store.getConnection<tg.TelegramConn>(m.owner, "telegram"),
     store.getConnection(m.owner, "x"),
   ]);
+  let ghConn = ghConnStored;
+  // A revoked GitHub token would make every repo job fail quietly; check it before the run and tell the owner once.
+  if (ghConn && m.spec.tools.some((t) => t.startsWith("github") || t === "open_pull_request" || t === "comment_on_issue")) {
+    const probe = await (deps.fetch ?? fetch)("https://api.github.com/user", { headers: { authorization: `Bearer ${ghConn.data.token}`, "user-agent": "moonlet" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+    if (probe?.status === 401) {
+      await store.deleteConnection(m.owner, "github");
+      if (tgConn && tg.telegramConfigured()) {
+        await tg.sendMessage(tgConn.data.chatId, `GitHub disconnected: the access you granted (@${tg.esc(ghConn.data.login)}) was revoked or expired. Reconnect at ${tg.esc(process.env.APP_URL ?? "https://16labs.xyz")}/app/connections so <b>${tg.esc(m.spec.name)}</b> can read your repos again.`, { fetch: deps.fetch }).catch(() => undefined);
+      }
+      ghConn = null;
+    }
+  }
   const deliver: DeliverySink | undefined =
     deps.deliver ??
     (tgConn && tg.telegramConfigured()
@@ -205,7 +244,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn },
     },
-    { orbio, fetch: deps.fetch, deliver, bagOf: async () => bag },
+    { orbio: guardedOrbio, fetch: deps.fetch, deliver, bagOf: async () => bag },
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;
@@ -226,11 +265,6 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     trace: result.trace,
   });
 
-  if (result.key && result.keyEvents.some((e) => e.kind === "rotated")) {
-    for (const sib of (await store.listMoonlets(m.owner)).filter((x) => x.id !== m.id && x.key)) {
-      await store.updateMoonlet(sib.id, { key: { ...result.key } });
-    }
-  }
   await store.updateMoonlet(id, {
     status: result.status === "quiet" ? "quiet" : "idle",
     key: result.key,
