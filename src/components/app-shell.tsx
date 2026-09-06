@@ -42,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-cream text-ink">
       <header className="sticky top-0 z-30 border-b border-ink/10 bg-cream/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between px-4 sm:px-6">
+        <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between px-4 sm:px-6 xl:max-w-[1400px]">
           <div className="flex items-center gap-6">
             <Link href="/app" className="inline-flex items-center gap-2">
               <MoonletMark size={30} face="var(--cream)" />
@@ -87,7 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 pb-24 sm:px-6 sm:pb-6">
+      <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 pb-24 sm:px-6 sm:pb-6 xl:max-w-[1400px]">
         {children}
       </main>
       <PoweredBy />

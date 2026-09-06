@@ -254,7 +254,6 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   const [anchoring, setAnchoring] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [more, setMore] = useState(false);
   const [showAllRuns, setShowAllRuns] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const quiet = m.status === "quiet" || m.status === "paused";
@@ -290,226 +289,280 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
     setBusy(null);
   };
 
-  return (
-    <section className="min-w-0">
-      <header>
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
-            <h1 className="text-[1.6rem] font-semibold tracking-[-0.02em] text-ink">{m.name}</h1>
-            <span className="rounded-full border border-ink/15 px-2 py-0.5 font-mono text-[11px] text-ink-soft">{TEMPLATE_LABEL[m.spec.template]}</span>
-            {m.status === "running" && <span className="rounded-full bg-gold/20 px-2 py-0.5 font-mono text-[11px] text-ink">running now</span>}
-            {m.autopilot && <span className="rounded-full bg-ink text-cream px-2 py-0.5 font-mono text-[11px]" title="Acts without asking">autopilot</span>}
-            {quiet && <span className="rounded-full bg-ink/5 px-2 py-0.5 font-mono text-[11px] text-ink-soft">{m.status}</span>}
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setShowFiles((v) => !v)}
-            aria-expanded={showFiles}
-            title={files.length ? `${files.length} artifact${files.length === 1 ? "" : "s"}` : "No artifacts yet. Ask for a report as a PDF and it lands here."}
-            className={`relative inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 font-mono text-[12.5px] transition-colors ${showFiles ? "border-ink bg-ink text-cream" : "border-ink/15 bg-white text-ink hover:border-ink/40"}`}
-          >
-            <ArtifactGlyph />
-            <span className="hidden sm:inline">Artifacts</span>
-            {files.length > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10.5px] leading-none ${showFiles ? "bg-cream text-ink" : "bg-ink text-cream"}`}>{files.length}</span>}
-          </button>
-          <Link href={`/s/${m.id}`} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-ink/15 bg-white px-3 font-mono text-[12.5px] text-ink hover:border-ink/40">
-            Public page ↗
-          </Link>
-        </div>
-        </div>
-        <p className="mt-2 max-w-[46rem] text-[14px] leading-[1.55] text-ink-soft [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
-        {(parent || children.length > 0) && (
-          <p className="mt-1.5 font-mono text-[12px] text-ink-faint">
-            {parent && <>spawned by <Link href={`/app?m=${parent.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{parent.name}</Link></>}
-            {parent && children.length > 0 && " · "}
-            {children.length > 0 && <>spawned {children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<Link href={`/app?m=${c.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{c.name}</Link></span>)}</>}
-          </p>
-        )}
-      </header>
+  const running = m.status === "running";
+  const statusLine = running
+    ? <>Working on {m.runsTotal === 0 ? "its first report" : "a report"} now — about a minute.</>
+    : m.status === "paused"
+      ? <>Paused. Resume to pick the schedule back up.</>
+      : m.status === "quiet"
+        ? <>Quiet: not enough fuel. It wakes up when the bag earns.</>
+        : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>;
+  const delivered = (
+    <span className="flex flex-wrap items-center gap-x-1.5 font-mono text-[11.5px] text-ink-soft">
+      <span>delivered to</span>
+      {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 text-moss"><TelegramMark size={11} /> {tg.label}</span> : <Link href="/app/connections" className="underline decoration-ink/30 hover:text-ink">link Telegram</Link>}
+      <span>+ this page</span>
+    </span>
+  );
+  const runButtons = (
+    <>
+      <button
+        disabled={!!busy || running}
+        onClick={() => act("run", () => api.runNow(owner, m.id), "Run finished.")}
+        className="btn-hard flex-1 rounded-md border-2 border-ink bg-gold px-3.5 py-1.5 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50"
+      >
+        {busy === "run" || running ? "Running…" : "Run now"}
+      </button>
+      <Ctl disabled={!!busy} onClick={() => act("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")}>
+        {m.status === "paused" ? "Resume" : "Pause"}
+      </Ctl>
+    </>
+  );
+  const vitals = (
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 lg:grid-cols-2">
+      <Vital label="next run" value={m.status === "paused" ? "paused" : running ? "now" : timeUntil(m.nextRunAt)} hint={m.cadence} />
+      <Vital label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : m.lastRunAt ? `last ${timeAgo(m.lastRunAt)}` : "none yet"} />
+      <Vital label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)}/run`} />
+      <Vital label="fuel" value={status?.idleCreditsUsd != null ? fmtUsd(status.idleCreditsUsd) : fmtUsd(m.keyRemainingUsd)} hint={status?.idleCreditsUsd != null ? "Orbio balance, shared" : m.keyLimitUsd ? "on its key" : "mints a key on first run"} />
+    </dl>
+  );
+  const controls = (
+    <div className="flex flex-wrap items-center gap-2">
+      <Link href={`/app/new?edit=${m.id}`} className="rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[12.5px] text-ink hover:border-ink/40">Edit job</Link>
+      <Ctl disabled={!!busy} onClick={() => act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: !m.autopilot }), m.autopilot ? "Autopilot off. Drafts wait for your OK." : "Autopilot on. It acts without asking.")}>
+        {m.autopilot ? "Autopilot: on" : "Autopilot: off"}
+      </Ctl>
+      <Ctl disabled={!!busy} onClick={() => act("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")}>Rotate key</Ctl>
+      {!confirmDelete ? (
+        <Ctl danger onClick={() => setConfirmDelete(true)}>Delete</Ctl>
+      ) : (
+        <span className="inline-flex flex-wrap items-center gap-2 rounded-md border border-ink bg-white px-2 py-1 font-mono text-[12px]">
+          Credits stay in your Orbio balance; only the moonlet goes.
+          <button onClick={() => act("delete", () => api.remove(owner, m.id), "Deleted. Unspent credits returned.")} className="rounded bg-ink px-2 py-0.5 text-cream">Confirm</button>
+          <button onClick={() => setConfirmDelete(false)} className="text-ink-soft">Cancel</button>
+        </span>
+      )}
+    </div>
+  );
+  const artifactList = (compact: boolean) =>
+    files.length === 0 ? (
+      <p className="text-[12.5px] leading-[1.55] text-ink-soft">Nothing yet. Ask for a report as a file (“send me this as a PDF”, or put it in the job) and every PDF, DOCX or TXT it writes collects here.</p>
+    ) : (
+      <ul className="divide-y divide-ink/[0.07]">
+        {(compact ? files.slice(0, 5) : files).map((f) => (
+          <li key={f.id} className="flex items-center gap-3 py-2">
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper font-mono text-[9.5px] uppercase text-ink-soft">{f.name.split(".").pop()}</span>
+            <div className="min-w-0 flex-1">
+              <a href={f.url} download={f.name} className="block truncate text-[13px] font-medium text-ink hover:underline">{f.name}</a>
+              <p className="truncate font-mono text-[10.5px] text-ink-faint">{timeAgo(f.createdAt)} · {(f.size / 1024).toFixed(0)} KB{!compact && f.runTitle ? ` · from “${shortenHexes(f.runTitle)}”` : ""}</p>
+            </div>
+            <a href={f.url} download={f.name} className="shrink-0 rounded-md border border-ink/15 bg-white px-2 py-1 font-mono text-[11px] text-ink hover:border-ink/40" aria-label={`Download ${f.name}`}>↓</a>
+          </li>
+        ))}
+        {compact && files.length > 5 && <li className="pt-2 font-mono text-[11px] text-ink-faint">+{files.length - 5} more on the run cards</li>}
+      </ul>
+    );
+  const askBox = runs !== null && (
+    <div className="rounded-lg border border-ink/10 bg-white p-3.5">
+      {thread.length > 0 && (
+        <ul className="mb-3 space-y-3">
+          {thread.map((t, i) => (
+            <li key={i} className="space-y-1.5">
+              <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] text-cream">{t.q}</p>
+              <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-paper px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+      <form
+        className="flex items-end gap-2"
+        onSubmit={async (e) => {
+          e.preventDefault();
+          const q = question.trim();
+          if (!q || asking) return;
+          setQuestion("");
+          setAsking(true);
+          const runId = runs[0]?.id;
+          setThread((t) => [...t, { q, a: null, runId }]);
+          try {
+            const r = await api.ask(owner, m.id, q, runId);
+            setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: r.reply } : x)));
+            if (/\bnow reports\b/i.test(r.reply)) await onChange();
+          } catch (err) {
+            setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: `Couldn't answer: ${(err as Error).message}` } : x)));
+          }
+          setAsking(false);
+        }}
+      >
+        <input
+          value={question}
+          onChange={(e) => setQuestion(e.target.value)}
+          placeholder={runs.length ? `Ask ${m.name} about its latest report, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
+          className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
+        />
+        <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">
+          {asking ? "…" : "Ask"}
+        </button>
+      </form>
+      <p className="mt-2 font-mono text-[11px] text-ink-faint">Same brain, same tools, billed to its key. {tg ? "You can also reply to its Telegram messages." : ""}</p>
+    </div>
+  );
 
-      {showFiles && (
-        <div className="mt-4 rounded-lg border border-ink/10 bg-white p-4">
-          <div className="flex items-center justify-between gap-3">
-            <h3 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Artifacts · {files.length}</h3>
-            <span className="font-mono text-[11px] text-ink-faint">files {m.name} wrote · yours only</span>
+  return (
+    <section className="min-w-0 lg:grid lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start lg:gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+      {/* ── workspace: what it is, what it did, talk to it ───────────────── */}
+      <div className="min-w-0">
+        <header>
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex min-w-0 flex-wrap items-center gap-2">
+              <h1 className="text-[1.6rem] font-semibold tracking-[-0.02em] text-ink">{m.name}</h1>
+              <span className="rounded-full border border-ink/15 px-2 py-0.5 font-mono text-[11px] text-ink-soft">{TEMPLATE_LABEL[m.spec.template]}</span>
+              {running && <span className="rounded-full bg-gold/20 px-2 py-0.5 font-mono text-[11px] text-ink">running now</span>}
+              {m.autopilot && <span className="rounded-full bg-ink text-cream px-2 py-0.5 font-mono text-[11px]" title="Acts without asking">autopilot</span>}
+              {quiet && <span className="rounded-full bg-ink/5 px-2 py-0.5 font-mono text-[11px] text-ink-soft">{m.status}</span>}
+            </div>
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowFiles((v) => !v)}
+                aria-expanded={showFiles}
+                title={files.length ? `${files.length} artifact${files.length === 1 ? "" : "s"}` : "No artifacts yet"}
+                className={`relative inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 font-mono text-[12.5px] transition-colors lg:hidden ${showFiles ? "border-ink bg-ink text-cream" : "border-ink/15 bg-white text-ink hover:border-ink/40"}`}
+              >
+                <ArtifactGlyph />
+                {files.length > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10.5px] leading-none ${showFiles ? "bg-cream text-ink" : "bg-ink text-cream"}`}>{files.length}</span>}
+              </button>
+              <Link href={`/s/${m.id}`} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-ink/15 bg-white px-3 font-mono text-[12.5px] text-ink hover:border-ink/40">
+                Public page ↗
+              </Link>
+            </div>
           </div>
-          {files.length === 0 ? (
-            <p className="mt-3 text-[13.5px] leading-[1.55] text-ink-soft">Nothing yet. Ask for a report as a file (“send me this as a PDF”, or put it in the job) and every PDF, DOCX or TXT it writes collects here, newest first.</p>
+          <p className="mt-2 max-w-[46rem] text-[14px] leading-[1.55] text-ink-soft [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
+          {(parent || children.length > 0) && (
+            <p className="mt-1.5 font-mono text-[12px] text-ink-faint">
+              {parent && <>spawned by <Link href={`/app?m=${parent.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{parent.name}</Link></>}
+              {parent && children.length > 0 && " · "}
+              {children.length > 0 && <>spawned {children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<Link href={`/app?m=${c.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{c.name}</Link></span>)}</>}
+            </p>
+          )}
+        </header>
+
+        {showFiles && (
+          <div className="mt-4 rounded-lg border border-ink/10 bg-white p-4 lg:hidden">
+            <h3 className="mb-2 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Artifacts · {files.length}</h3>
+            {artifactList(false)}
+          </div>
+        )}
+
+        {/* phones: status + primary action live in the flow */}
+        <div className={`mt-5 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-lg border p-3.5 lg:hidden ${running ? "border-gold bg-gold/10" : "border-ink/10 bg-white"}`}>
+          <div className="flex min-w-0 flex-1 items-start gap-2.5">
+            <span className="mt-[5px]"><StatusDot tone={quiet ? "grey" : "green"} pulse={running} /></span>
+            <div className="min-w-0">
+              <p className="text-[13.5px] text-ink">{statusLine}</p>
+              <div className="mt-0.5">{delivered}</div>
+            </div>
+          </div>
+          <div className="flex w-full items-center gap-2 sm:w-auto">{runButtons}</div>
+          {toast && <span className="w-full font-mono text-[12px] text-moss">{toast}</span>}
+        </div>
+
+        {/* the record */}
+        <div className="mt-6">
+          <div className="mb-3 flex items-center justify-between">
+            <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Activity</h2>
+            <span className="font-mono text-[11px] text-ink-faint">{anchoring ? `${runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain` : "every run hashed"}</span>
+          </div>
+          {runs === null ? (
+            <p className="font-mono text-[13px] text-ink-soft">Loading…</p>
           ) : (
-            <ul className="mt-3 divide-y divide-ink/[0.07]">
-              {files.map((f) => (
-                <li key={f.id} className="flex items-center gap-3 py-2.5">
-                  <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper font-mono text-[10px] uppercase text-ink-soft">{f.name.split(".").pop()}</span>
-                  <div className="min-w-0 flex-1">
-                    <a href={f.url} download={f.name} className="block truncate text-[13.5px] font-medium text-ink hover:underline">{f.name}</a>
-                    <p className="truncate font-mono text-[11px] text-ink-faint">{timeAgo(f.createdAt)} · {(f.size / 1024).toFixed(0)} KB{f.runTitle ? ` · from “${shortenHexes(f.runTitle)}”` : ""}</p>
+            <ol className="relative space-y-3 border-l border-ink/10 pl-5 lg:pl-6">
+              {running && (
+                <li className="relative">
+                  <span className="absolute -left-[25px] top-4 h-2.5 w-2.5 rounded-full bg-gold ring-4 ring-cream lg:-left-[29px]"><span className="absolute inset-0 animate-ping rounded-full bg-gold/60" /></span>
+                  <div className="rounded-lg border border-gold bg-gold/10 p-4">
+                    <p className="text-[14px] font-semibold text-ink">{launched && m.runsTotal === 0 ? "Launched. First report on the way." : "Working now"}</p>
+                    <p className="font-mono text-[12px] text-ink-soft">Reading sources, calling tools, writing the report. It lands here{tg ? ` and in Telegram (${tg.label})` : ""} in under a minute.</p>
                   </div>
-                  <a href={f.url} download={f.name} className="shrink-0 rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[12px] text-ink hover:border-ink/40">Download</a>
+                </li>
+              )}
+              {runs.slice(0, showAllRuns ? undefined : 3).map((r) => (
+                <li key={r.id} className="relative">
+                  <span className={`absolute -left-[25px] top-5 h-2.5 w-2.5 rounded-full ring-4 ring-cream lg:-left-[29px] ${r.status === "failed" ? "bg-red-600" : r.nothingHappened ? "bg-ink/20" : "bg-moss"}`} />
+                  <RunCard run={r} anchoring={anchoring} />
                 </li>
               ))}
-            </ul>
+              {runs.length > 3 && (
+                <li className="relative">
+                  <button onClick={() => setShowAllRuns((v) => !v)} className="w-full rounded-lg border border-dashed border-ink/20 py-2 font-mono text-[12px] text-ink-soft hover:border-ink/40 hover:text-ink">
+                    {showAllRuns ? "Show fewer" : `Show all ${runs.length} runs`}
+                  </button>
+                </li>
+              )}
+              {!runs.length && !running && (
+                <li className="relative">
+                  <span className="absolute -left-[25px] top-6 h-2.5 w-2.5 rounded-full bg-ink/15 ring-4 ring-cream lg:-left-[29px]" />
+                  <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center font-mono text-[13px] text-ink-soft">
+                    No runs yet. The first one starts {timeUntil(m.nextRunAt)}, or press Run now.
+                  </p>
+                </li>
+              )}
+            </ol>
           )}
         </div>
-      )}
 
-      {/* 1. where it stands + the one action that matters */}
-      <div className={`mt-5 flex flex-wrap items-center gap-x-4 gap-y-3 rounded-lg border p-3.5 ${m.status === "running" ? "border-gold bg-gold/10" : "border-ink/10 bg-white"}`}>
-        <div className="flex min-w-0 flex-1 items-start gap-2.5">
-          <span className="mt-[5px]"><StatusDot tone={m.status === "running" ? "green" : quiet ? "grey" : "green"} pulse={m.status === "running"} /></span>
-          <div className="min-w-0">
-            <p className="text-[13.5px] text-ink">
-              {m.status === "running"
-                ? <>Working on {m.runsTotal === 0 ? "its first report" : "a report"} now — about a minute.</>
-                : m.status === "paused"
-                  ? <>Paused. Resume to pick the schedule back up.</>
-                  : m.status === "quiet"
-                    ? <>Quiet: not enough fuel. It wakes up when the bag earns.</>
-                    : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>}
-            </p>
-            <p className="mt-0.5 flex flex-wrap items-center gap-x-1.5 font-mono text-[11.5px] text-ink-soft">
-              <span>delivered to</span>
-              {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 text-moss"><TelegramMark size={11} /> {tg.label}</span> : <Link href="/app/connections" className="underline decoration-ink/30 hover:text-ink">link Telegram</Link>}
-              <span>+ this page</span>
-            </p>
+        {/* phones: fuel and controls in the flow */}
+        <div className="mt-6 lg:hidden">
+          <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Fuel</h2>
+          <div className="grid gap-3 rounded-lg border border-ink/10 bg-white p-4 sm:grid-cols-[auto_1fr] sm:items-center">
+            <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="md" />
+            <div className="border-t border-ink/[0.07] pt-3 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">{vitals}</div>
           </div>
+          <div className="mt-4">{controls}</div>
         </div>
-        <div className="flex w-full items-center gap-2 sm:w-auto">
-          <button
-            disabled={!!busy || m.status === "running"}
-            onClick={() => act("run", () => api.runNow(owner, m.id), "Run finished.")}
-            className="btn-hard flex-1 rounded-md border-2 border-ink bg-gold px-3.5 py-1.5 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50 sm:flex-none"
-          >
-            {busy === "run" || m.status === "running" ? "Running…" : "Run now"}
-          </button>
-          <Ctl disabled={!!busy} onClick={() => act("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")}>
-            {m.status === "paused" ? "Resume" : "Pause"}
-          </Ctl>
-        </div>
-        {toast && <span className="w-full font-mono text-[12px] text-moss">{toast}</span>}
-      </div>
 
-      {/* 2. the work */}
-      <div className="mt-6">
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">What it did</h2>
-          <span className="font-mono text-[11px] text-ink-faint">{anchoring ? `${runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain` : "every run hashed"}</span>
-        </div>
-        {runs === null ? (
-          <p className="font-mono text-[13px] text-ink-soft">Loading…</p>
-        ) : (
-          <div className="space-y-2.5">
-            {m.status === "running" && (
-              <div className="flex items-center gap-3 rounded-lg border border-gold bg-gold/10 p-4">
-                <StatusDot tone="green" pulse />
-                <div>
-                  <p className="text-[14px] font-semibold text-ink">{launched && m.runsTotal === 0 ? "Launched. First report on the way." : "Working now"}</p>
-                  <p className="font-mono text-[12px] text-ink-soft">Reading sources, calling tools, writing the report. It lands here{tg ? ` and in Telegram (${tg.label})` : ""} in under a minute.</p>
-                </div>
-              </div>
-            )}
-            {runs.slice(0, showAllRuns ? undefined : 3).map((r) => <RunCard key={r.id} run={r} anchoring={anchoring} />)}
-            {runs.length > 3 && (
-              <button onClick={() => setShowAllRuns((v) => !v)} className="w-full rounded-lg border border-dashed border-ink/20 py-2 font-mono text-[12px] text-ink-soft hover:border-ink/40 hover:text-ink">
-                {showAllRuns ? "Show fewer" : `Show all ${runs.length} runs`}
-              </button>
-            )}
-            {!runs.length && m.status !== "running" && (
-              <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center font-mono text-[13px] text-ink-soft">
-                No runs yet. The first one starts {timeUntil(m.nextRunAt)}, or press Run now.
-              </p>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* 3. the money and the numbers, one strip */}
-      <div className="mt-6">
-        <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Fuel</h2>
-        <div className="grid gap-3 rounded-lg border border-ink/10 bg-white p-4 sm:grid-cols-[auto_1fr] sm:items-center">
-          <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="md" />
-          <dl className="grid grid-cols-2 gap-x-4 gap-y-3 border-t border-ink/[0.07] pt-3 sm:grid-cols-4 sm:border-l sm:border-t-0 sm:pl-5 sm:pt-0">
-            <Vital label="next run" value={m.status === "paused" ? "paused" : m.status === "running" ? "now" : timeUntil(m.nextRunAt)} hint={m.cadence} />
-            <Vital label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : m.lastRunAt ? `last ${timeAgo(m.lastRunAt)}` : "none yet"} />
-            <Vital label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)}/run`} />
-            <Vital label="fuel" value={status?.idleCreditsUsd != null ? fmtUsd(status.idleCreditsUsd) : fmtUsd(m.keyRemainingUsd)} hint={status?.idleCreditsUsd != null ? "Orbio balance, shared" : m.keyLimitUsd ? "on its key" : "mints a key on first run"} />
-          </dl>
-        </div>
-      </div>
-
-      {/* 4. controls */}
-      <div className="mt-6 flex flex-wrap items-center gap-2">
-        <Link href={`/app/new?edit=${m.id}`} className="rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[12.5px] text-ink hover:border-ink/40">Edit job</Link>
-        <Ctl disabled={!!busy} onClick={() => act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: !m.autopilot }), m.autopilot ? "Autopilot off. Drafts wait for your OK." : "Autopilot on. It acts without asking.")}>
-          {m.autopilot ? "Autopilot: on" : "Autopilot: off"}
-        </Ctl>
-        <Ctl onClick={() => setMore((v) => !v)}>{more ? "Less" : "More…"}</Ctl>
-      </div>
-      {more && (
-        <div className="mt-3 flex flex-wrap items-center gap-2 rounded-lg border border-ink/10 bg-paper/60 p-3">
-          <Ctl disabled={!!busy} onClick={() => act("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")}>Rotate key</Ctl>
-          <span className="font-mono text-[11.5px] text-ink-faint">{m.keysRotated} rotation{m.keysRotated === 1 ? "" : "s"} so far · delivery: {[m.delivery.telegram && "Telegram", m.delivery.x && "X", "dashboard"].filter(Boolean).join(", ")}</span>
-          {!confirmDelete ? (
-            <Ctl danger onClick={() => setConfirmDelete(true)}>Delete</Ctl>
-          ) : (
-            <span className="inline-flex flex-wrap items-center gap-2 rounded-md border border-ink bg-white px-2 py-1 font-mono text-[12.5px]">
-              Your credits stay in your Orbio balance; only the moonlet goes.
-              <button onClick={() => act("delete", () => api.remove(owner, m.id), "Deleted. Unspent credits returned.")} className="rounded bg-ink px-2 py-0.5 text-cream">Confirm</button>
-              <button onClick={() => setConfirmDelete(false)} className="text-ink-soft">Cancel</button>
-            </span>
-          )}
-        </div>
-      )}
-
-      {/* 5. the fallback: ask here when you are not in Telegram */}
-      {runs !== null && (
-        <div className="mt-6">
+        {/* talk to it */}
+        <div className="mt-6 lg:sticky lg:bottom-0 lg:-mx-1 lg:bg-cream lg:px-1 lg:pb-3 lg:pt-3 lg:shadow-[0_-16px_16px_-8px_var(--cream)]">
           <h2 className="mb-3 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Ask {m.name}</h2>
-          <div className="rounded-lg border border-ink/10 bg-white p-3.5">
-            {thread.length > 0 && (
-              <ul className="mb-3 space-y-3">
-                {thread.map((t, i) => (
-                  <li key={i} className="space-y-1.5">
-                    <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] text-cream">{t.q}</p>
-                    <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-paper px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
-                  </li>
-                ))}
-              </ul>
-            )}
-            <form
-              className="flex items-end gap-2"
-              onSubmit={async (e) => {
-                e.preventDefault();
-                const q = question.trim();
-                if (!q || asking) return;
-                setQuestion("");
-                setAsking(true);
-                const runId = runs[0]?.id;
-                setThread((t) => [...t, { q, a: null, runId }]);
-                try {
-                  const r = await api.ask(owner, m.id, q, runId);
-                  setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: r.reply } : x)));
-                  if (/\bnow reports\b/i.test(r.reply)) await onChange();
-                } catch (err) {
-                  setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: `Couldn't answer: ${(err as Error).message}` } : x)));
-                }
-                setAsking(false);
-              }}
-            >
-              <input
-                value={question}
-                onChange={(e) => setQuestion(e.target.value)}
-                placeholder={runs.length ? `Ask ${m.name} about its latest report, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
-                className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
-              />
-              <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">
-                {asking ? "…" : "Ask"}
-              </button>
-            </form>
-            <p className="mt-2 font-mono text-[11px] text-ink-faint">Same brain, same tools, billed to its key. {tg ? "You can also reply to its Telegram messages." : ""}</p>
-          </div>
+          {askBox}
         </div>
-      )}
+      </div>
+
+      {/* ── PC side panel: does anything need me, what's the state, controls ── */}
+      <aside className="hidden space-y-4 lg:sticky lg:top-20 lg:block lg:self-start">
+        <div className={`rounded-lg border p-4 ${running ? "border-gold bg-gold/10" : "border-ink/10 bg-white"}`}>
+          <div className="flex items-start gap-2.5">
+            <span className="mt-[5px]"><StatusDot tone={quiet ? "grey" : "green"} pulse={running} /></span>
+            <div className="min-w-0">
+              <p className="text-[13.5px] leading-[1.5] text-ink">{statusLine}</p>
+              <div className="mt-1">{delivered}</div>
+            </div>
+          </div>
+          <div className="mt-3 flex items-center gap-2">{runButtons}</div>
+          {toast && <p className="mt-2 font-mono text-[12px] text-moss">{toast}</p>}
+        </div>
+
+        <div className="rounded-lg border border-ink/10 bg-white p-4">
+          <h3 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Fuel</h3>
+          <div className="mt-3 flex items-center gap-4">
+            <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="md" />
+          </div>
+          <div className="mt-4 border-t border-ink/[0.07] pt-3">{vitals}</div>
+        </div>
+
+        <div className="rounded-lg border border-ink/10 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft"><ArtifactGlyph /> Artifacts{files.length ? ` · ${files.length}` : ""}</h3>
+          </div>
+          <div className="mt-2">{artifactList(true)}</div>
+        </div>
+
+        <div className="rounded-lg border border-ink/10 bg-white p-4">
+          <h3 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Controls</h3>
+          <div className="mt-3">{controls}</div>
+          <p className="mt-3 font-mono text-[11px] text-ink-faint">{m.keysRotated} key rotation{m.keysRotated === 1 ? "" : "s"} · delivery: {[m.delivery.telegram && "Telegram", m.delivery.x && "X", "dashboard"].filter(Boolean).join(", ")}</p>
+        </div>
+      </aside>
     </section>
   );
 }

@@ -46,6 +46,18 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
             </ul>
           )}
           {open && hasBody && <pre className="mt-3 whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-[13px] leading-[1.6] text-ink [overflow-wrap:anywhere]">{run.body}</pre>}
+          {open && (run.trace?.length ?? 0) > 0 && (
+            <ol className="mt-3 space-y-1 rounded-md border border-ink/[0.07] bg-paper/60 p-3 font-mono text-[11.5px]">
+              <li className="mb-1.5 text-[10.5px] uppercase tracking-[0.14em] text-ink-soft">Steps · {run.trace!.length} tool calls</li>
+              {run.trace!.map((t, i) => (
+                <li key={i} className="grid grid-cols-[3rem_auto_1fr] items-baseline gap-x-2">
+                  <span className="text-ink-faint">{(t.at / 1000).toFixed(1)}s</span>
+                  <span className="text-ink">{t.tool}</span>
+                  <span className="truncate text-ink-soft" title={t.summary}>{shortenHexes(t.summary)}</span>
+                </li>
+              ))}
+            </ol>
+          )}
           {open && run.sources.length > 0 && (
             <ul className="mt-2 space-y-0.5 font-mono text-[11.5px]">
               {run.sources.map((s) => (
@@ -66,7 +78,7 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[11.5px] text-ink-soft">
-        {(hasBody || run.sources.length > 0 || run.keyEvents.length > 0 || (run.sections?.length ?? 0) > 3) && (
+        {(hasBody || run.sources.length > 0 || run.keyEvents.length > 0 || (run.sections?.length ?? 0) > 3 || (run.trace?.length ?? 0) > 0) && (
           <button onClick={() => setOpen((o) => !o)} className="rounded-md border border-ink/15 bg-paper px-2 py-1 text-ink hover:border-ink/40">
             {open ? "Collapse" : hasBody ? "Read" : "Details"}
           </button>
