@@ -385,9 +385,10 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
           const runId = runs[0]?.id;
           setThread((t) => [...t, { q, a: null, runId }]);
           try {
-            const r = await api.ask(owner, m.id, q, runId);
+            const history = thread.filter((t): t is { q: string; a: string; runId?: string } => !!t.a).slice(-6).map(({ q, a }) => ({ q, a }));
+            const r = await api.ask(owner, m.id, q, runId, history);
             setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: r.reply } : x)));
-            if (/\bnow reports\b/i.test(r.reply)) await onChange();
+            if (/\bnow reports\b|waiting for your (ok|approval)|approve/i.test(r.reply)) await onChange();
           } catch (err) {
             setThread((t) => t.map((x, i) => (i === t.length - 1 ? { ...x, a: `Couldn't answer: ${(err as Error).message}` } : x)));
           }
@@ -397,7 +398,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         <input
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder={runs.length ? `Ask ${m.name} about its latest report, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
+          placeholder={runs.length ? `Ask ${m.name} about its report, tell it to do something, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
           className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
         />
         <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">

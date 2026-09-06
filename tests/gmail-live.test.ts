@@ -4,6 +4,7 @@ import * as store from "@/moonlet/store";
 import { compileJob } from "@/moonlet/compile";
 import { concierge } from "@/moonlet/concierge";
 import { runMoonlet } from "@/moonlet/runner";
+import { followup } from "@/moonlet/followup";
 import { JobSpec } from "@/moonlet/spec";
 import type { GmailConn } from "@/moonlet/connections/gmail";
 import { fakeGoogle } from "./fake-google";
@@ -141,4 +142,22 @@ describe("gmail on real models", () => {
     expect((draft!.body!.message as { threadId?: string }).threadId).toBe("t1");
     expect(r.output!.remember.length).toBeGreaterThan(0);
   }, 180_000);
+
+  it("composer: after a run, 'reply to yash and say yes' from the moonlet page queues an approval card; 'what did I just ask you' uses history", async () => {
+    const g = fakeGoogle();
+    const now = Date.now();
+    const spec: JobSpec = { name: "Postie2", template: "inbox", objective: "Brief me on my inbox and draft replies.", cadence: "24h", sources: [], checks: [], tools: ["gmail_read", "gmail_draft", "gmail_send", "deliver"], output: { kind: "digest", maxWords: 200, alwaysReport: true }, voice: "terse", spendCapUsd: 0.05, model: "auto" };
+    await store.insertMoonlet({ id: "m_postie2", owner: OWNER, name: "Postie2", spec, status: "idle", delivery: {}, key: { key: KEY, limitUsd: 5, spentUsd: 0 }, cadence: "24h", perRunCapUsd: 0.05, earnPerDayUsd: 1, burnPerDayUsd: 0.05, nextRunAt: now + 3_600_000, createdAt: now });
+    await store.insertRun({ id: "run_p2", moonletId: "m_postie2", at: now - 60_000, status: "done", title: "1 needs reply", summary: "Yash (orbio.so) asks whether Thursday works for the demo.", body: "", sources: [], signal: "medium", nothingHappened: false, costUsd: 0.01, model: "test", modelCalls: 2, durationMs: 1000, outputHash: null, txHash: null, keyEvents: [], error: null });
+    const a1 = await followup({ moonletId: "m_postie2", owner: OWNER, text: "reply to yash and tell him yes, thursday works", runId: "run_p2", fetch: split(g) });
+    console.log("composer1:", a1);
+    expect(g.log.some((l) => l.path.endsWith("/messages/send"))).toBe(false);
+    const p = (await store.listProposals(OWNER, "pending")).find((x) => x.kind === "email_send" && x.moonletId === "m_postie2");
+    expect(p).toBeTruthy();
+    expect((p!.payload.mail as { to: string; body: string }).to).toMatch(/yash@orbio\.so/);
+    expect(a1.toLowerCase()).toMatch(/approv|ok|waiting/);
+    const a2 = await followup({ moonletId: "m_postie2", owner: OWNER, text: "what did I just ask you to do?", runId: "run_p2", history: [{ q: "reply to yash and tell him yes, thursday works", a: a1 }], fetch: split(g) });
+    console.log("composer2:", a2);
+    expect(a2.toLowerCase()).toMatch(/yash|thursday|reply/);
+  }, 120_000);
 });
