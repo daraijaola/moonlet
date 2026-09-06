@@ -1,5 +1,5 @@
 import { plan, spendablePerDay, CADENCE_WORDS } from "./budget";
-import { bagOf, runOne } from "./scheduler";
+import { bagOf } from "./bag";
 import type { JobSpec } from "./spec";
 import * as store from "./store";
 
@@ -44,7 +44,8 @@ export async function launchMoonlet(owner: string, spec: JobSpec, opts: LaunchOp
   let firstRunStarted = false;
   if (opts.runNow !== false && !p.quiet && (await store.claimForRun(id, now))) {
     firstRunStarted = true;
-    void runOne(id, { fetch: opts.fetch }).catch(() => undefined);
+    // Loaded lazily: the scheduler imports the runner, whose tools propose spawns, which land back here.
+    void import("./scheduler").then(({ runOne }) => runOne(id, { fetch: opts.fetch })).catch(() => undefined);
   }
   const moonlet = (await store.getMoonlet(id))!;
   return { ok: true as const, moonlet, plan: p, firstRunStarted, familyNote: familyNote(siblings, p.burnPerDayUsd, p.earnPerDayUsd) };

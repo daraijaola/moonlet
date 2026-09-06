@@ -6,7 +6,9 @@ import { devOrbio } from "./orbio-dev";
 import { runMoonlet } from "./runner";
 import { CADENCE_MS, type Cadence } from "./spec";
 import * as store from "./store";
-import { RH_RPC, type DeliverySink } from "./tools";
+import type { DeliverySink } from "./tools";
+import { bagOf } from "./bag";
+export { bagOf } from "./bag";
 import * as tg from "./connections/telegram";
 import type { GitHubConn } from "./connections/github";
 import { telegramCallback } from "./proposals";
@@ -30,7 +32,6 @@ export type SchedulerDeps = {
   now?: () => number;
 };
 
-const ORBIO_TOKEN = "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3";
 
 /** Live ERC-20 balance read; cached per owner for 10 minutes in the owners table. */
 const ownerLocks = new Map<string, Promise<unknown>>();
@@ -39,30 +40,6 @@ async function withOwnerLock<T>(owner: string, fn: () => Promise<T>): Promise<T>
   const next = prev.then(fn, fn);
   ownerLocks.set(owner, next.catch(() => undefined));
   return next;
-}
-
-export async function bagOf(owner: string, fetchImpl: typeof fetch = fetch): Promise<number> {
-  const cached = await store.getOwner(owner);
-  if (cached && Date.now() - cached.bagCheckedAt < 10 * 60_000) return cached.bag;
-  try {
-    const r = await fetchImpl(RH_RPC, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_call",
-        params: [{ to: ORBIO_TOKEN, data: `0x70a08231${owner.slice(2).padStart(64, "0")}` }, "latest"],
-      }),
-      signal: AbortSignal.timeout(8000),
-    });
-    const j = (await r.json()) as { result?: string };
-    const bag = j.result ? Number(BigInt(j.result)) / 1e18 : (cached?.bag ?? 0);
-    await store.setOwnerBag(owner, bag);
-    return bag;
-  } catch {
-    return cached?.bag ?? 0;
-  }
 }
 
 /** Orbio client for an owner, refreshing the OAuth token if it's near expiry. */
