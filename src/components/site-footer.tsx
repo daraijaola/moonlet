@@ -18,7 +18,8 @@ const COLS: [string, { href: string; label: string; external?: boolean }[]][] = 
     { href: "https://github.com/daraijaola/moonlet", label: "Source", external: true },
   ]],
   ["Legal", [
-    { href: "https://www.orbio.so", label: "Credits are product access, not cash", external: true },
+    { href: "/privacy", label: "Privacy" },
+    { href: "/terms", label: "Terms" },
     { href: "/sky", label: "Every run is public" },
   ]],
 ];
