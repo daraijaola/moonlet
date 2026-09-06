@@ -650,7 +650,16 @@ export async function filesForRuns(runIds: string[]): Promise<Record<string, Fil
   return out;
 }
 
-/** A run's files are moved with it when a follow-up attaches to an older report; nothing to do on delete: files stay with the run. */
+/** Everything a moonlet has ever written, newest first, with the run each came from. */
+export async function filesForMoonlet(moonletId: string): Promise<Array<FileMeta & { runTitle: string | null; runAt: number | null }>> {
+  await migrate();
+  const r = await db().execute({
+    sql: `SELECT f.id,f.owner,f.moonlet_id,f.run_id,f.name,f.mime,f.size,f.created_at, r.title AS run_title, r.at AS run_at FROM files f LEFT JOIN runs r ON r.id=f.run_id WHERE f.moonlet_id=? ORDER BY f.created_at DESC LIMIT 200`,
+    args: [moonletId],
+  });
+  return (r.rows as unknown as Record<string, unknown>[]).map((row) => ({ ...fileMeta(row), runTitle: (row.run_title as string | null) ?? null, runAt: row.run_at == null ? null : Number(row.run_at) }));
+}
+
 function fileMeta(row: Record<string, unknown>): FileMeta {
   return { id: row.id as string, owner: row.owner as string, moonletId: row.moonlet_id as string, runId: (row.run_id as string | null) ?? null, name: row.name as string, mime: row.mime as string, size: Number(row.size), createdAt: Number(row.created_at) };
 }

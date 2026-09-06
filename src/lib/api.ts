@@ -28,6 +28,8 @@ export type ApiMoonlet = {
   spentTotalUsd: number;
 };
 
+export type ApiFile = { id: string; name: string; mime: string; size: number; createdAt: number; runId: string | null; runTitle: string | null; url: string };
+
 export type ApiRun = {
   id: string;
   moonletId: string;
@@ -94,6 +96,7 @@ export const api = {
   listMoonlets: (owner: string) => req<{ moonlets: ApiMoonlet[] }>(owner, "/api/moonlets"),
   getMoonlet: (id: string) => req<{ moonlet: ApiMoonlet }>(null, `/api/moonlets/${id}`),
   runs: (id: string) => req<{ runs: ApiRun[]; anchoring?: boolean }>(null, `/api/moonlets/${id}/runs`),
+  files: (owner: string, id: string) => req<{ files: ApiFile[] }>(owner, `/api/moonlets/${id}/files`),
   compile: (owner: string, body: { sentence: string; template: JobSpec["template"]; name?: string }) =>
     req<{ spec: JobSpec; compiled: boolean }>(owner, "/api/moonlets/compile", { method: "POST", body: JSON.stringify(body) }),
   launch: (owner: string, body: { spec: JobSpec; delivery: { telegram?: string; x?: string }; autopilot?: boolean; runNow?: boolean }) =>

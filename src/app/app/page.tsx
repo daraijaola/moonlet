@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
-import { api, fmtBag, fmtUsd, shortenHexes, timeAgo, timeUntil, type ApiMoonlet, type ApiRun, type Connections, type OrbioStatus, type Proposal } from "@/lib/api";
+import { api, fmtBag, fmtUsd, shortenHexes, timeAgo, timeUntil, type ApiFile, type ApiMoonlet, type ApiRun, type Connections, type OrbioStatus, type Proposal } from "@/lib/api";
 import { GitHubMark, OrbioMark, TelegramMark } from "@/components/marks";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
@@ -239,6 +239,8 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   const parent = m.parentId ? all.find((x) => x.id === m.parentId) : undefined;
   const children = all.filter((x) => x.parentId === m.id);
   const [runs, setRuns] = useState<ApiRun[] | null>(null);
+  const [files, setFiles] = useState<ApiFile[]>([]);
+  const [showFiles, setShowFiles] = useState(false);
   const [thread, setThread] = useState<Array<{ q: string; a: string | null; runId?: string }>>([]);
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
@@ -260,7 +262,8 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
     const r = await api.runs(m.id);
     setRuns(r.runs);
     setAnchoring(r.anchoring ?? true);
-  }, [m.id]);
+    setFiles((await api.files(owner, m.id).catch(() => ({ files: [] }))).files);
+  }, [m.id, owner]);
   useEffect(() => {
     const first = setTimeout(loadRuns, 0);
     const t = setInterval(loadRuns, m.status === "running" ? 3000 : 15_000);
@@ -288,28 +291,66 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
 
   return (
     <section className="min-w-0">
-      <header className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
+      <header>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <h1 className="text-[1.6rem] font-semibold tracking-[-0.02em] text-ink">{m.name}</h1>
             <span className="rounded-full border border-ink/15 px-2 py-0.5 font-mono text-[11px] text-ink-soft">{TEMPLATE_LABEL[m.spec.template]}</span>
             {m.status === "running" && <span className="rounded-full bg-gold/20 px-2 py-0.5 font-mono text-[11px] text-ink">running now</span>}
             {m.autopilot && <span className="rounded-full bg-ink text-cream px-2 py-0.5 font-mono text-[11px]" title="Acts without asking">autopilot</span>}
             {quiet && <span className="rounded-full bg-ink/5 px-2 py-0.5 font-mono text-[11px] text-ink-soft">{m.status}</span>}
           </div>
-          <p className="mt-1.5 max-w-[46rem] text-[14px] leading-[1.55] text-ink-soft [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
-          {(parent || children.length > 0) && (
-            <p className="mt-1.5 font-mono text-[12px] text-ink-faint">
-              {parent && <>spawned by <Link href={`/app?m=${parent.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{parent.name}</Link></>}
-              {parent && children.length > 0 && " · "}
-              {children.length > 0 && <>spawned {children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<Link href={`/app?m=${c.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{c.name}</Link></span>)}</>}
-            </p>
+          <div className="flex shrink-0 items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setShowFiles((v) => !v)}
+            aria-expanded={showFiles}
+            title={files.length ? `${files.length} artifact${files.length === 1 ? "" : "s"}` : "No artifacts yet. Ask for a report as a PDF and it lands here."}
+            className={`relative inline-flex h-9 items-center gap-1.5 rounded-md border px-2.5 font-mono text-[12.5px] transition-colors ${showFiles ? "border-ink bg-ink text-cream" : "border-ink/15 bg-white text-ink hover:border-ink/40"}`}
+          >
+            <ArtifactGlyph />
+            <span className="hidden sm:inline">Artifacts</span>
+            {files.length > 0 && <span className={`rounded-full px-1.5 py-0.5 text-[10.5px] leading-none ${showFiles ? "bg-cream text-ink" : "bg-ink text-cream"}`}>{files.length}</span>}
+          </button>
+          <Link href={`/s/${m.id}`} className="inline-flex h-9 items-center gap-1.5 rounded-md border border-ink/15 bg-white px-3 font-mono text-[12.5px] text-ink hover:border-ink/40">
+            Public page ↗
+          </Link>
+        </div>
+        </div>
+        <p className="mt-2 max-w-[46rem] text-[14px] leading-[1.55] text-ink-soft [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
+        {(parent || children.length > 0) && (
+          <p className="mt-1.5 font-mono text-[12px] text-ink-faint">
+            {parent && <>spawned by <Link href={`/app?m=${parent.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{parent.name}</Link></>}
+            {parent && children.length > 0 && " · "}
+            {children.length > 0 && <>spawned {children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<Link href={`/app?m=${c.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{c.name}</Link></span>)}</>}
+          </p>
+        )}
+      </header>
+
+      {showFiles && (
+        <div className="mt-4 rounded-lg border border-ink/10 bg-white p-4">
+          <div className="flex items-center justify-between gap-3">
+            <h3 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Artifacts · {files.length}</h3>
+            <span className="font-mono text-[11px] text-ink-faint">files {m.name} wrote · yours only</span>
+          </div>
+          {files.length === 0 ? (
+            <p className="mt-3 text-[13.5px] leading-[1.55] text-ink-soft">Nothing yet. Ask for a report as a file (“send me this as a PDF”, or put it in the job) and every PDF, DOCX or TXT it writes collects here, newest first.</p>
+          ) : (
+            <ul className="mt-3 divide-y divide-ink/[0.07]">
+              {files.map((f) => (
+                <li key={f.id} className="flex items-center gap-3 py-2.5">
+                  <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper font-mono text-[10px] uppercase text-ink-soft">{f.name.split(".").pop()}</span>
+                  <div className="min-w-0 flex-1">
+                    <a href={f.url} download={f.name} className="block truncate text-[13.5px] font-medium text-ink hover:underline">{f.name}</a>
+                    <p className="truncate font-mono text-[11px] text-ink-faint">{timeAgo(f.createdAt)} · {(f.size / 1024).toFixed(0)} KB{f.runTitle ? ` · from “${shortenHexes(f.runTitle)}”` : ""}</p>
+                  </div>
+                  <a href={f.url} download={f.name} className="shrink-0 rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[12px] text-ink hover:border-ink/40">Download</a>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
-        <Link href={`/s/${m.id}`} className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[12.5px] text-ink hover:border-ink/40">
-          Public page ↗
-        </Link>
-      </header>
+      )}
 
       <div className={`mt-5 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg border p-3.5 ${m.status === "running" ? "border-gold bg-gold/10" : "border-ink/10 bg-white"}`}>
         <div className="flex items-center gap-2.5">
@@ -558,3 +599,11 @@ export default function DashboardPage() {
     </Suspense>
   );
 }
+
+const ArtifactGlyph = () => (
+  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
+    <path d="M3 1.5h5.5L11.5 4.5v8h-8.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    <path d="M8.5 1.5v3h3" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    <path d="M5 8h4M5 10h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+  </svg>
+);
