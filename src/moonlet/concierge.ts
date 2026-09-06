@@ -3,6 +3,7 @@ import * as store from "./store";
 import { pickModel } from "./model";
 import { runLoop, type LocalTool } from "./llm";
 import { Cadence, CADENCE_MS } from "./spec";
+import { CADENCE_WORDS, cadenceReply } from "./budget";
 import { runOne } from "./scheduler";
 
 /**
@@ -21,7 +22,6 @@ Never speculate on price or give financial advice. Never ask for keys or wallet 
 When you run something now, say it started and that the result will arrive here in about a minute.
 Use tool results; do not invent moonlets, runs or numbers.`;
 
-const CADENCE_WORDS: Record<Cadence, string> = { "15m": "every 15 minutes", "1h": "hourly", "4h": "every 4 hours", "6h": "every 6 hours", "12h": "every 12 hours", "24h": "daily", "7d": "weekly" };
 
 export async function concierge(owner: string, text: string, opts: { appUrl: string; fetch?: typeof fetch; runNow?: (id: string) => Promise<unknown> } ): Promise<string> {
   const moonlets = await store.listMoonlets(owner);
@@ -88,7 +88,7 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
         const m = byName(moonlet);
         if (!m) return { error: "no such moonlet" };
         await store.updateMoonlet(m.id, { spec: { ...m.spec, cadence }, cadence, nextRunAt: Math.min(m.nextRunAt, Date.now() + CADENCE_MS[cadence]) });
-        return { ok: true, moonlet: m.name, cadence: CADENCE_WORDS[cadence] };
+        return { ok: true, tellOwner: cadenceReply(m.name, m.spec, cadence, m.earnPerDayUsd) };
       },
     }),
     tool({

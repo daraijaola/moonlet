@@ -2,6 +2,7 @@ import * as store from "./store";
 import { runLoop, type UserContent } from "./llm";
 import { buildTools } from "./tools";
 import { CADENCE_MS, Cadence } from "./spec";
+import { cadenceReply } from "./budget";
 import type { GitHubConn } from "./connections/github";
 
 /**
@@ -25,7 +26,6 @@ export type FollowupInput = {
   fetch?: typeof fetch;
 };
 
-const CADENCE_WORDS: Record<Cadence, string> = { "15m": "every 15 minutes", "1h": "hourly", "4h": "every 4 hours", "6h": "every 6 hours", "12h": "every 12 hours", "24h": "daily", "7d": "weekly" };
 
 function parseCadence(text: string): Cadence | null {
   const t = text.toLowerCase();
@@ -47,7 +47,7 @@ export async function followup(input: FollowupInput): Promise<string> {
   const cadence = /\b(run|report|check|do (this|it)|every|hourly|daily|weekly|schedule|instead)\b/i.test(input.text) ? parseCadence(input.text) : null;
   if (cadence && /\b(every|hourly|daily|weekly|schedule|instead|from now)\b/i.test(input.text) && input.text.trim().split(/\s+/).length <= 14) {
     await store.updateMoonlet(m.id, { spec: { ...m.spec, cadence }, cadence, nextRunAt: Math.min(m.nextRunAt, Date.now() + CADENCE_MS[cadence]) });
-    return `Done. ${m.name} now reports ${CADENCE_WORDS[cadence]}.`;
+    return cadenceReply(m.name, m.spec, cadence, m.earnPerDayUsd);
   }
 
   const key = m.key?.key ?? (await store.listMoonlets(m.owner)).find((x) => x.key?.key)?.key?.key ?? process.env.COMPILE_API_KEY;

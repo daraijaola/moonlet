@@ -68,3 +68,15 @@ export function keyNeedsRefill(remainingUsd: number, p: Plan) {
 }
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
+
+export const CADENCE_WORDS: Record<Cadence, string> = { "15m": "every 15 minutes", "1h": "hourly", "4h": "every 4 hours", "6h": "every 6 hours", "12h": "every 12 hours", "24h": "daily", "7d": "weekly" };
+
+/**
+ * What to tell an owner who asked for a cadence: the plan slows a cadence the
+ * bag's income can't afford, so "every 6 hours" may really run every 12.
+ */
+export function cadenceReply(name: string, spec: JobSpec, cadence: Cadence, earnPerDayUsd: number) {
+  const p = plan({ ...spec, cadence }, HOLDER_FLOOR, earnPerDayUsd);
+  if (p.quiet || p.cadence === cadence) return `Done. ${name} now reports ${CADENCE_WORDS[cadence]}.`;
+  return `Done. ${name} is set to ${CADENCE_WORDS[cadence]}, but your bag earns about $${earnPerDayUsd.toFixed(2)}/day, which only pays for a run ${CADENCE_WORDS[p.cadence]}. It will run ${CADENCE_WORDS[p.cadence]} until the bag grows.`;
+}
