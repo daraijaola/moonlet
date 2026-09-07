@@ -68,7 +68,7 @@ function DashboardInner() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
-      <aside className="app-panel min-w-0 lg:sticky lg:top-20 lg:self-start">
+      <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
         <div className="mb-2 flex items-center justify-between px-1">
           <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Your moonlets · {moonlets.length}</h2>
           <Link href="/app/new" className="font-mono text-[11.5px] text-ink-soft hover:text-ink lg:hidden">＋ Launch</Link>
@@ -186,10 +186,13 @@ function Ledger({ moonlets, status }: { moonlets: ApiMoonlet[]; status: OrbioSta
         <Row k="earning" v={`~${fmtUsd(earn)} / day`} />
         <Row k="put to work" v={`~${fmtUsd(burn)} / day`} />
         <div className="flex justify-between border-t border-ink/10 pt-2">
-          <dt className="text-ink-soft" title="Inference you already own and aren't using. Launch another moonlet to put it to work.">sitting idle</dt>
+          <dt className="text-ink-soft">sitting idle</dt>
           <dd className={idle && idle > 1 ? "text-gold" : "text-ink"}>{idle === null || idle === undefined ? "—" : fmtUsd(idle)}</dd>
         </div>
       </dl>
+      <p className="mt-3 text-[11px] leading-[1.5] text-ink-faint">
+        Idle credit is inference you already own and aren&apos;t using. Launch another moonlet to put it to work.
+      </p>
     </div>
   );
 }
@@ -199,20 +202,6 @@ function OrbioCard({ status, owner }: { status: OrbioStatus | null; owner: strin
   const [busy, setBusy] = useState(false);
   if (!status) return null;
   const o = status.orbio;
-  if (status.approved && !o.error) {
-    return (
-      <div className="mt-3 hidden items-center justify-between rounded-lg border border-ink/10 bg-white px-4 py-2.5 font-mono text-[11.5px] lg:flex">
-        <span className="text-ink-soft">Orbio <span className="ml-1 rounded-full bg-moss/10 px-2 py-0.5 text-[10px] text-moss">{o.dev ? "dev stub" : "approved"}</span></span>
-        <button
-          disabled={busy}
-          onClick={async () => { setBusy(true); await api.orbioDisconnect(owner).catch(() => undefined); location.reload(); }}
-          className="text-ink-faint hover:text-ink disabled:opacity-50"
-        >
-          Disconnect
-        </button>
-      </div>
-    );
-  }
   return (
     <div className="mt-3 hidden rounded-lg border border-ink/10 bg-white p-4 lg:block">
       <h3 className="flex items-center justify-between font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">
@@ -614,14 +603,12 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
           <div className="mt-4 border-t border-ink/[0.07] pt-3">{vitals}</div>
         </div>
 
-        {files.length > 0 && (
-          <div className="rounded-lg border border-ink/10 bg-white p-4">
-            <div className="flex items-center justify-between">
-              <h3 className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft"><ArtifactGlyph /> Artifacts · {files.length}</h3>
-            </div>
-            <div className="mt-2">{artifactList(true)}</div>
+        <div className="rounded-lg border border-ink/10 bg-white p-4">
+          <div className="flex items-center justify-between">
+            <h3 className="inline-flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft"><ArtifactGlyph /> Artifacts{files.length ? ` · ${files.length}` : ""}</h3>
           </div>
-        )}
+          <div className="mt-2">{artifactList(true)}</div>
+        </div>
 
         <div className="rounded-lg border border-ink/10 bg-white p-4">
           <h3 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Controls</h3>

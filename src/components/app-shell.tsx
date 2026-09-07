@@ -5,7 +5,6 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { useAuth } from "@/lib/auth";
 import { shortAddr } from "@/lib/api";
-import { ThemeToggle, useTheme } from "@/lib/theme";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
 
@@ -17,7 +16,6 @@ const TABS = [
 
 /** Quiet top bar for signed-in surfaces. Gates on a connected wallet. */
 export function AppShell({ children }: { children: React.ReactNode }) {
-  const { theme, toggle } = useTheme();
   const { ready, address, signed, disconnect } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
@@ -42,9 +40,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col bg-cream text-ink">
-      {theme === "dark" && <div aria-hidden className="app-dark-backdrop pointer-events-none absolute inset-0 z-0" />}
-      <header className="app-header sticky top-0 z-30 border-b border-ink/10 bg-cream/90 backdrop-blur">
+    <div className="flex min-h-screen flex-col bg-cream text-ink">
+      <header className="sticky top-0 z-30 border-b border-ink/10 bg-cream/90 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between px-4 sm:px-6 xl:max-w-[1400px]">
           <div className="flex items-center gap-6">
             <Link href="/app" className="inline-flex items-center gap-2">
@@ -70,7 +67,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2">
-            <ThemeToggle theme={theme} onToggle={toggle} />
             <Link
               href="/app/new"
               className="btn-hard hidden rounded-md border-2 border-ink bg-gold px-3.5 py-1.5 font-mono text-[13px] font-medium text-midnight sm:inline-flex"
@@ -91,7 +87,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </header>
-      <main className="relative z-10 mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 pb-24 sm:px-6 sm:pb-6 xl:max-w-[1400px]">
+      <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 pb-24 sm:px-6 sm:pb-6 xl:max-w-[1400px]">
         {children}
       </main>
       <PoweredBy />
