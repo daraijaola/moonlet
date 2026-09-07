@@ -22,6 +22,48 @@
   --hair: rgba(247, 244, 238, 0.09);
 }
 
+/* App dark mode: the owner flips it in the app header; the landing never changes. Cool near-black surfaces, slate cards,
+   neutral ink; gold and moss stay the only accents. */
+html.dark {
+  --cream: #0b0c10;
+  --white: #171920;
+  --cream-deep: #262a35;
+  --paper: #1f222b;
+  --ink: #e6e6ea;
+  --ink-soft: #9a9ca6;
+  --ink-faint: #5a5d68;
+  --midnight: #0b0c10;
+  --moss: #7fb58c;
+  color-scheme: dark;
+}
+html.dark .grain::before { display: none; }
+html.dark .btn-hard { box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.9); }
+html.dark .btn-hard:hover { box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.9); }
+html.dark .btn-hard:active { box-shadow: 1px 1px 0 rgba(0, 0, 0, 0.9); }
+/* Phone: a halftone field at the top of the app dissolving into black. Desktop: a fine dot grid across the page, fading out
+   toward the bottom, with the two side panels sitting on an ashier charcoal. */
+.app-dark-backdrop {
+  background-image: radial-gradient(rgba(127, 181, 140, 0.55) 0.8px, transparent 1.1px);
+  background-size: 5px 5px;
+  background-position: 0 0;
+  mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.45) 14vh, rgba(0, 0, 0, 0.08) 30vh, transparent 42vh);
+  opacity: 0.6;
+}
+/* Desktop side panels sit on an ashier charcoal than the page, like a sidebar. */
+@media (min-width: 1024px) {
+  html.dark .app-panel { background: #111318; border: 1px solid rgba(255, 255, 255, 0.06); border-radius: 12px; padding: 14px; }
+  html.dark header.app-header { background: rgba(17, 19, 24, 0.92); }
+}
+@media (min-width: 1024px) {
+  .app-dark-backdrop {
+    background-image: radial-gradient(rgba(127, 181, 140, 0.5) 0.9px, transparent 1.2px);
+    background-size: 22px 22px;
+    background-position: 11px 11px;
+    mask-image: linear-gradient(to bottom, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.6) 40vh, rgba(0, 0, 0, 0.15) 80vh, transparent 110vh);
+    opacity: 0.8;
+  }
+}
+
 @theme inline {
   --color-cream: var(--cream);
   --color-white: var(--white);
