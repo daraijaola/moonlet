@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { KeyEvent, KeyState, TraceEvent } from "./runner";
+import { EARN_PER_TOKEN_PER_DAY_USD } from "./budget";
 import type { JobSpec } from "./spec";
 
 /**
@@ -416,7 +417,7 @@ export async function listRuns(moonletId: string, limit = 50): Promise<RunRow[]>
 export async function skyStats() {
   await migrate();
   const c = db();
-  const [m, r] = await Promise.all([
+  const [m, r, ownersRow, spentRow] = await Promise.all([
     c.execute(`SELECT
         SUM(CASE WHEN status IN ('running','idle') THEN 1 ELSE 0 END) AS alive,
         COUNT(*) AS total,
@@ -425,14 +426,21 @@ export async function skyStats() {
         SUM(spent_total_usd) AS spent
       FROM moonlets WHERE status != 'deleted'`),
     c.execute({ sql: `SELECT COUNT(*) AS today, SUM(CASE WHEN tx_hash IS NOT NULL THEN 1 ELSE 0 END) AS anchored FROM runs WHERE at >= ?`, args: [Date.now() - 86_400_000] }),
+    c.execute(`SELECT COUNT(*) AS bags, COALESCE(SUM(bag),0) AS tokens FROM owners WHERE bag >= 1000 AND address IN (SELECT DISTINCT owner FROM moonlets WHERE status != 'deleted')`),
+    c.execute(`SELECT COALESCE(SUM(cost_usd),0) AS spent, COUNT(*) AS runs FROM runs WHERE status = 'done'`),
   ]);
-  const a = m.rows[0], b = r.rows[0];
+  const a = m.rows[0], b = r.rows[0], o = ownersRow.rows[0], s = spentRow.rows[0];
+  const tokens = Number(o?.tokens ?? 0);
   return {
     alive: Number(a?.alive ?? 0),
     total: Number(a?.total ?? 0),
-    creditsPerDay: Number(a?.earn ?? 0),
+    // Credits the bags behind live moonlets earn per day (one bag can fund several moonlets, so this is per owner, not per moonlet).
+    creditsPerDay: tokens * EARN_PER_TOKEN_PER_DAY_USD,
     burnPerDay: Number(a?.burn ?? 0),
-    spentTotalUsd: Number(a?.spent ?? 0),
+    spentTotalUsd: Number(s?.spent ?? 0),
+    runsTotal: Number(s?.runs ?? 0),
+    bags: Number(o?.bags ?? 0),
+    tokens,
     runsToday: Number(b?.today ?? 0),
     anchoredToday: Number(b?.anchored ?? 0),
   };

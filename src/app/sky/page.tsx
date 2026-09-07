@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { PublicHeader } from "@/components/public-header";
 import { DitherField } from "@/components/dither-field";
+import { FuelLive } from "@/components/fuel-live";
 import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
 import { StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { CADENCE_LABEL, TEMPLATE_LABEL } from "@/components/labels";
@@ -35,6 +36,7 @@ export default async function SkyPage() {
           <div>
             <h1 className="font-display text-[3.4rem] leading-[0.9] text-ink sm:text-[4.2rem]">The sky</h1>
             <p className="mt-2 max-w-[36rem] text-[14.5px] leading-[1.55] text-ink-soft">Every moonlet, live. Dot size is the bag it orbits, pulse means it&apos;s working right now.</p>
+            <div className="mt-3"><FuelLive variant="compact" /></div>
           </div>
           <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Big label="alive" value={`${stats.alive}/${stats.total}`} />

@@ -4,6 +4,7 @@ import { How } from "@/components/how";
 import { Session } from "@/components/session";
 import { Rails } from "@/components/rails";
 import { SiteFooter } from "@/components/site-footer";
+import { FuelLive } from "@/components/fuel-live";
 
 export default function Home() {
   return (
@@ -11,6 +12,9 @@ export default function Home() {
       <Nav />
       <main className="flex-1">
         <Hero />
+        <section className="mx-auto max-w-[1180px] px-5 sm:px-6">
+          <FuelLive />
+        </section>
         <How />
         <Session />
         <Rails />
