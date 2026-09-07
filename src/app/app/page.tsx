@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, fmtBag, fmtUsd, shortenHexes, timeAgo, timeUntil, type ApiFile, type ApiMoonlet, type ApiRun, type Connections, type OrbioStatus, type Proposal } from "@/lib/api";
 import { GitHubMark, OrbioMark, TelegramMark } from "@/components/marks";
@@ -18,6 +18,15 @@ function DashboardInner() {
   const [moonlets, setMoonlets] = useState<ApiMoonlet[] | null>(null);
   const [status, setStatus] = useState<OrbioStatus | null>(null);
   const [conns, setConns] = useState<Connections | null>(null);
+  const railRef = useRef<HTMLUListElement>(null);
+  const selectedParam = params.get("m");
+  useEffect(() => {
+    // Phone rail: bring the open moonlet into view sideways only; never move the page.
+    const rail = railRef.current;
+    const el = rail?.querySelector<HTMLElement>("li[data-active]");
+    if (!rail || !el || rail.scrollWidth <= rail.clientWidth) return;
+    rail.scrollTo({ left: el.offsetLeft - rail.offsetLeft, behavior: "smooth" });
+  }, [selectedParam, moonlets]);
 
   useEffect(() => {
     const job = params.get("job");
@@ -58,17 +67,21 @@ function DashboardInner() {
 
   return (
     <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
-      <aside className="lg:sticky lg:top-20 lg:self-start">
-        <h2 className="mb-2 px-1 font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Your moonlets · {moonlets.length}</h2>
-        <ul className="space-y-1.5">
+      <aside className="min-w-0 lg:sticky lg:top-20 lg:self-start">
+        <div className="mb-2 flex items-center justify-between px-1">
+          <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">Your moonlets · {moonlets.length}</h2>
+          <Link href="/app/new" className="font-mono text-[11.5px] text-ink-soft hover:text-ink lg:hidden">＋ Launch</Link>
+        </div>
+        {/* Phone: one horizontal rail that scrolls, the open one snapped into view. Desktop: a vertical list capped to the viewport. */}
+        <ul ref={railRef} className="flex snap-x snap-mandatory gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:block lg:max-h-[min(52vh,560px)] lg:space-y-1.5 lg:overflow-y-auto lg:pr-1 lg:[scrollbar-width:thin]">
           {moonlets.map((m) => {
             const tone = fuelTone(m.earnPerDayUsd, m.burnPerDayUsd, m.status === "quiet" || m.status === "paused");
             const active = m.id === selected.id;
             return (
-              <li key={m.id}>
+              <li key={m.id} data-active={active || undefined} className="w-[184px] shrink-0 snap-start lg:w-auto">
                 <Link
                   href={`/app?m=${m.id}`}
-                  className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${active ? "border-ink bg-white" : "border-transparent hover:border-ink/15 hover:bg-white/70"}`}
+                  className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${active ? "border-ink bg-white" : "border-ink/10 bg-white/60 hover:border-ink/30 lg:border-transparent lg:bg-transparent lg:hover:bg-white/70"}`}
                 >
                   <StatusDot tone={tone} pulse={m.status === "running"} />
                   <div className="min-w-0 flex-1">
@@ -82,16 +95,22 @@ function DashboardInner() {
             );
           })}
         </ul>
-        <Link href="/app/new" className="mt-3 flex items-center justify-center gap-2 rounded-lg border border-dashed border-ink/25 px-3 py-2.5 font-mono text-[13px] text-ink-soft transition-colors hover:border-ink hover:text-ink">
+        <Link href="/app/new" className="mt-3 hidden items-center justify-center gap-2 rounded-lg border border-dashed border-ink/25 px-3 py-2.5 font-mono text-[13px] text-ink-soft transition-colors hover:border-ink hover:text-ink lg:flex">
           ＋ Launch a moonlet
         </Link>
-        <Ledger moonlets={moonlets} status={status} />
-        <OrbioCard status={status} owner={address!} />
+        <div className="hidden lg:block">
+          <Ledger moonlets={moonlets} status={status} />
+          <OrbioCard status={status} owner={address!} />
+        </div>
       </aside>
 
       <div className="min-w-0">
         <Queue owner={address!} />
         <Detail key={selected.id} m={selected} all={moonlets} owner={address!} onChange={load} conns={conns} launched={params.get("launched") === "1"} status={status} />
+        <div className="mt-6 lg:hidden">
+          <Ledger moonlets={moonlets} status={status} />
+          <OrbioCard status={status} owner={address!} />
+        </div>
       </div>
     </div>
   );
@@ -236,6 +255,7 @@ const Row = ({ k, v }: { k: string; v: string }) => (
 );
 
 function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMoonlet; all: ApiMoonlet[]; owner: string; onChange: () => Promise<void>; conns: Connections | null; launched?: boolean; status: OrbioStatus | null }) {
+  const router = useRouter();
   const parent = m.parentId ? all.find((x) => x.id === m.parentId) : undefined;
   const children = all.filter((x) => x.parentId === m.id);
   const [runs, setRuns] = useState<ApiRun[] | null>(null);
@@ -338,7 +358,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       ) : (
         <span className="inline-flex flex-wrap items-center gap-2 rounded-md border border-ink bg-white px-2 py-1 font-mono text-[12px]">
           Credits stay in your Orbio balance; only the moonlet goes.
-          <button onClick={() => act("delete", () => api.remove(owner, m.id), "Deleted. Unspent credits returned.")} className="rounded bg-ink px-2 py-0.5 text-cream">Confirm</button>
+          <button onClick={async () => { await act("delete", () => api.remove(owner, m.id), "Deleted."); router.replace("/app"); }} className="rounded bg-ink px-2 py-0.5 text-cream">Confirm</button>
           <button onClick={() => setConfirmDelete(false)} className="text-ink-soft">Cancel</button>
         </span>
       )}

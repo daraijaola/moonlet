@@ -71,6 +71,9 @@ export async function DELETE(req: Request, { params }: Ctx) {
   const m = await store.getMoonlet(id);
   if (!m || m.owner !== owner) return bad("not found", 404);
   // The key belongs to the wallet, not the moonlet: deleting a moonlet never touches credits.
-  await store.updateMoonlet(id, { status: "deleted", key: null });
-  return NextResponse.json({ ok: true, returnedUsd: 0 });
+  // Runs stay (they are public receipts); drafts still waiting for an OK are withdrawn so nothing acts for a moonlet that no longer exists.
+  const pending = (await store.listProposals(owner, "pending")).filter((p) => p.moonletId === id);
+  for (const p of pending) await store.decideProposal(p.id, "rejected");
+  await store.updateMoonlet(id, { status: "deleted", key: null, nextRunAt: Number.MAX_SAFE_INTEGER });
+  return NextResponse.json({ ok: true, withdrawn: pending.length });
 }
