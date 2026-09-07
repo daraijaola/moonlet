@@ -55,11 +55,15 @@ export function fallbackSpec(input: { sentence: string; template: TemplateId; na
   const d = TEMPLATE_DEFAULTS[input.template];
   const s = input.sentence;
   const alert = /\b(ping|alert|tell me when|notify me|if .+ moves?|when .+ moves?)\b/i.test(s);
+  const pct = Number(/(\d{1,2})\s*%/.exec(s)?.[1] ?? 10);
+  // Only a named number gets a tripwire; "when it moves" alone is too loose (a wallet moving tokens is activity, not a metric).
+  const metric = /liquidity/i.test(s) ? "liquidity" : /volume/i.test(s) ? "volume24h" : /balance/i.test(s) && /0x[0-9a-fA-F]{40}/.test(s) ? "wallet_balance" : /price/i.test(s) ? "price" : null;
+  const target = metric === "wallet_balance" ? /0x[0-9a-fA-F]{40}/.exec(s)?.[0] : (/\$([A-Z]{2,10})\b/.exec(s)?.[1] ?? (/0x[0-9a-fA-F]{40}/.exec(s)?.[0] ?? (/\bORBIO\b/i.test(s) ? "ORBIO" : undefined)));
   return {
     name: input.name?.trim() || "Lumen",
     template: input.template,
     objective: s.trim(),
-    cadence: cadenceFrom(s, alert ? "4h" : d.cadence),
+    cadence: cadenceFrom(s, alert && metric && target ? "24h" : alert ? "4h" : d.cadence),
     sources: extractSources(s),
     checks: checksFrom(s),
     tools: d.tools,
@@ -67,6 +71,7 @@ export function fallbackSpec(input: { sentence: string; template: TemplateId; na
     voice: "terse, concrete, sources named, no hype",
     spendCapUsd: d.costPerRunUsd,
     model: "auto",
+    tripwire: alert && metric && target ? { metric, target, thresholdPct: Math.min(90, Math.max(1, pct)) } : null,
   };
 }
 

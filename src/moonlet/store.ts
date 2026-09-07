@@ -37,6 +37,8 @@ export type MoonletRow = {
   /** Lifetime track record. */
   hits: number;
   misses: number;
+  /** Tripwire probe state: last value seen for free and when. */
+  watch: { value: number; at: number; tripped?: string } | null;
   /** The moonlet that spawned this one, if any. */
   parentId: string | null;
   key: KeyState;
@@ -152,6 +154,7 @@ export function migrate() {
     await c.execute(`ALTER TABLE moonlets ADD COLUMN open_calls TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN hits INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN misses INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN watch TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN parent_id TEXT`).catch(() => undefined);
     await c.execute(`CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, owner TEXT NOT NULL, moonlet_id TEXT NOT NULL, run_id TEXT, name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, bytes BLOB NOT NULL, created_at INTEGER NOT NULL)`).catch(() => undefined);
     await c.execute(`CREATE INDEX IF NOT EXISTS files_run ON files(run_id)`).catch(() => undefined);
@@ -252,6 +255,7 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
     openCalls: row.open_calls ? JSON.parse(row.open_calls as string) : [],
     hits: Number(row.hits ?? 0),
     misses: Number(row.misses ?? 0),
+    watch: row.watch ? JSON.parse(row.watch as string) : null,
     parentId: (row.parent_id as string | null) ?? null,
     key: row.key ? (JSON.parse(open(row.key as string)) as KeyState) : null,
     cadence: row.cadence as string,
@@ -268,7 +272,7 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
   };
 }
 
-export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses"> & { autopilot?: boolean; parentId?: string | null }) {
+export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses" | "watch"> & { autopilot?: boolean; parentId?: string | null }) {
   await migrate();
   await db().execute({
     sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id)
@@ -316,6 +320,7 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
     openCalls: (v) => JSON.stringify(v ?? []),
     hits: (v) => v,
     misses: (v) => v,
+    watch: (v) => (v ? JSON.stringify(v) : null),
     key: (v) => (v ? seal(JSON.stringify(v)) : null),
     cadence: (v) => v,
     perRunCapUsd: (v) => v,
@@ -332,7 +337,7 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
     name: "name", spec: "spec", status: "status", delivery: "delivery", autopilot: "autopilot", memory: "memory", key: "key", cadence: "cadence",
     perRunCapUsd: "per_run_cap_usd", earnPerDayUsd: "earn_per_day_usd", burnPerDayUsd: "burn_per_day_usd",
     nextRunAt: "next_run_at", lastRunAt: "last_run_at", keysRotated: "keys_rotated", runsTotal: "runs_total",
-    runsFailed: "runs_failed", spentTotalUsd: "spent_total_usd", openCalls: "open_calls", hits: "hits", misses: "misses",
+    runsFailed: "runs_failed", spentTotalUsd: "spent_total_usd", openCalls: "open_calls", hits: "hits", misses: "misses", watch: "watch",
   };
   for (const [k, v] of Object.entries(patch)) {
     if (!(k in cols) || v === undefined) continue;

@@ -37,10 +37,12 @@ export type MoonletState = {
   parentId?: string | null;
   openCalls?: Array<{ claim: string; check: string; madeAt: number }>;
   record?: { hits: number; misses: number };
+  /** Set when the free tripwire probe pulled this run forward: what moved. */
+  tripped?: string;
 };
 
 export type TraceEvent = { at: number; tool: string; summary: string };
-export type KeyEvent = { kind: "claimed" | "topped_up" | "rotated" | "quiet" | "budget"; detail: string; amountUsd?: number };
+export type KeyEvent = { kind: "claimed" | "topped_up" | "rotated" | "quiet" | "budget" | "tripwire"; detail: string; amountUsd?: number };
 
 export type RunResult = {
   ok: boolean;
@@ -107,7 +109,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       key: k.key,
       model,
       models: fallbackModels(model),
-      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, gmailAddress: m.connections?.gmail?.email, memory: m.memory ?? undefined, openCalls: m.openCalls, record: m.record }),
+      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, gmailAddress: m.connections?.gmail?.email, memory: m.memory ?? undefined, openCalls: m.openCalls, record: m.record, tripped: m.tripped }),
       input: "Run your job now. Finish with the structured output.",
       tools: built.tools,
       webSearch: built.webSearch,

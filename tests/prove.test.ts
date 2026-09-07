@@ -15,7 +15,7 @@ import { fakeOrbio } from "./fakes";
 
 const KEY = process.env.OPENROUTER_API_KEY!;
 const OWNER = "0x00000000000000000000000000000000000000fa";
-const spec: JobSpec = { name: "Tide", template: "market-watch", objective: "Watch $ORBIO liquidity and volume.", cadence: "6h", sources: ["$ORBIO"], checks: ["$ORBIO price, liquidity and 24h volume vs last run"], tools: ["token_market", "deliver"], output: { kind: "brief", maxWords: 120, alwaysReport: true }, voice: "terse", spendCapUsd: 0.04, model: "auto" };
+const spec: JobSpec = { name: "Tide", template: "market-watch", objective: "Watch $ORBIO liquidity and volume.", cadence: "6h", sources: ["$ORBIO"], checks: ["$ORBIO price, liquidity and 24h volume vs last run"], tools: ["token_market", "deliver"], output: { kind: "brief", maxWords: 120, alwaysReport: true }, voice: "terse", spendCapUsd: 0.04, model: "auto", tripwire: null };
 
 describe("prove: calls and scores", () => {
   beforeAll(async () => {

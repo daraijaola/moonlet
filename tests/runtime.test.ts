@@ -23,7 +23,7 @@ const marketWatch: Spec = {
   output: { kind: "brief", maxWords: 150, alwaysReport: true },
   voice: "terse, concrete, sources named, no hype",
   spendCapUsd: 0.03,
-  model: "auto",
+  model: "auto", tripwire: null,
 };
 
 describe("compile", () => {

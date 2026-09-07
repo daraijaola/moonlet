@@ -84,6 +84,9 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
               ))}
             </ul>
           )}
+          {run.keyEvents.filter((e) => e.kind === "tripwire").map((e, i) => (
+            <p key={i} className="mt-2 rounded-md border border-moss/40 bg-moss/10 px-2.5 py-1.5 font-mono text-[11.5px] text-ink">⚡ {e.detail}</p>
+          ))}
           {run.keyEvents.some((e) => e.kind === "budget") && (
             <p className="mt-2 rounded-md border border-gold bg-gold/10 px-2.5 py-1.5 font-mono text-[11.5px] text-ink">⚠ Cut short by the spend cap: the report covers what it managed. Raise the cap under Edit job, or choose a cheaper model.</p>
           )}

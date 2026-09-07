@@ -316,7 +316,9 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       ? <>Paused. Resume to pick the schedule back up.</>
       : m.status === "quiet"
         ? <>Quiet: not enough fuel. It wakes up when the bag earns.</>
-        : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>;
+        : m.spec.tripwire
+          ? <>Watching {m.spec.tripwire.metric.replace("_", " ")} of {m.spec.tripwire.target} for free every 15 min; wakes on a ±{m.spec.tripwire.thresholdPct}% move. Heartbeat <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>.</>
+          : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>;
   const delivered = (
     <span className="flex flex-wrap items-center gap-x-1.5 font-mono text-[11.5px] text-ink-soft">
       <span>delivered to</span>

@@ -15,6 +15,7 @@ import type { GitHubConn } from "./connections/github";
 import * as discord from "./connections/discord";
 import type { DiscordConn } from "./connections/discord";
 import * as gmail from "./connections/gmail";
+import { probeTripwires } from "./tripwire";
 import type { GmailConn } from "./connections/gmail";
 import { telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
@@ -76,6 +77,7 @@ export async function orbioFor(owner: string, fetchImpl: typeof fetch = fetch): 
 export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = Number(process.env.TICK_CONCURRENCY ?? 4)) {
   const now = deps.now ?? Date.now;
   await store.releaseStale(now() - 10 * 60_000);
+  await probeTripwires(now(), deps.fetch).catch((e) => console.error("tripwire probe", (e as Error).message));
   const due = await store.listDue(now(), limit);
   const results: Array<{ id: string; status: string; error?: string }> = [];
   const queue = [...due];
@@ -252,7 +254,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const result = await run(
     {
       id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
-      openCalls: m.openCalls, record: { hits: m.hits, misses: m.misses },
+      openCalls: m.openCalls, record: { hits: m.hits, misses: m.misses }, tripped: m.watch?.tripped,
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: gmConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
     },
@@ -262,6 +264,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;
   const nextRunAt = now() + (result.status === "failed" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : CADENCE_MS[cadence]);
   const rotated = result.keyEvents.filter((e) => e.kind === "rotated").length;
+  if (m.watch?.tripped) result.keyEvents.unshift({ kind: "tripwire", detail: `woke early: ${m.watch.tripped}` });
 
   await recordRun(m.id, now(), {
     id: runId,
@@ -281,6 +284,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     status: result.status === "quiet" ? "quiet" : "idle",
     key: result.key,
     ...(result.status === "done" && result.output ? { memory: result.output.remember?.slice(0, 1200) || m.memory } : {}),
+    ...(m.watch?.tripped ? { watch: { value: m.watch.value, at: now(), tripped: undefined } } : {}),
     ...(result.status === "done" && result.output
       ? {
           // Calls made this run wait for the next; the ones just scored are settled into the record.

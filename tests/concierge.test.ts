@@ -17,7 +17,7 @@ const spec: JobSpec = {
   output: { kind: "brief", maxWords: 120, alwaysReport: true },
   voice: "terse",
   spendCapUsd: 0.02,
-  model: "auto",
+  model: "auto", tripwire: null,
 };
 
 describe("telegram concierge (real model, owner's key)", () => {

@@ -329,6 +329,16 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
             {CADENCES.map((c) => <option key={c} value={c}>{CADENCE_LABEL[c]}</option>)}
           </select>
         </label>
+        {spec.tripwire && (
+          <div className="rounded-md border border-gold bg-gold/10 px-3 py-2.5 sm:col-span-2">
+            <p className="text-[13px] font-semibold text-ink">Tripwire: {spec.tripwire.metric.replace("_", " ")} of {spec.tripwire.target}, ±{spec.tripwire.thresholdPct}%</p>
+            <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft">Checked for free every 15 minutes. The moonlet wakes and spends credits only when it moves that much; the cadence below is just a heartbeat.</p>
+            <div className="mt-2 flex flex-wrap items-center gap-3">
+              <label className="font-mono text-[11.5px] text-ink-soft">threshold % <input type="number" min={1} max={90} value={spec.tripwire.thresholdPct} onChange={(e) => set("tripwire", { ...spec.tripwire!, thresholdPct: Math.min(90, Math.max(1, Number(e.target.value) || 10)) })} className="ml-1 w-16 rounded border border-ink/15 bg-paper px-2 py-1 text-ink" /></label>
+              <button type="button" onClick={() => set("tripwire", null)} className="font-mono text-[11.5px] text-ink-faint underline hover:text-ink">remove tripwire</button>
+            </div>
+          </div>
+        )}
         <label className="block sm:col-span-2"><span className={label}>Objective</span><textarea value={spec.objective} rows={2} maxLength={400} onChange={(e) => set("objective", e.target.value)} className={`${field} resize-none`} /></label>
         <label className="block sm:col-span-2"><span className={label}>Checks every run (one per line)</span>
           <textarea value={(spec.checks ?? []).join("\n")} rows={Math.max(2, Math.min(6, (spec.checks ?? []).length + 1))} onChange={(e) => set("checks", e.target.value.split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 6))} placeholder={"$ORBIO price, liquidity and volume vs last run\nTransfers in/out of wallet 0x… since last run\nNew pools on Robinhood Chain"} className={`${field} resize-none`} />

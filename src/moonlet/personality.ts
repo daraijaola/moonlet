@@ -71,7 +71,7 @@ const CRAFT: Record<TemplateId, string> = {
 - Produce exactly the deliverable described. If the objective is ambiguous, choose the most literal reading and state the assumption in one line.`,
 };
 
-export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag: number; runAt: string; githubLogin?: string; gmailAddress?: string; memory?: string; openCalls?: Array<{ claim: string; check: string; madeAt: number }>; record?: { hits: number; misses: number } }) {
+export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag: number; runAt: string; githubLogin?: string; gmailAddress?: string; memory?: string; openCalls?: Array<{ claim: string; check: string; madeAt: number }>; record?: { hits: number; misses: number }; tripped?: string }) {
   const checks = spec.checks?.length
     ? ["Checks to perform this run, in order (one `sections` entry each, in the same order):", ...spec.checks.map((c, i) => `  ${i + 1}. ${c}`), "Work through every check before writing. Mark `changed` true only when the finding differs from what you remembered from last run."].join("\n")
     : "";
@@ -85,6 +85,7 @@ export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag:
   const calls = ctx.openCalls?.length
     ? `Open calls from your last run, to score now in \`scored\` (one entry each, same order):\n${ctx.openCalls.map((c, i) => `  ${i + 1}. "${c.claim}" · check: ${c.check} · made ${new Date(c.madeAt).toISOString().slice(0, 16).replace("T", " ")} UTC`).join("\n")}${ctx.record ? `\nYour record so far: ${ctx.record.hits} hit${ctx.record.hits === 1 ? "" : "s"}, ${ctx.record.misses} miss${ctx.record.misses === 1 ? "" : "es"}.` : ""}`
     : spec.template === "inbox" ? "" : "No open calls. If this job watches something that moves, end with one call for next run.";
+  const tripped = ctx.tripped ? `You were woken early by your tripwire: ${ctx.tripped}. Confirm it with your tools, explain what moved and why it matters, and set nothingHappened=false.` : "";
   const gmailLine = ctx.gmailAddress ? `Gmail is connected as ${ctx.gmailAddress}. "My email", "my inbox", "my mail" mean that account; read it with gmail_read, never guess its contents.` : "";
   return [
     CHARACTER,
@@ -99,6 +100,7 @@ export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag:
     `Spend cap this run: $${spec.spendCapUsd.toFixed(3)}.`,
     checks,
     memory,
+    tripped,
     calls,
     github,
     gmailLine,
@@ -125,6 +127,7 @@ Rules:
 - Extract concrete sources: tickers, contract addresses (0x…), URLs, repo slugs (owner/name), channel names. If none are given, leave sources empty rather than inventing them.
 - checks: split the job into 2-5 concrete checks the moonlet performs every run, one line each, specific enough to act on ("$ORBIO price, liquidity, 24h volume vs last run", "transfers in/out of wallet 0x7a3f… since last run", "new pools on Robinhood Chain", "changes on https://…"). A single-purpose job (one summary, one PR) gets no checks. Wallet or address watching needs chain_read; page watching needs web_fetch; token watching needs token_market.
 - output.alwaysReport is false for alerts ("ping me if", "tell me when") and true for briefs and digests.
+- tripwire: for an alert about one number on Robinhood Chain (a token's price, liquidity or 24h volume; a wallet's balance) set tripwire {metric, target, thresholdPct} so a free check every 15 minutes wakes the moonlet the moment it moves that much; use the percent the user said, else 10. Then the cadence is only a heartbeat: pick 24h. null for everything else.
 - spendCapUsd: 0.01 for light briefs on cheap models, 0.03 for research, 0.2 for code work. Never above what the template's cost suggests by more than 3x.
 - voice: copy any tone the user asked for; otherwise "terse, concrete, sources named, no hype".
 - name: a short, calm, moon-adjacent word if they didn't give one: Lumen, Pebble, Tide, Halo, Ember, Dune, Cinder, Vesper.`;

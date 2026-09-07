@@ -106,8 +106,18 @@ export const JobSpec = z.object({
     .enum(MODEL_CHOICES)
     .default("auto")
     .describe("auto picks by bag size. Otherwise a fixed OpenRouter model id."),
+  tripwire: z
+    .object({
+      metric: z.enum(["price", "liquidity", "volume24h", "wallet_balance"]).describe("what to watch for free between runs"),
+      target: z.string().min(1).max(80).describe("token symbol or 0x address for price/liquidity/volume24h; wallet 0x address for wallet_balance"),
+      thresholdPct: z.number().min(1).max(90).describe("percent move that wakes the moonlet early"),
+    })
+    .nullable()
+    .default(null)
+    .describe("Alert jobs only ('ping me if', 'tell me when … moves'): a free check every 15 minutes wakes the moonlet as soon as the metric moves this much; the cadence becomes a heartbeat. null for briefs and digests."),
 });
 export type JobSpec = z.infer<typeof JobSpec>;
+export type Tripwire = NonNullable<JobSpec["tripwire"]>;
 
 export const JobSpecJsonSchema = z.toJSONSchema(JobSpec);
 
