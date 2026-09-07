@@ -317,7 +317,9 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       : m.status === "quiet"
         ? <>Quiet: not enough fuel. It wakes up when the bag earns.</>
         : m.spec.tripwire
-          ? <>Watching {m.spec.tripwire.metric.replace("_", " ")} of {m.spec.tripwire.target} for free every 15 min; wakes on a ±{m.spec.tripwire.thresholdPct}% move. Heartbeat <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>.</>
+          ? m.spec.tripwire.metric === "repo_activity"
+            ? <>Watching {m.spec.tripwire.target} for free every 15 min; wakes on a new push, issue or pull request. Heartbeat <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>.</>
+            : <>Watching {m.spec.tripwire.metric.replace("_", " ")} of {m.spec.tripwire.target} for free every 15 min; wakes on a ±{m.spec.tripwire.thresholdPct}% move. Heartbeat <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>.</>
           : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>;
   const delivered = (
     <span className="flex flex-wrap items-center gap-x-1.5 font-mono text-[11.5px] text-ink-soft">

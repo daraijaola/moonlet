@@ -108,13 +108,13 @@ export const JobSpec = z.object({
     .describe("auto picks by bag size. Otherwise a fixed OpenRouter model id."),
   tripwire: z
     .object({
-      metric: z.enum(["price", "liquidity", "volume24h", "wallet_balance"]).describe("what to watch for free between runs"),
-      target: z.string().min(1).max(80).describe("token symbol or 0x address for price/liquidity/volume24h; wallet 0x address for wallet_balance"),
-      thresholdPct: z.number().min(1).max(90).describe("percent move that wakes the moonlet early"),
+      metric: z.enum(["price", "liquidity", "volume24h", "wallet_balance", "repo_activity"]).describe("what to watch for free between runs"),
+      target: z.string().min(1).max(80).describe("token symbol or 0x address for price/liquidity/volume24h; wallet 0x address for wallet_balance; owner/name for repo_activity"),
+      thresholdPct: z.number().min(1).max(90).describe("percent move that wakes the moonlet early (ignored for repo_activity: any new push, issue or pull request wakes it)"),
     })
     .nullable()
     .default(null)
-    .describe("Alert jobs only ('ping me if', 'tell me when … moves'): a free check every 15 minutes wakes the moonlet as soon as the metric moves this much; the cadence becomes a heartbeat. null for briefs and digests."),
+    .describe("Watch jobs: a free check every 15 minutes wakes the moonlet as soon as the number moves this much, or the repo has a new push, issue or PR; the cadence becomes a heartbeat. null for inbox jobs, digests of pages, and one-off jobs."),
 });
 export type JobSpec = z.infer<typeof JobSpec>;
 export type Tripwire = NonNullable<JobSpec["tripwire"]>;

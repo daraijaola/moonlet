@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { rmSync } from "node:fs";
 import * as store from "@/moonlet/store";
-import { probeTripwires, readMetric, PROBE_EVERY_MS } from "@/moonlet/tripwire";
+import { probeTripwires, readMetric, readRepoActivity, PROBE_EVERY_MS } from "@/moonlet/tripwire";
 import { fallbackSpec } from "@/moonlet/compile";
 import { runOne } from "@/moonlet/scheduler";
 import { buildInstructions } from "@/moonlet/personality";
@@ -102,5 +102,38 @@ describe("tripwire: the cheap alert lane", () => {
     const spec = fallbackSpec({ sentence: "Ping me if $ORBIO liquidity drops 10%", template: "market-watch" });
     const text = buildInstructions(spec, { ownerShort: "0x…", bag: 1_000_000, runAt: "now", tripped: "liquidity of ORBIO moved -12.0% ($460,000 → $404,800), past your 10% line" });
     expect(text).toContain("woken early by your tripwire: liquidity of ORBIO moved -12.0%");
+  });
+
+  it("repo tripwire: the fallback compiler sets it for a repo watch; a new push wakes the moonlet, a quiet day does not", async () => {
+    const s = fallbackSpec({ sentence: "Every night, summarise the day's commits and open issues in daraijaola/moonlet", template: "repo-mechanic" });
+    expect(s.tripwire).toEqual({ metric: "repo_activity", target: "daraijaola/moonlet", thresholdPct: 1 });
+    expect(fallbackSpec({ sentence: "Every night, summarise https://www.orbio.so/build", template: "digest" }).tripwire).toBeNull();
+
+    const gh = { pushed: "2026-09-07T06:00:00Z", issue: "2026-09-07T05:00:00Z", calls: 0 };
+    const f: typeof fetch = async (u, init) => {
+      const url = String(u);
+      if (!url.includes("api.github.com")) return new Response("{}", { status: 404 });
+      gh.calls++;
+      if ((init?.headers as Record<string, string>)?.authorization !== "Bearer ghp_x") return new Response("{}", { status: 404 });
+      if (url.endsWith("/repos/daraijaola/moonlet")) return Response.json({ pushed_at: gh.pushed });
+      return Response.json([{ updated_at: gh.issue }]);
+    };
+    const owner = "0x00000000000000000000000000000000000000fc";
+    await store.setConnection(owner, "github", "@dara", { token: "ghp_x", login: "dara" });
+    expect(await readRepoActivity("daraijaola/moonlet", "ghp_x", f)).toBe(Date.parse("2026-09-07T06:00:00Z"));
+    expect(await readRepoActivity("not a repo", "ghp_x", f)).toBeNull();
+
+    await store.setOwnerBag(owner, 1_250_000);
+    const t0 = Date.now();
+    await store.insertMoonlet({ id: "m_rtw", owner, name: "Micheal", spec: s, status: "idle", delivery: {}, key: null, cadence: "24h", perRunCapUsd: 0.02, earnPerDayUsd: 30, burnPerDayUsd: 0.02, nextRunAt: t0 + 86_400_000, createdAt: t0 });
+    await probeTripwires(t0, f);
+    expect((await store.getMoonlet("m_rtw"))!.watch!.value).toBe(Date.parse("2026-09-07T06:00:00Z"));
+    await probeTripwires(t0 + PROBE_EVERY_MS, f);
+    expect((await store.getMoonlet("m_rtw"))!.nextRunAt).toBe(t0 + 86_400_000);
+    gh.issue = "2026-09-07T06:30:00Z";
+    const tripped = await probeTripwires(t0 + 2 * PROBE_EVERY_MS, f);
+    expect(tripped.map((t) => t.id)).toEqual(["m_rtw"]);
+    expect(tripped[0].detail).toMatch(/daraijaola\/moonlet has new activity/);
+    expect((await store.getMoonlet("m_rtw"))!.nextRunAt).toBe(t0 + 2 * PROBE_EVERY_MS);
   });
 });

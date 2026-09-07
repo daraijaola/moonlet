@@ -57,8 +57,9 @@ export function fallbackSpec(input: { sentence: string; template: TemplateId; na
   const alert = /\b(ping|alert|tell me when|notify me|if .+ moves?|when .+ moves?)\b/i.test(s);
   const pct = Number(/(\d{1,2})\s*%/.exec(s)?.[1] ?? 10);
   // Only a named number gets a tripwire; "when it moves" alone is too loose (a wallet moving tokens is activity, not a metric).
-  const metric = /liquidity/i.test(s) ? "liquidity" : /volume/i.test(s) ? "volume24h" : /balance/i.test(s) && /0x[0-9a-fA-F]{40}/.test(s) ? "wallet_balance" : /price/i.test(s) ? "price" : null;
-  const target = metric === "wallet_balance" ? /0x[0-9a-fA-F]{40}/.exec(s)?.[0] : (/\$([A-Z]{2,10})\b/.exec(s)?.[1] ?? (/0x[0-9a-fA-F]{40}/.exec(s)?.[0] ?? (/\bORBIO\b/i.test(s) ? "ORBIO" : undefined)));
+  const repo = /\b([a-z0-9-]+\/[a-z0-9._-]+)\b/i.exec(s.replace(/https?:\/\/\S+/g, ""))?.[1];
+  const metric = /liquidity/i.test(s) ? "liquidity" : /volume/i.test(s) ? "volume24h" : /balance/i.test(s) && /0x[0-9a-fA-F]{40}/.test(s) ? "wallet_balance" : /price/i.test(s) ? "price" : repo && input.template === "repo-mechanic" ? "repo_activity" : null;
+  const target = metric === "repo_activity" ? repo : metric === "wallet_balance" ? /0x[0-9a-fA-F]{40}/.exec(s)?.[0] : (/\$([A-Z]{2,10})\b/.exec(s)?.[1] ?? (/0x[0-9a-fA-F]{40}/.exec(s)?.[0] ?? (/\bORBIO\b/i.test(s) ? "ORBIO" : undefined)));
   return {
     name: input.name?.trim() || "Lumen",
     template: input.template,
@@ -71,7 +72,7 @@ export function fallbackSpec(input: { sentence: string; template: TemplateId; na
     voice: "terse, concrete, sources named, no hype",
     spendCapUsd: d.costPerRunUsd,
     model: "auto",
-    tripwire: alert && metric && target ? { metric, target, thresholdPct: Math.min(90, Math.max(1, pct)) } : null,
+    tripwire: metric === "repo_activity" && target ? { metric, target, thresholdPct: 1 } : alert && metric && target ? { metric, target, thresholdPct: Math.min(90, Math.max(1, pct)) } : null,
   };
 }
 

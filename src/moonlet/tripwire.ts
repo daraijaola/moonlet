@@ -14,7 +14,23 @@ import type { Tripwire } from "./spec";
 export const PROBE_EVERY_MS = 15 * 60_000;
 const DEXSCREENER = "https://api.dexscreener.com";
 
-export async function readMetric(t: Tripwire, fetchImpl: typeof fetch = fetch): Promise<number | null> {
+/** Repo activity as one number: the newest of (last push, last issue/PR update), in ms. Public repos need no token; a connected owner's token covers private ones. */
+export async function readRepoActivity(repo: string, token: string | undefined, fetchImpl: typeof fetch = fetch): Promise<number | null> {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(repo)) return null;
+  const headers: Record<string, string> = { accept: "application/vnd.github+json", "user-agent": "moonlet", ...(token ? { authorization: `Bearer ${token}` } : {}) };
+  const [repoRes, issuesRes] = await Promise.all([
+    fetchImpl(`https://api.github.com/repos/${repo}`, { headers, signal: AbortSignal.timeout(10_000) }),
+    fetchImpl(`https://api.github.com/repos/${repo}/issues?state=all&sort=updated&direction=desc&per_page=1`, { headers, signal: AbortSignal.timeout(10_000) }),
+  ]);
+  if (!repoRes.ok) return null;
+  const r = (await repoRes.json().catch(() => ({}))) as { pushed_at?: string };
+  const issues = issuesRes.ok ? ((await issuesRes.json().catch(() => [])) as Array<{ updated_at?: string }>) : [];
+  const stamps = [r.pushed_at, issues[0]?.updated_at].filter(Boolean).map((s) => Date.parse(s as string));
+  return stamps.length ? Math.max(...stamps) : null;
+}
+
+export async function readMetric(t: Tripwire, fetchImpl: typeof fetch = fetch, token?: string): Promise<number | null> {
+  if (t.metric === "repo_activity") return readRepoActivity(t.target, token, fetchImpl);
   if (t.metric === "wallet_balance") {
     const r = await fetchImpl(RH_RPC, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getBalance", params: [t.target, "latest"] }), signal: AbortSignal.timeout(10_000) });
     const j = (await r.json().catch(() => ({}))) as { result?: string };
@@ -32,6 +48,7 @@ export async function readMetric(t: Tripwire, fetchImpl: typeof fetch = fetch): 
 }
 
 export const describeTrip = (t: Tripwire, from: number, to: number) => {
+  if (t.metric === "repo_activity") return `${t.target} has new activity (a push, issue or pull request at ${new Date(to).toISOString().slice(0, 16).replace("T", " ")} UTC)`;
   const pct = ((to - from) / from) * 100;
   const fmt = (v: number) => (t.metric === "price" ? `$${v.toPrecision(4)}` : t.metric === "wallet_balance" ? `${v.toFixed(4)} ETH` : `$${Math.round(v).toLocaleString()}`);
   return `${t.metric.replace("_", " ")} of ${t.target} moved ${pct > 0 ? "+" : ""}${pct.toFixed(1)}% (${fmt(from)} → ${fmt(to)}), past your ${t.thresholdPct}% line`;
@@ -44,15 +61,16 @@ export async function probeTripwires(now = Date.now(), fetchImpl: typeof fetch =
     const t = m.spec.tripwire;
     if (!t || m.status !== "idle" || m.nextRunAt <= now) continue;
     if (m.watch && now - m.watch.at < PROBE_EVERY_MS) continue;
-    const value = await readMetric(t, fetchImpl).catch(() => null);
+    const gh = t.metric === "repo_activity" ? await store.getConnection<{ token: string }>(m.owner, "github") : null;
+    const value = await readMetric(t, fetchImpl, gh?.data.token).catch(() => null);
     if (value == null) continue;
     if (!m.watch || m.watch.tripped) {
       // First reading (or the first after a trip): a baseline, nothing to compare against yet.
       await store.updateMoonlet(m.id, { watch: { value, at: now } });
       continue;
     }
-    const movedPct = Math.abs((value - m.watch.value) / m.watch.value) * 100;
-    if (movedPct < t.thresholdPct) {
+    const moved = t.metric === "repo_activity" ? value > m.watch.value : Math.abs((value - m.watch.value) / m.watch.value) * 100 >= t.thresholdPct;
+    if (!moved) {
       await store.updateMoonlet(m.id, { watch: { value: m.watch.value, at: now } });
       continue;
     }

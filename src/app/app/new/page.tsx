@@ -331,10 +331,10 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
         </label>
         {spec.tripwire && (
           <div className="rounded-md border border-gold bg-gold/10 px-3 py-2.5 sm:col-span-2">
-            <p className="text-[13px] font-semibold text-ink">Tripwire: {spec.tripwire.metric.replace("_", " ")} of {spec.tripwire.target}, ±{spec.tripwire.thresholdPct}%</p>
-            <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft">Checked for free every 15 minutes. The moonlet wakes and spends credits only when it moves that much; the cadence below is just a heartbeat.</p>
+            <p className="text-[13px] font-semibold text-ink">{spec.tripwire.metric === "repo_activity" ? `Tripwire: new activity on ${spec.tripwire.target}` : `Tripwire: ${spec.tripwire.metric.replace("_", " ")} of ${spec.tripwire.target}, ±${spec.tripwire.thresholdPct}%`}</p>
+            <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft">{spec.tripwire.metric === "repo_activity" ? "Checked for free every 15 minutes. The moonlet wakes and spends credits only when there is a new push, issue or pull request; quiet days cost nothing." : "Checked for free every 15 minutes. The moonlet wakes and spends credits only when it moves that much; the cadence below is just a heartbeat."}</p>
             <div className="mt-2 flex flex-wrap items-center gap-3">
-              <label className="font-mono text-[11.5px] text-ink-soft">threshold % <input type="number" min={1} max={90} value={spec.tripwire.thresholdPct} onChange={(e) => set("tripwire", { ...spec.tripwire!, thresholdPct: Math.min(90, Math.max(1, Number(e.target.value) || 10)) })} className="ml-1 w-16 rounded border border-ink/15 bg-paper px-2 py-1 text-ink" /></label>
+              {spec.tripwire.metric !== "repo_activity" && <label className="font-mono text-[11.5px] text-ink-soft">threshold % <input type="number" min={1} max={90} value={spec.tripwire.thresholdPct} onChange={(e) => set("tripwire", { ...spec.tripwire!, thresholdPct: Math.min(90, Math.max(1, Number(e.target.value) || 10)) })} className="ml-1 w-16 rounded border border-ink/15 bg-paper px-2 py-1 text-ink" /></label>}
               <button type="button" onClick={() => set("tripwire", null)} className="font-mono text-[11.5px] text-ink-faint underline hover:text-ink">remove tripwire</button>
             </div>
           </div>
