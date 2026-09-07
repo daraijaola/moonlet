@@ -209,8 +209,17 @@ describe("gmail connection", () => {
     const quiet = await runOne("m_postie", { fetch: fakeGoogle().fetchImpl, anchor: null, bagOf: async () => 1_250_000, orbioFor: async () => ({} as never), run: async () => { throw new Error("must not run"); } });
     expect(quiet.status).toBe("quiet");
     expect((await store.listRuns("m_postie", 1))[0].error).toMatch(/Gmail isn't connected/);
+    // An hour later, still no Gmail: no second identical run row.
+    await store.updateMoonlet("m_postie", { nextRunAt: now - 1000 });
+    await store.claimForRun("m_postie", now);
+    await runOne("m_postie", { fetch: fakeGoogle().fetchImpl, anchor: null, bagOf: async () => 1_250_000, orbioFor: async () => ({} as never), run: async () => { throw new Error("must not run"); } });
+    expect((await store.listRuns("m_postie")).length).toBe(1);
 
+    // Connecting Gmail wakes it for a run now instead of waiting out the hour.
     await store.setConnection(other, "gmail", "o@gmail.com", { email: "o@gmail.com", refreshToken: "1//r", accessToken: "ya29.o", expiresAt: now + 3_600_000, scope: "gmail.modify" } satisfies gmail.GmailConn);
+    const woke = await store.getMoonlet("m_postie");
+    expect(woke?.status).toBe("idle");
+    expect(woke!.nextRunAt).toBeLessThanOrEqual(Date.now());
     const g = fakeGoogle();
     await store.updateMoonlet("m_postie", { status: "idle", nextRunAt: now - 1000 });
     await store.claimForRun("m_postie", now);

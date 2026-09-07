@@ -501,6 +501,14 @@ export async function setConnection(owner: string, kind: ConnectionKind, label: 
     sql: `INSERT OR REPLACE INTO connections(owner,kind,label,data,created_at) VALUES(?,?,?,?,?)`,
     args: [owner.toLowerCase(), kind, label, seal(JSON.stringify(data)), Date.now()],
   });
+  // A moonlet parked because this connection was missing gets its next run now instead of waiting out the hour.
+  if (kind === "github" || kind === "gmail") {
+    for (const m of await listMoonlets(owner)) {
+      if (m.status !== "quiet" || !m.spec.tools.some((t) => (kind === "gmail" ? t.startsWith("gmail_") : t === "github_read" || t === "open_pull_request" || t === "comment_on_issue" || t === "open_issue"))) continue;
+      const last = (await listRuns(m.id, 1))[0];
+      if (last?.status === "quiet" && /isn't connected/.test(last.error ?? "")) await updateMoonlet(m.id, { status: "idle", nextRunAt: Date.now() });
+    }
+  }
 }
 
 export async function getConnection<T = Record<string, unknown>>(owner: string, kind: ConnectionKind): Promise<ConnectionRow<T> | null> {

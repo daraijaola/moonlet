@@ -225,14 +225,10 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   }
   if (!ghConn && m.spec.tools.some((t) => t === "github_read" || t === "open_pull_request" || t === "comment_on_issue" || t === "open_issue") && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read")) {
     // A repo job without GitHub access has nothing to read; park it rather than burn credits reporting 404s.
-    await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
-    await recordRun(m.id, now(), { status: "quiet", error: "GitHub isn't connected; reconnect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "GitHub isn't connected. Reconnect it under Connections and this moonlet resumes on its own." }] });
-    return { status: "quiet" };
+    return parkForConnection(m, "GitHub isn't connected; reconnect it under Connections and this moonlet resumes on its own", now);
   }
   if (!gmConn && m.spec.tools.some((t) => t.startsWith("gmail_")) && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read" || t === "web_fetch" || t === "web_search")) {
-    await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
-    await recordRun(m.id, now(), { status: "quiet", error: "Gmail isn't connected; connect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "Gmail isn't connected. Connect it under Connections and this moonlet resumes on its own." }] });
-    return { status: "quiet" };
+    return parkForConnection(m, "Gmail isn't connected; connect it under Connections and this moonlet resumes on its own", now);
   }
   const deliver: DeliverySink | undefined =
     deps.deliver ??
@@ -355,6 +351,16 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   }
 
   return { status: result.status, error: result.error, runId, txHash, outputHash: result.outputHash };
+}
+
+/** No connection, nothing to read: park quietly and check back hourly, but write the reason once rather than one identical run per hour. */
+async function parkForConnection(m: store.MoonletRow, reason: string, now: () => number) {
+  await store.updateMoonlet(m.id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
+  const last = (await store.listRuns(m.id, 1))[0];
+  if (!(last?.status === "quiet" && last.error === reason)) {
+    await recordRun(m.id, now(), { status: "quiet", error: reason, model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: `${reason.replace(/; (\w)/, (_, c: string) => `. ${c.toUpperCase()}`)}.` }] });
+  }
+  return { status: "quiet" };
 }
 
 async function recordRun(

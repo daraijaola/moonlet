@@ -87,7 +87,8 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
   for (let step = 0; step < o.maxSteps; step++) {
     // Cost is only known after a call. Each call re-sends the whole conversation, so the next one costs at least as much as the
     // last; when that projection would cross the cap, stop using tools now instead of discovering the overshoot afterwards.
-    const lastStep = step === o.maxSteps - 1 || cost >= o.maxCostUsd * 0.6 || (lastCallCost > 0 && cost + lastCallCost * 1.25 >= o.maxCostUsd);
+    // The final answer re-sends the whole conversation too, so another tool round only fits if roughly two more calls do.
+    const lastStep = step === o.maxSteps - 1 || cost >= o.maxCostUsd * 0.6 || (lastCallCost > 0 && cost + lastCallCost * 2.3 >= o.maxCostUsd);
     const body: Record<string, unknown> = {
       model: models[0],
       models: models.length > 1 ? models : undefined,
@@ -117,6 +118,8 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
     calls++;
     lastCallCost = j.usage?.cost ?? 0;
     cost += lastCallCost;
+    const promptTokens = j.usage?.prompt_tokens ?? 0;
+    const perTokenUsd = promptTokens + (j.usage?.completion_tokens ?? 0) > 0 ? lastCallCost / (promptTokens + (j.usage?.completion_tokens ?? 0)) : 0;
     const msg = j.choices?.[0]?.message;
     if (!msg) throw new ModelHttpError(502, "empty completion");
     usedModel = (j as { model?: string }).model ?? usedModel;
@@ -148,8 +151,10 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
         }
       }
       o.onTool?.(tc.function.name, safeJson(tc.function.arguments), result);
-      // Tool output is the expensive part of the next call; tighten it as the budget drains and for small caps.
-      const roomChars = cost >= o.maxCostUsd * 0.4 ? 8_000 : o.maxCostUsd < 0.03 ? 14_000 : 30_000;
+      // Tool output is the expensive part of every later call, and the final answer re-sends all of it. Size the room from what this
+      // model actually charged per token so that one more tool round plus the answer still fit under the cap.
+      const affordableTokens = perTokenUsd > 0 ? Math.max(0, (o.maxCostUsd - cost) / (2 * perTokenUsd) - promptTokens) : Infinity;
+      const roomChars = Math.round(Math.min(30_000, Math.max(1_500, (affordableTokens * 3.5) / msg.tool_calls.length)));
       messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result).slice(0, roomChars) });
     }
     if (cost >= o.maxCostUsd) {

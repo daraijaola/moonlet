@@ -1,4 +1,4 @@
-import { CADENCE_MS, type Cadence, type JobSpec, TEMPLATE_DEFAULTS } from "./spec";
+import { CADENCE_MS, type Cadence, type JobSpec, recommendedCapUsd } from "./spec";
 
 /**
  * Budgeting to income. A moonlet may only spend what its owner's bag earns,
@@ -42,7 +42,8 @@ export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPer
     return { cadence: spec.cadence, perRunCapUsd: 0, burnPerDayUsd: 0, earnPerDayUsd, quiet: true, reason: `bag below ${HOLDER_FLOOR}` };
   }
   const spendable = spendablePerDay(earnPerDayUsd);
-  const floorCap = Math.min(TEMPLATE_DEFAULTS[spec.template].costPerRunUsd, spec.spendCapUsd);
+  // Templates were costed on Flash; a heavier model needs a bigger cap to finish, so slow the cadence before starving the run.
+  const floorCap = Math.min(recommendedCapUsd(spec.template, spec.model ?? "auto"), spec.spendCapUsd);
   const order: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
   let cadence = spec.cadence;
   for (let i = order.indexOf(spec.cadence); i < order.length; i++) {
