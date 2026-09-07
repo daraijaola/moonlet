@@ -50,6 +50,14 @@ export type ToolId = (typeof TOOL_IDS)[number];
 export const MODEL_CHOICES = ["auto", "google/gemini-3.8-flash", "openai/gpt-5.6-terra", "anthropic/claude-sonnet-5"] as const;
 export type ModelChoice = (typeof MODEL_CHOICES)[number];
 
+/** How much more a run costs on each model than on Flash, which the template costs assume. Auto is planned at the middle tier. */
+export const MODEL_COST_MULT: Record<ModelChoice, number> = { auto: 2.5, "google/gemini-3.8-flash": 1, "openai/gpt-5.6-terra": 2.5, "anthropic/claude-sonnet-5": 6 };
+
+/** A per-run cap that lets this template finish on this model. Templates were costed on Flash; heavier models need room. */
+export function recommendedCapUsd(template: TemplateId, model: ModelChoice = "auto") {
+  return Math.round(TEMPLATE_DEFAULTS[template].costPerRunUsd * MODEL_COST_MULT[model] * 1000) / 1000;
+}
+
 export const Cadence = z.enum(["15m", "1h", "4h", "6h", "12h", "24h", "7d"]);
 export type Cadence = z.infer<typeof Cadence>;
 

@@ -68,6 +68,9 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
               ))}
             </ul>
           )}
+          {run.keyEvents.some((e) => e.kind === "budget") && (
+            <p className="mt-2 rounded-md border border-gold bg-gold/10 px-2.5 py-1.5 font-mono text-[11.5px] text-ink">⚠ Cut short by the spend cap: the report covers what it managed. Raise the cap under Edit job, or choose a cheaper model.</p>
+          )}
           {open && run.keyEvents.length > 0 && (
             <ul className="mt-2 space-y-0.5 font-mono text-[11.5px] text-ink-soft">
               {run.keyEvents.map((e, i) => (

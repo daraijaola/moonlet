@@ -38,7 +38,7 @@ export type MoonletState = {
 };
 
 export type TraceEvent = { at: number; tool: string; summary: string };
-export type KeyEvent = { kind: "claimed" | "topped_up" | "rotated" | "quiet"; detail: string; amountUsd?: number };
+export type KeyEvent = { kind: "claimed" | "topped_up" | "rotated" | "quiet" | "budget"; detail: string; amountUsd?: number };
 
 export type RunResult = {
   ok: boolean;
@@ -114,6 +114,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       maxSteps: 8,
       fetch: deps.fetch,
     });
+    if (r.stoppedForBudget) keyEvents.push({ kind: "budget", detail: `stopped early: the $${p.perRunCapUsd.toFixed(3)} cap ran out before the job was finished. Raise the cap on the moonlet page or pick a cheaper model`, amountUsd: r.costUsd });
     return { text: r.text, cost: r.costUsd, calls: r.modelCalls };
   };
 
@@ -125,7 +126,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
         return await attempt(k);
       } catch (e) {
         lastErr = e;
-        if (!isRateLimited(e)) throw e;
+        if (!isRateLimited(e) && !isTransient(e)) throw e;
       }
     }
     throw lastErr;
@@ -217,6 +218,13 @@ async function ensureFunded(key: KeyState, p: Plan, orbio: OrbioClient, events: 
 function httpStatus(e: unknown) {
   if (e instanceof ModelHttpError) return e.status;
   return (e as { statusCode?: number })?.statusCode ?? (e as { status?: number })?.status;
+}
+
+/** Upstream hiccups (a provider 5xx, OpenRouter's "Provider returned error", a timeout) that a retry usually clears. */
+function isTransient(e: unknown) {
+  const s = httpStatus(e);
+  const msg = String((e as Error)?.message ?? e).toLowerCase();
+  return (typeof s === "number" && s >= 500) || /provider returned error|overloaded|timeout|timed out|econnreset|fetch failed|empty completion/.test(msg);
 }
 
 function isRateLimited(e: unknown) {

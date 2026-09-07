@@ -37,7 +37,7 @@ type ToolCall = { id: string; type: "function"; function: { name: string; argume
 type Completion = {
   choices?: Array<{ message: { content: string | null; tool_calls?: ToolCall[] }; finish_reason?: string }>;
   usage?: { cost?: number; prompt_tokens?: number; completion_tokens?: number };
-  error?: { message?: string; code?: string | number };
+  error?: { message?: string; code?: string | number; metadata?: { raw?: string; provider_name?: string } };
 };
 
 export type RunLoopOptions = {
@@ -59,7 +59,7 @@ export type RunLoopOptions = {
   onTool?: (name: string, args: unknown, result: unknown) => void;
 };
 
-export type RunLoopResult = { text: string; costUsd: number; modelCalls: number; model: string };
+export type RunLoopResult = { text: string; costUsd: number; modelCalls: number; model: string; stoppedForBudget: boolean };
 
 export class ModelHttpError extends Error {
   constructor(public status: number, message: string) {
@@ -83,7 +83,7 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
   const messages: ChatMessage[] = [{ role: "system", content: o.instructions }, { role: "user", content: o.input }];
   const models = Array.from(new Set([o.model, ...(o.models ?? [])]));
 
-  let cost = 0, calls = 0, usedModel = o.model, lastCallCost = 0;
+  let cost = 0, calls = 0, usedModel = o.model, lastCallCost = 0, stoppedForBudget = false;
   for (let step = 0; step < o.maxSteps; step++) {
     // Cost is only known after a call. Each call re-sends the whole conversation, so the next one costs at least as much as the
     // last; when that projection would cross the cap, stop using tools now instead of discovering the overshoot afterwards.
@@ -97,7 +97,10 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
       ...(o.webSearch && !lastStep && step === 0 ? { plugins: [{ id: "web", max_results: 2 }] } : {}),
       ...(o.jsonSchema && (lastStep || !tools.length) ? { response_format: { type: "json_schema", json_schema: { name: o.jsonSchema.name, strict: true, schema: o.jsonSchema.schema } } } : {}),
     };
-    if (lastStep && tools.length) messages.push({ role: "user", content: "Stop using tools. Answer now with the final structured output." });
+    if (lastStep && tools.length) {
+      stoppedForBudget = step < o.maxSteps - 1;
+      messages.push({ role: "user", content: stoppedForBudget ? "The budget for this run is nearly spent. Stop using tools. Answer now with the final structured output from what you have, and say plainly in the summary what you did not get to." : "Stop using tools. Answer now with the final structured output." });
+    }
 
     const res = await f(url, {
       method: "POST",
@@ -107,7 +110,8 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
     });
     const j = (await res.json().catch(() => ({}))) as Completion;
     if (!res.ok || j.error) {
-      const msg = j.error?.message ?? `HTTP ${res.status}`;
+      const raw = j.error?.metadata?.raw ? ` (${j.error.metadata.provider_name ?? "provider"}: ${String(j.error.metadata.raw).slice(0, 300)})` : "";
+      const msg = (j.error?.message ?? `HTTP ${res.status}`) + raw;
       throw new ModelHttpError(res.status, msg);
     }
     calls++;
@@ -117,7 +121,7 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
     if (!msg) throw new ModelHttpError(502, "empty completion");
     usedModel = (j as { model?: string }).model ?? usedModel;
 
-    if (!msg.tool_calls?.length) return { text: msg.content ?? "", costUsd: cost, modelCalls: calls, model: usedModel };
+    if (!msg.tool_calls?.length) return { text: msg.content ?? "", costUsd: cost, modelCalls: calls, model: usedModel, stoppedForBudget };
 
     messages.push({ role: "assistant", content: msg.content, tool_calls: msg.tool_calls });
     for (const tc of msg.tool_calls) {

@@ -1,7 +1,7 @@
 import { buildCompilerInstructions } from "./personality";
 import { pickModel } from "./model";
 import { runLoop } from "./llm";
-import { JobSpec, JobSpecJsonSchema, TEMPLATE_DEFAULTS, type Cadence, type TemplateId } from "./spec";
+import { JobSpec, JobSpecJsonSchema, TEMPLATE_DEFAULTS, recommendedCapUsd, type Cadence, type TemplateId } from "./spec";
 
 /**
  * One sentence in, a JobSpec out. Structured output with a strict schema; the
@@ -45,7 +45,7 @@ function withDefaults(spec: JobSpec, input: { sentence: string; template: Templa
     name: input.name?.trim() || spec.name,
     tools: Array.from(new Set([...(spec.tools.length ? spec.tools : d.tools), "deliver" as const])),
     checks: (spec.checks ?? []).slice(0, 6),
-    spendCapUsd: Math.min(Math.max(spec.spendCapUsd, d.costPerRunUsd), d.costPerRunUsd * 3),
+    spendCapUsd: Math.min(Math.max(spec.spendCapUsd, recommendedCapUsd(input.template, spec.model ?? "auto")), d.costPerRunUsd * 3 * 6),
     model: spec.model ?? "auto",
   };
 }

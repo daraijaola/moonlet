@@ -6,7 +6,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, fmtBag, fmtUsd, type Connections, type OrbioStatus } from "@/lib/api";
 import { plan, HOLDER_FLOOR } from "@/moonlet/budget";
-import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
+import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, recommendedCapUsd, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
 import { FuelGauge } from "@/components/fuel-gauge";
 import { CADENCE_LABEL, MODEL_LABEL, TEMPLATE_BLURB, TEMPLATE_EXAMPLE, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
 import { GitHubMark, OpenRouterMark, TelegramMark, VENDOR_MARK, XMark, DiscordMark, GmailMark } from "@/components/marks";
@@ -358,7 +358,7 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
               const Mark = VENDOR_MARK[m.vendor];
               const on = (spec.model ?? "auto") === id;
               return (
-                <button key={id} type="button" onClick={() => set("model", id as ModelChoice)} className={`flex min-w-0 items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${on ? "border-ink bg-paper" : "border-ink/10 hover:border-ink/30"}`}>
+                <button key={id} type="button" onClick={() => onChange({ ...spec, model: id as ModelChoice, spendCapUsd: Math.max(spec.spendCapUsd, recommendedCapUsd(spec.template, id as ModelChoice)) })} className={`flex min-w-0 items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${on ? "border-ink bg-paper" : "border-ink/10 hover:border-ink/30"}`}>
                   <Mark size={18} className={on ? "text-ink" : "text-ink-soft"} />
                   <span className="min-w-0 flex-1">
                     <span className="block text-[13.5px] font-semibold text-ink">{m.name}</span>
@@ -380,7 +380,16 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
           <span className="text-[13px] text-ink">Stay silent when nothing happened <span className="font-mono text-[11px] text-ink-soft">(alerts)</span></span>
         </label>
         <label className="block"><span className={label}>Voice</span><input value={spec.voice} maxLength={160} onChange={(e) => set("voice", e.target.value)} className={field} /></label>
-        <label className="block"><span className={label}>Spend cap per run (USD)</span><input type="number" step={0.001} min={0.001} max={5} value={spec.spendCapUsd} onChange={(e) => set("spendCapUsd", Math.max(0.001, Number(e.target.value) || 0.01))} className={field} /></label>
+        <label className="block"><span className={label}>Spend cap per run (USD)</span><input type="number" step={0.001} min={0.001} max={5} value={spec.spendCapUsd} onChange={(e) => set("spendCapUsd", Math.max(0.001, Number(e.target.value) || 0.01))} className={field} />
+          {spec.spendCapUsd < recommendedCapUsd(spec.template, spec.model ?? "auto") ? (
+            <span className="mt-1 block font-mono text-[11px] text-red-800">
+              {MODEL_LABEL[spec.model ?? "auto"].name} on a {TEMPLATE_LABEL[spec.template].toLowerCase()} job usually needs ~{fmtUsd(recommendedCapUsd(spec.template, spec.model ?? "auto"), 3)} to finish; at {fmtUsd(spec.spendCapUsd, 3)} it will stop early and report what it managed.{" "}
+              <button type="button" onClick={() => set("spendCapUsd", recommendedCapUsd(spec.template, spec.model ?? "auto"))} className="underline">Set to {fmtUsd(recommendedCapUsd(spec.template, spec.model ?? "auto"), 3)}</button>
+            </span>
+          ) : (
+            <span className="mt-1 block font-mono text-[11px] text-ink-faint">Hard ceiling per run. If it is reached mid-job the moonlet stops, reports what it did, and says what it skipped.</span>
+          )}
+        </label>
       </div>
     </>
   );
