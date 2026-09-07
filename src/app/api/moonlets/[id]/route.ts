@@ -33,8 +33,9 @@ export async function PATCH(req: Request, { params }: Ctx) {
   const body = Patch.safeParse(await req.json().catch(() => null));
   if (!body.success) return bad(body.error.message);
 
-  if (body.data.action === "pause") await store.updateMoonlet(id, { status: "paused" });
-  if (body.data.action === "resume") await store.updateMoonlet(id, { status: "idle", nextRunAt: Date.now() });
+  // Pause and resume never touch a run in flight: flipping a running moonlet to idle would let a second run start on top of it.
+  if (body.data.action === "pause") await store.setStatusIfNotRunning(id, "paused");
+  if (body.data.action === "resume") await store.setStatusIfNotRunning(id, "idle", Date.now());
   if (body.data.action === "rotate_key") {
     const orbio = await orbioFor(owner);
     if (!orbio) return bad("Orbio not connected", 409);

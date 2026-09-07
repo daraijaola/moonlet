@@ -349,6 +349,21 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
   await db().execute({ sql: `UPDATE moonlets SET ${sets.join(",")} WHERE id=?`, args });
 }
 
+/** Pause / resume, refused while a run is in flight (the run's own finish would otherwise overwrite or be overwritten). */
+export async function setStatusIfNotRunning(id: string, status: "paused" | "idle", nextRunAt?: number) {
+  const r = await db().execute({
+    sql: nextRunAt == null ? `UPDATE moonlets SET status=? WHERE id=? AND status != 'running' AND status != 'deleted'` : `UPDATE moonlets SET status=?, next_run_at=? WHERE id=? AND status != 'running' AND status != 'deleted'`,
+    args: nextRunAt == null ? [status, id] : [status, nextRunAt, id],
+  });
+  return r.rowsAffected === 1;
+}
+
+/** "Run now": claim immediately, but only if nothing else is running it. One statement, so two buttons can't both win. */
+export async function claimNow(id: string, now = Date.now()) {
+  const r = await db().execute({ sql: `UPDATE moonlets SET status='running', next_run_at=? WHERE id=? AND status IN ('idle','quiet','paused')`, args: [now, id] });
+  return r.rowsAffected === 1;
+}
+
 /** A moonlet left in "running" for too long (crashed worker) goes back to idle. */
 export async function releaseStale(olderThan: number) {
   await migrate();

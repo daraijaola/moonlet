@@ -96,9 +96,7 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
       execute: async ({ moonlet }) => {
         const m = byName(moonlet);
         if (!m) return { error: "no such moonlet" };
-        if (m.status === "running") return { started: false, note: "already running" };
-        await store.updateMoonlet(m.id, { status: "idle", nextRunAt: Date.now() });
-        if (!(await store.claimForRun(m.id))) return { started: false, note: "could not start right now" };
+        if (!(await store.claimNow(m.id))) return { started: false, note: "already running" };
         void (opts.runNow ?? ((id: string) => runOne(id, { fetch: opts.fetch })))(m.id);
         return { started: true, moonlet: m.name };
       },
@@ -155,7 +153,8 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
       execute: async ({ moonlet, action }) => {
         const m = byName(moonlet);
         if (!m) return { error: "no such moonlet" };
-        await store.updateMoonlet(m.id, action === "pause" ? { status: "paused" } : { status: "idle", nextRunAt: Date.now() + 60_000 });
+        const ok = action === "pause" ? await store.setStatusIfNotRunning(m.id, "paused") : await store.setStatusIfNotRunning(m.id, "idle", Date.now() + 60_000);
+        if (!ok) return { ok: false, moonlet: m.name, note: "it is running right now; try again in a minute" };
         return { ok: true, moonlet: m.name, status: action === "pause" ? "paused" : "resumed, next run in a minute" };
       },
     }),
