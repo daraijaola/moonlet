@@ -348,7 +348,8 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
   }
   if (!sets.length) return;
   args.push(id);
-  await db().execute({ sql: `UPDATE moonlets SET ${sets.join(",")} WHERE id=?`, args });
+  // A moonlet deleted while its run was in flight stays deleted: the run's finish must not bring it back with a key and a next run.
+  await db().execute({ sql: `UPDATE moonlets SET ${sets.join(",")} WHERE id=? AND (status != 'deleted' OR ? = 'deleted')`, args: [...args, patch.status ?? ""] });
 }
 
 /** Pause / resume, refused while a run is in flight (the run's own finish would otherwise overwrite or be overwritten). */

@@ -305,6 +305,12 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     spentTotalUsd: m.spentTotalUsd + result.costUsd,
   });
 
+  // Deleted while running: the run stays as a receipt, but nothing is anchored, delivered or proposed for a moonlet that no longer exists.
+  if (!(await store.getMoonlet(id))) {
+    for (const p of (await store.listProposals(m.owner, "pending")).filter((p) => p.moonletId === id)) await store.decideProposal(p.id, "rejected").catch(() => undefined);
+    return { status: "deleted", runId, outputHash: result.outputHash };
+  }
+
   let txHash: string | undefined;
   if (result.status === "done" && result.outputHash) {
     const a = await attachAnchor({ id: runId, moonletId: m.id, at: now(), outputHash: result.outputHash, costUsd: result.costUsd }, deps);

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { PublicHeader } from "@/components/public-header";
 import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
@@ -9,6 +10,8 @@ import { CADENCE_LABEL, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
 import { explorerTx } from "@/moonlet/anchor";
 import type { Cadence } from "@/moonlet/spec";
 import * as store from "@/moonlet/store";
+import { isPrivateSpec, redactMoonlet, redactRun } from "@/moonlet/privacy";
+import { COOKIE, openSession } from "@/moonlet/session";
 import { fmtBag, fmtUsd, shortAddr, shortenHexes, timeAgo, timeUntil } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +26,7 @@ const MASCOT: Record<string, string> = {
 
 export async function generateMetadata({ params }: PageProps<"/s/[id]">): Promise<Metadata> {
   const { id } = await params;
-  const m = await store.getMoonlet(id);
+  const m = (await store.getMoonlet(id).then((x) => x && redactMoonlet(x)));
   return {
     title: m ? `${m.name} · a moonlet` : "moonlet",
     description: m ? `“${m.spec.objective}” — running on ${shortAddr(m.owner)}'s bag, every run anchored on Robinhood Chain.` : undefined,
@@ -32,9 +35,13 @@ export async function generateMetadata({ params }: PageProps<"/s/[id]">): Promis
 
 export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">) {
   const { id } = await params;
-  const m = await store.getMoonlet(id);
-  if (!m) notFound();
-  const runs = (await store.listRuns(m.id)).map((r) => ({ ...r, explorerUrl: r.txHash ? explorerTx(r.txHash) : null }));
+  const stored = await store.getMoonlet(id);
+  if (!stored) notFound();
+  // The owner sees their own inbox moonlet in full here; everyone else gets the receipts.
+  const mine = openSession((await cookies()).get(COOKIE)?.value) === stored.owner;
+  const hidden = !mine && isPrivateSpec(stored.spec);
+  const m = hidden ? redactMoonlet(stored) : stored;
+  const runs = (await store.listRuns(m.id)).map((r) => ({ ...(hidden ? redactRun(r) : r), explorerUrl: r.txHash ? explorerTx(r.txHash) : null }));
   const owner = await store.getOwner(m.owner);
   const quiet = m.status === "quiet" || m.status === "paused";
   const tone = fuelTone(m.earnPerDayUsd, m.burnPerDayUsd, quiet);

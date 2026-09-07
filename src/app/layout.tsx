@@ -30,7 +30,9 @@ export const metadata: Metadata = {
     description:
       "Self-funding AI agents for Orbio holders. Claims, spends, rotates, and anchors every run on Robinhood Chain.",
     type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "moonlet — your bag runs an agent" }],
   },
+  twitter: { card: "summary_large_image", images: ["/og.png"] },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

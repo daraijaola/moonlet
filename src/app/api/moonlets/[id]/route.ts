@@ -6,15 +6,16 @@ import { bagOf, orbioFor } from "@/moonlet/scheduler";
 import { JobSpec } from "@/moonlet/spec";
 import * as store from "@/moonlet/store";
 import { publicMoonlet } from "../route";
+import { redactMoonlet } from "@/moonlet/privacy";
 
 type Ctx = { params: Promise<{ id: string }> };
 
-/** Public read: anyone can view a moonlet. */
-export async function GET(_req: Request, { params }: Ctx) {
+/** Public read: anyone can view a moonlet; an inbox moonlet shows strangers the receipt, not the job. */
+export async function GET(req: Request, { params }: Ctx) {
   const { id } = await params;
   const m = await store.getMoonlet(id);
   if (!m) return bad("not found", 404);
-  return NextResponse.json({ moonlet: publicMoonlet(m) });
+  return NextResponse.json({ moonlet: publicMoonlet(ownerFrom(req) === m.owner ? m : redactMoonlet(m)) });
 }
 
 const Patch = z.object({

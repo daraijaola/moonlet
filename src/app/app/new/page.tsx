@@ -390,7 +390,7 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
           <span className="text-[13px] text-ink">Stay silent when nothing happened <span className="font-mono text-[11px] text-ink-soft">(alerts)</span></span>
         </label>
         <label className="block"><span className={label}>Voice</span><input value={spec.voice} maxLength={160} onChange={(e) => set("voice", e.target.value)} className={field} /></label>
-        <label className="block"><span className={label}>Spend cap per run (USD)</span><input type="number" step={0.001} min={0.001} max={5} value={spec.spendCapUsd} onChange={(e) => set("spendCapUsd", Math.max(0.001, Number(e.target.value) || 0.01))} className={field} />
+        <label className="block"><span className={label}>Spend cap per run (USD)</span><input type="number" step={0.001} min={0.001} max={5} value={spec.spendCapUsd} onChange={(e) => set("spendCapUsd", Math.min(5, Math.max(0.001, Number(e.target.value) || 0.01)))} className={field} />
           {spec.spendCapUsd < recommendedCapUsd(spec.template, spec.model ?? "auto") ? (
             <span className="mt-1 block font-mono text-[11px] text-red-800">
               {MODEL_LABEL[spec.model ?? "auto"].name} on a {TEMPLATE_LABEL[spec.template].toLowerCase()} job usually needs ~{fmtUsd(recommendedCapUsd(spec.template, spec.model ?? "auto"), 3)} to finish; at {fmtUsd(spec.spendCapUsd, 3)} it will stop early and report what it managed.{" "}

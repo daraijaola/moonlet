@@ -7,7 +7,7 @@ import { verifyMessage } from "viem";
  * Pasted addresses never get a session: they can view, not act.
  */
 
-const COOKIE = "moonlet_session";
+export const COOKIE = "moonlet_session";
 const TTL_MS = 30 * 24 * 3600_000;
 
 function secret() {

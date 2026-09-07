@@ -8,6 +8,7 @@ import { StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { CADENCE_LABEL, TEMPLATE_LABEL } from "@/components/labels";
 import type { Cadence } from "@/moonlet/spec";
 import * as store from "@/moonlet/store";
+import { isPrivateSpec, PRIVATE_OBJECTIVE } from "@/moonlet/privacy";
 import { fmtBag, fmtUsd, shortAddr } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
@@ -23,7 +24,7 @@ export default async function SkyPage() {
   const [all, stats] = await Promise.all([store.listMoonlets(), store.skyStats()]);
   const owners = new Map<string, number>();
   for (const m of all) if (!owners.has(m.owner)) owners.set(m.owner, (await store.getOwner(m.owner))?.bag ?? 0);
-  const items: SkyItem[] = all.map((m) => ({ id: m.id, name: m.name, status: m.status, objective: m.spec.objective, template: m.spec.template, cadence: m.cadence, owner: m.owner, bag: owners.get(m.owner) ?? 0, earn: m.earnPerDayUsd, burn: m.burnPerDayUsd }));
+  const items: SkyItem[] = all.map((m) => ({ id: m.id, name: m.name, status: m.status, objective: isPrivateSpec(m.spec) ? PRIVATE_OBJECTIVE : m.spec.objective, template: m.spec.template, cadence: m.cadence, owner: m.owner, bag: owners.get(m.owner) ?? 0, earn: m.earnPerDayUsd, burn: m.burnPerDayUsd }));
 
   return (
     <div className="relative min-h-screen bg-cream text-ink">

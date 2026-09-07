@@ -73,13 +73,13 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
               {run.scored?.map((s, i) => (
                 <li key={`s${i}`} className="flex items-start gap-2 text-[12.5px] leading-[1.5]">
                   <span className={`mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] ${s.result === "hit" ? "bg-moss/15 text-moss" : s.result === "miss" ? "bg-red-700/10 text-red-800" : "bg-ink/5 text-ink-soft"}`}>{s.result}</span>
-                  <span className="text-ink"><span className="text-ink-soft">called: </span>{s.claim}{s.evidence ? <span className="text-ink-soft"> · {s.evidence}</span> : null}</span>
+                  <span className="min-w-0 break-words text-ink"><span className="text-ink-soft">called: </span>{s.claim}{s.evidence ? <span className="text-ink-soft"> · {s.evidence}</span> : null}</span>
                 </li>
               ))}
               {run.calls?.map((c, i) => (
                 <li key={`c${i}`} className="flex items-start gap-2 text-[12.5px] leading-[1.5]">
                   <span className="mt-0.5 shrink-0 rounded-full bg-gold/25 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-ink">calls it</span>
-                  <span className="text-ink">{c.claim}<span className="text-ink-soft"> · scored next run{c.check ? ` by ${c.check}` : ""}</span></span>
+                  <span className="min-w-0 break-words text-ink">{c.claim}<span className="text-ink-soft"> · scored next run{c.check ? ` by ${c.check}` : ""}</span></span>
                 </li>
               ))}
             </ul>

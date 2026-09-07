@@ -263,6 +263,9 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   const [files, setFiles] = useState<ApiFile[]>([]);
   const [showFiles, setShowFiles] = useState(false);
   const [thread, setThread] = useState<Array<{ q: string; a: string | null; runId?: string }>>([]);
+  const [showEarlier, setShowEarlier] = useState(false);
+  const threadRef = useRef<HTMLUListElement>(null);
+  useEffect(() => { threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight }); }, [thread, showEarlier]);
   const [recording, setRecording] = useState(false);
   const [spokenBase, setSpokenBase] = useState("");
   const voiceOk = useVoiceSupported();
@@ -309,9 +312,9 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   const act = async (label: string, fn: () => Promise<unknown>, done: string) => {
     setBusy(label);
     try {
-      await fn();
+      const r = (await fn()) as { status?: string; error?: string } | undefined;
       await Promise.all([onChange(), loadRuns()]);
-      flash(done);
+      flash(r?.status === "failed" ? `Run failed: ${r.error ?? "see the run below"}` : r?.status === "quiet" ? "Run went quiet: not enough fuel this time." : done);
     } catch (e) {
       flash(`Failed: ${(e as Error).message}`);
     }
@@ -398,9 +401,12 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
     );
   const askBox = runs !== null && (
     <div className="rounded-lg border border-ink/10 bg-white p-3.5">
+      {thread.length > 1 && !showEarlier && (
+        <button type="button" onClick={() => setShowEarlier(true)} className="mb-3 font-mono text-[11.5px] text-ink-faint hover:text-ink">Show {thread.length - 1} earlier</button>
+      )}
       {thread.length > 0 && (
-        <ul className="mb-3 space-y-3">
-          {thread.map((t, i) => (
+        <ul ref={threadRef} className="mb-3 max-h-[32vh] space-y-3 overflow-y-auto pr-1">
+          {(showEarlier ? thread : thread.slice(-1)).map((t, i) => (
             <li key={i} className="space-y-1.5">
               <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] text-cream">{t.q}</p>
               <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-paper px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
