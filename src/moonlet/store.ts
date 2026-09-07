@@ -159,6 +159,8 @@ export function migrate() {
     await c.execute(`CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, owner TEXT NOT NULL, moonlet_id TEXT NOT NULL, run_id TEXT, name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, bytes BLOB NOT NULL, created_at INTEGER NOT NULL)`).catch(() => undefined);
     await c.execute(`CREATE INDEX IF NOT EXISTS files_run ON files(run_id)`).catch(() => undefined);
     await c.execute(`CREATE TABLE IF NOT EXISTS tg_messages (chat_id TEXT NOT NULL, message_id INTEGER NOT NULL, run_id TEXT, moonlet_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(chat_id, message_id))`).catch(() => undefined);
+    await c.execute(`CREATE TABLE IF NOT EXISTS asks (id TEXT PRIMARY KEY, moonlet_id TEXT NOT NULL, owner TEXT NOT NULL, run_id TEXT, q TEXT NOT NULL, a TEXT NOT NULL, created_at INTEGER NOT NULL)`).catch(() => undefined);
+    await c.execute(`CREATE INDEX IF NOT EXISTS asks_moonlet ON asks(moonlet_id, created_at DESC)`).catch(() => undefined);
   })();
   return ready;
 }
@@ -605,6 +607,20 @@ export async function finishProposal(id: string, status: "executed" | "failed", 
 }
 
 /** Remember which Telegram message carried which report, so a reply can be routed to it. */
+// ---- composer conversations (web) --------------------------------------------
+
+export async function saveAsk(a: { moonletId: string; owner: string; runId: string | null; q: string; a: string }) {
+  await migrate();
+  await db().execute({ sql: `INSERT INTO asks(id,moonlet_id,owner,run_id,q,a,created_at) VALUES(?,?,?,?,?,?,?)`, args: [newId("ask"), a.moonletId, a.owner.toLowerCase(), a.runId, a.q, a.a, Date.now()] });
+}
+
+/** The owner's conversation with one moonlet, oldest first. */
+export async function listAsks(moonletId: string, limit = 30) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT q, a, run_id, created_at FROM asks WHERE moonlet_id=? ORDER BY created_at DESC LIMIT ?`, args: [moonletId, limit] });
+  return r.rows.reverse().map((x) => ({ q: x.q as string, a: x.a as string, runId: (x.run_id as string | null) ?? undefined, at: Number(x.created_at) }));
+}
+
 export async function rememberTelegramMessage(chatId: string, messageId: number, moonletId: string, runId: string | null) {
   await migrate();
   await db().execute({ sql: `INSERT OR REPLACE INTO tg_messages(chat_id,message_id,run_id,moonlet_id,created_at) VALUES(?,?,?,?,?)`, args: [chatId, messageId, runId, moonletId, Date.now()] });

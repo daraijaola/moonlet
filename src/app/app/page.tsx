@@ -289,6 +289,11 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
     setFiles((await api.files(owner, m.id).catch(() => ({ files: [] }))).files);
   }, [m.id, owner]);
   useEffect(() => {
+    // The conversation survives reloads: pull what was said before.
+    const h = setTimeout(() => api.asks(owner, m.id).then((r) => setThread((t) => (t.length ? t : r.asks.map((x) => ({ q: x.q, a: x.a, runId: x.runId }))))).catch(() => undefined), 0);
+    return () => clearTimeout(h);
+  }, [owner, m.id]);
+  useEffect(() => {
     const first = setTimeout(loadRuns, 0);
     const t = setInterval(loadRuns, m.status === "running" ? 3000 : 15_000);
     return () => {

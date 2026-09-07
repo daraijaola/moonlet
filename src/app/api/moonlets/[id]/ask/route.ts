@@ -16,5 +16,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   const body = Body.safeParse(await req.json().catch(() => null));
   if (!body.success) return bad("text required");
   const reply = await followup({ moonletId: id, owner, text: body.data.text, runId: body.data.runId ?? null, history: body.data.history });
+  await store.saveAsk({ moonletId: id, owner, runId: body.data.runId ?? null, q: body.data.text, a: reply }).catch((e) => console.error("saveAsk", (e as Error).message));
   return NextResponse.json({ reply });
+}
+
+/** The owner's past conversation with this moonlet, so the composer survives a reload. */
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const owner = ownerFrom(req);
+  if (!owner) return bad("sign in with your wallet first", 401);
+  const { id } = await params;
+  const m = await store.getMoonlet(id);
+  if (!m || m.owner !== owner) return bad("not found", 404);
+  return NextResponse.json({ asks: await store.listAsks(id) });
 }

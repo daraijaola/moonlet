@@ -119,6 +119,7 @@ export const api = {
   gmailStart: (owner: string, redirectTo?: string) => req<{ url: string }>(owner, "/api/connections/gmail/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo }) }),
   discordConnect: (owner: string, webhookUrl: string) => req<{ ok: boolean; label: string }>(owner, "/api/connections/discord", { method: "POST", body: JSON.stringify({ webhookUrl }) }),
   xConnect: (owner: string, keys: { apiKey: string; apiSecret: string; accessToken: string; accessSecret: string }) => req<{ ok: boolean; username: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify(keys) }),
+  asks: (owner: string, id: string) => req<{ asks: Array<{ q: string; a: string; runId?: string; at: number }> }>(owner, `/api/moonlets/${id}/ask`),
   transcribe: async (owner: string, id: string, blob: Blob) => {
     const r = await fetch(`/api/moonlets/${id}/transcribe`, { method: "POST", headers: { "content-type": blob.type || "audio/webm", "x-owner": owner }, body: blob, credentials: "include" });
     const j = (await r.json().catch(() => ({}))) as { text?: string; costUsd?: number; error?: string };
