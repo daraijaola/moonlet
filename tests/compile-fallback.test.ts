@@ -7,7 +7,9 @@ describe("fallbackSpec", () => {
     const s = fallbackSpec({ sentence: "Ping me if $ORBIO liquidity moves 10%.", template: "market-watch" });
     expect(JobSpec.safeParse(s).success).toBe(true);
     expect(s.output.alwaysReport).toBe(false);
-    expect(s.cadence).toBe("4h");
+    // A named number gets a free tripwire, so the model run becomes a daily heartbeat.
+    expect(s.tripwire).toEqual({ metric: "liquidity", target: "ORBIO", thresholdPct: 10 });
+    expect(s.cadence).toBe("24h");
     expect(s.sources).toContain("$ORBIO");
   });
 
