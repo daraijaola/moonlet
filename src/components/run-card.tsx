@@ -68,6 +68,25 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
               ))}
             </ul>
           )}
+          {((run.scored?.length ?? 0) > 0 || (run.calls?.length ?? 0) > 0) && (
+            <ul className="mt-3 space-y-1.5">
+              {run.scored?.map((s, i) => (
+                <li key={`s${i}`} className="flex items-start gap-2 text-[12.5px] leading-[1.5]">
+                  <span className={`mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] ${s.result === "hit" ? "bg-moss/15 text-moss" : s.result === "miss" ? "bg-red-700/10 text-red-800" : "bg-ink/5 text-ink-soft"}`}>{s.result}</span>
+                  <span className="text-ink"><span className="text-ink-soft">called: </span>{s.claim}{s.evidence ? <span className="text-ink-soft"> · {s.evidence}</span> : null}</span>
+                </li>
+              ))}
+              {run.calls?.map((c, i) => (
+                <li key={`c${i}`} className="flex items-start gap-2 text-[12.5px] leading-[1.5]">
+                  <span className="mt-0.5 shrink-0 rounded-full bg-gold/25 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-ink">calls it</span>
+                  <span className="text-ink">{c.claim}<span className="text-ink-soft"> · scored next run{c.check ? ` by ${c.check}` : ""}</span></span>
+                </li>
+              ))}
+            </ul>
+          )}
+          {run.keyEvents.filter((e) => e.kind === "tripwire").map((e, i) => (
+            <p key={i} className="mt-2 rounded-md border border-moss/40 bg-moss/10 px-2.5 py-1.5 font-mono text-[11.5px] text-ink">⚡ {e.detail}</p>
+          ))}
           {run.keyEvents.some((e) => e.kind === "budget") && (
             <p className="mt-2 rounded-md border border-gold bg-gold/10 px-2.5 py-1.5 font-mono text-[11.5px] text-ink">⚠ Cut short by the spend cap: the report covers what it managed. Raise the cap under Edit job, or choose a cheaper model.</p>
           )}

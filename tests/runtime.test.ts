@@ -23,7 +23,7 @@ const marketWatch: Spec = {
   output: { kind: "brief", maxWords: 150, alwaysReport: true },
   voice: "terse, concrete, sources named, no hype",
   spendCapUsd: 0.03,
-  model: "auto",
+  model: "auto", tripwire: null,
 };
 
 describe("compile", () => {
@@ -35,7 +35,9 @@ describe("compile", () => {
     expect(JobSpec.safeParse(spec).success).toBe(true);
     expect(spec.output.alwaysReport).toBe(false);
     expect(spec.tools).toContain("deliver");
-    expect(["1h", "4h", "15m"]).toContain(spec.cadence);
+    // A liquidity alert rides the free tripwire; the model run is only a heartbeat.
+    expect(spec.tripwire).toMatchObject({ metric: "liquidity", thresholdPct: 10 });
+    expect(spec.cadence).toBe("24h");
     console.log("compiled:", JSON.stringify(spec));
   });
 

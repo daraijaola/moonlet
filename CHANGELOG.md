@@ -1,5 +1,11 @@
 # Changelog
 
+## 2026-09-07 · Build Week day 3
+
+- The loop, live: credits earned vs put to work, ticking on the landing and the sky.
+- Prove: watch jobs end each run with one checkable call and score it next run; calls and scores are in the hashed output; record on the moonlet and public pages, hits and misses in Telegram.
+- Tripwire: alert jobs watch one number for free every 15 minutes and wake the model only past the threshold; compiler sets it from the sentence.
+
 ## 2026-09-07 · Build Week day 2
 
 Live at [moonlet.16labs.xyz](https://moonlet.16labs.xyz) · build log on [X](https://x.com/micheal_node).

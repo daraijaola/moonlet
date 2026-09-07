@@ -26,7 +26,7 @@ export type LocalTool = {
   execute: (args: never) => Promise<unknown>;
 };
 
-export type UserContent = string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } }>;
+export type UserContent = string | Array<{ type: "text"; text: string } | { type: "image_url"; image_url: { url: string } } | { type: "input_audio"; input_audio: { data: string; format: string } }>;
 export type ChatMessage =
   | { role: "system" | "user"; content: UserContent }
   | { role: "assistant"; content: string | null; tool_calls?: ToolCall[] }

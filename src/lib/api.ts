@@ -26,6 +26,9 @@ export type ApiMoonlet = {
   runsTotal: number;
   runsFailed: number;
   spentTotalUsd: number;
+  openCalls: Array<{ claim: string; check: string; madeAt: number; runId: string | null }>;
+  hits: number;
+  misses: number;
 };
 
 export type ApiFile = { id: string; name: string; mime: string; size: number; createdAt: number; runId: string | null; runTitle: string | null; url: string };
@@ -51,6 +54,8 @@ export type ApiRun = {
   keyEvents: Array<{ kind: string; detail: string; amountUsd?: number }>;
   trace?: Array<{ at: number; tool: string; summary: string }>;
   sections?: Array<{ check: string; finding: string; changed: boolean }>;
+  calls?: Array<{ claim: string; check: string }>;
+  scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }>;
   error: string | null;
   files?: Array<{ id: string; name: string; mime: string; size: number; url: string }>;
 };
@@ -114,6 +119,13 @@ export const api = {
   gmailStart: (owner: string, redirectTo?: string) => req<{ url: string }>(owner, "/api/connections/gmail/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo }) }),
   discordConnect: (owner: string, webhookUrl: string) => req<{ ok: boolean; label: string }>(owner, "/api/connections/discord", { method: "POST", body: JSON.stringify({ webhookUrl }) }),
   xConnect: (owner: string, keys: { apiKey: string; apiSecret: string; accessToken: string; accessSecret: string }) => req<{ ok: boolean; username: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify(keys) }),
+  asks: (owner: string, id: string) => req<{ asks: Array<{ q: string; a: string; runId?: string; at: number }> }>(owner, `/api/moonlets/${id}/ask`),
+  transcribe: async (owner: string, id: string, blob: Blob) => {
+    const r = await fetch(`/api/moonlets/${id}/transcribe`, { method: "POST", headers: { "content-type": blob.type || "audio/webm", "x-owner": owner }, body: blob, credentials: "include" });
+    const j = (await r.json().catch(() => ({}))) as { text?: string; costUsd?: number; error?: string };
+    if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+    return j as { text: string; costUsd: number };
+  },
   ask: (owner: string, id: string, text: string, runId?: string, history?: Array<{ q: string; a: string }>) => req<{ reply: string }>(owner, `/api/moonlets/${id}/ask`, { method: "POST", body: JSON.stringify({ text, runId, history }) }),
   proposals: (owner: string, status?: Proposal["status"]) => req<{ proposals: Proposal[] }>(owner, `/api/proposals${status ? `?status=${status}` : ""}`),
   decide: (owner: string, id: string, action: "approve" | "reject") => req<{ ok: boolean; status: string; result?: Record<string, unknown>; autopilotOn?: boolean }>(owner, `/api/proposals/${id}`, { method: "POST", body: JSON.stringify({ action }) }),

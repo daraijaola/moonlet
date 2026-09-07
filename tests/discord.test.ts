@@ -111,7 +111,7 @@ describe("discord webhook connection", () => {
 
   it("a finished run is posted to the connected channel as a report card", async () => {
     const d = fakeDiscord();
-    const spec: JobSpec = { name: "Sentry", template: "market-watch", objective: "watch", cadence: "6h", sources: ["$ORBIO"], checks: ["price"], tools: ["token_market", "deliver"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto" };
+    const spec: JobSpec = { name: "Sentry", template: "market-watch", objective: "watch", cadence: "6h", sources: ["$ORBIO"], checks: ["price"], tools: ["token_market", "deliver"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto", tripwire: null };
     await store.setOwnerBag(OWNER, 1_250_000);
     const now = Date.now();
     await store.insertMoonlet({ id: "m_dc", owner: OWNER, name: "Sentry", spec, status: "idle", delivery: {}, key: null, cadence: "6h", perRunCapUsd: 0.02, earnPerDayUsd: 30, burnPerDayUsd: 0.08, nextRunAt: now - 1000, createdAt: now });

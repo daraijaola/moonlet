@@ -74,7 +74,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : "none failed"} />
             <Stat label={anchoring ? "anchored" : "hashed"} value={String(anchoring ? anchored : runs.filter((r) => r.outputHash).length)} hint={anchoring ? "Robinhood Chain" : "anchoring soon"} />
-            <Stat label="keys rotated" value={String(m.keysRotated)} hint="no human involved" />
+            <Stat label="calls" value={`${m.hits} · ${m.misses}`} hint={m.openCalls.length ? `hits · misses, ${m.openCalls.length} open` : "hits · misses"} />
             <Stat label="cadence" value={CADENCE_LABEL[m.cadence as Cadence] ?? m.cadence} />
             <Stat label="earns" value={fmtUsd(m.earnPerDayUsd)} hint="per day" />
             <Stat label="burns" value={fmtUsd(m.burnPerDayUsd)} hint="per day" />

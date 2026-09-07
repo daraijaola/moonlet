@@ -34,7 +34,7 @@ describe("checks + memory (real model)", () => {
       output: { kind: "brief", maxWords: 220, alwaysReport: true },
       voice: "terse, concrete, sources named, no hype",
       spendCapUsd: 0.06,
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-5.6-terra", tripwire: null,
     };
     const orbio = fakeOrbio({ realKey: KEY });
     const r1 = await runMoonlet({ id: "m_c1", owner: OWNER, bag: 1_250_000, spec, delivery: {}, key: null }, { orbio: orbio.client });
@@ -66,7 +66,7 @@ describe("wallet watch job (real model)", () => {
       output: { kind: "brief", maxWords: 160, alwaysReport: true },
       voice: "terse, concrete, sources named, no hype",
       spendCapUsd: 0.05,
-      model: "openai/gpt-5.6-terra",
+      model: "openai/gpt-5.6-terra", tripwire: null,
     };
     const orbio = fakeOrbio({ realKey: KEY });
     const r = await runMoonlet({ id: "m_w1", owner: OWNER, bag: 1_250_000, spec, delivery: {}, key: null }, { orbio: orbio.client });

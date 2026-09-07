@@ -192,7 +192,7 @@ describe("gmail connection", () => {
   });
 
   it("the moonlet is told which account 'my email' means; the inbox craft is part of its instructions", () => {
-    const spec: JobSpec = { name: "Postie", template: "inbox", objective: "Every morning tell me what came into my email that needs an answer and draft replies.", cadence: "24h", sources: [], checks: ["unread mail from people since last run"], tools: ["gmail_read", "gmail_draft", "deliver"], output: { kind: "digest", maxWords: 220, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto" };
+    const spec: JobSpec = { name: "Postie", template: "inbox", objective: "Every morning tell me what came into my email that needs an answer and draft replies.", cadence: "24h", sources: [], checks: ["unread mail from people since last run"], tools: ["gmail_read", "gmail_draft", "deliver"], output: { kind: "digest", maxWords: 220, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto", tripwire: null };
     const text = buildInstructions(spec, { ownerShort: "0x7153…a23f", bag: 1_000_000, runAt: "now", gmailAddress: "micheal@gmail.com" });
     expect(text).toContain("Gmail is connected as micheal@gmail.com");
     expect(text).toContain("Craft: inbox.");
@@ -201,7 +201,7 @@ describe("gmail connection", () => {
 
   it("an inbox moonlet without Gmail goes quiet instead of burning credits; with Gmail, deliver→email mails the owner themselves", async () => {
     const other = "0x00000000000000000000000000000000000000f3";
-    const spec: JobSpec = { name: "Postie", template: "inbox", objective: "Brief me on my inbox.", cadence: "24h", sources: [], checks: [], tools: ["gmail_read", "deliver"], output: { kind: "digest", maxWords: 200, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto" };
+    const spec: JobSpec = { name: "Postie", template: "inbox", objective: "Brief me on my inbox.", cadence: "24h", sources: [], checks: [], tools: ["gmail_read", "deliver"], output: { kind: "digest", maxWords: 200, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto", tripwire: null };
     await store.setOwnerBag(other, 1_250_000);
     const now = Date.now();
     await store.insertMoonlet({ id: "m_postie", owner: other, name: "Postie", spec, status: "idle", delivery: {}, key: null, cadence: "24h", perRunCapUsd: 0.02, earnPerDayUsd: 30, burnPerDayUsd: 0.02, nextRunAt: now - 1000, createdAt: now });

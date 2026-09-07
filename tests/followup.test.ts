@@ -7,7 +7,7 @@ import type { JobSpec } from "@/moonlet/spec";
 const KEY = process.env.OPENROUTER_API_KEY!;
 if (!KEY) throw new Error("OPENROUTER_API_KEY required");
 const OWNER = "0x00000000000000000000000000000000000000ee";
-const spec: JobSpec = { name: "Tide", template: "market-watch", objective: "Watch $ORBIO on Robinhood Chain.", cadence: "6h", sources: ["$ORBIO"], checks: ["$ORBIO price, liquidity, volume vs last run"], tools: ["token_market", "chain_read", "deliver"], output: { kind: "brief", maxWords: 120, alwaysReport: true }, voice: "terse", spendCapUsd: 0.03, model: "auto" };
+const spec: JobSpec = { name: "Tide", template: "market-watch", objective: "Watch $ORBIO on Robinhood Chain.", cadence: "6h", sources: ["$ORBIO"], checks: ["$ORBIO price, liquidity, volume vs last run"], tools: ["token_market", "chain_read", "deliver"], output: { kind: "brief", maxWords: 120, alwaysReport: true }, voice: "terse", spendCapUsd: 0.03, model: "auto", tripwire: null };
 
 describe("follow-up on a report (real model)", () => {
   beforeAll(async () => {

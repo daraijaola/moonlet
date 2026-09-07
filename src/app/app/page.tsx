@@ -9,6 +9,7 @@ import { api, fmtBag, fmtUsd, shortenHexes, timeAgo, timeUntil, type ApiFile, ty
 import { GitHubMark, OrbioMark, TelegramMark } from "@/components/marks";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
+import { MicButton, VoiceRecorder, useVoiceSupported } from "@/components/voice-button";
 import { TEMPLATE_LABEL } from "@/components/labels";
 
 function DashboardInner() {
@@ -262,6 +263,9 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   const [files, setFiles] = useState<ApiFile[]>([]);
   const [showFiles, setShowFiles] = useState(false);
   const [thread, setThread] = useState<Array<{ q: string; a: string | null; runId?: string }>>([]);
+  const [recording, setRecording] = useState(false);
+  const [spokenBase, setSpokenBase] = useState("");
+  const voiceOk = useVoiceSupported();
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const tg = conns?.connections.find((c) => c.kind === "telegram");
@@ -284,6 +288,11 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
     setAnchoring(r.anchoring ?? true);
     setFiles((await api.files(owner, m.id).catch(() => ({ files: [] }))).files);
   }, [m.id, owner]);
+  useEffect(() => {
+    // The conversation survives reloads: pull what was said before.
+    const h = setTimeout(() => api.asks(owner, m.id).then((r) => setThread((t) => (t.length ? t : r.asks.map((x) => ({ q: x.q, a: x.a, runId: x.runId }))))).catch(() => undefined), 0);
+    return () => clearTimeout(h);
+  }, [owner, m.id]);
   useEffect(() => {
     const first = setTimeout(loadRuns, 0);
     const t = setInterval(loadRuns, m.status === "running" ? 3000 : 15_000);
@@ -316,7 +325,11 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       ? <>Paused. Resume to pick the schedule back up.</>
       : m.status === "quiet"
         ? <>Quiet: not enough fuel. It wakes up when the bag earns.</>
-        : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>;
+        : m.spec.tripwire
+          ? m.spec.tripwire.metric === "repo_activity"
+            ? <>Watching {m.spec.tripwire.target} for free every 15 min; wakes on a new push, issue or pull request. Heartbeat <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>.</>
+            : <>Watching {m.spec.tripwire.metric.replace("_", " ")} of {m.spec.tripwire.target} for free every 15 min; wakes on a ±{m.spec.tripwire.thresholdPct}% move. Heartbeat <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>.</>
+          : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>;
   const delivered = (
     <span className="flex flex-wrap items-center gap-x-1.5 font-mono text-[11.5px] text-ink-soft">
       <span>delivered to</span>
@@ -343,6 +356,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       <Vital label="next run" value={m.status === "paused" ? "paused" : running ? "now" : timeUntil(m.nextRunAt)} hint={m.cadence} />
       <Vital label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : m.lastRunAt ? `last ${timeAgo(m.lastRunAt)}` : "none yet"} />
       <Vital label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)}/run`} />
+      {(m.hits + m.misses > 0 || m.openCalls.length > 0) && <Vital label="calls" value={`${m.hits} hit${m.hits === 1 ? "" : "s"} · ${m.misses} miss${m.misses === 1 ? "" : "es"}`} hint={m.openCalls.length ? `${m.openCalls.length} open, scored next run` : "record, on-chain"} />}
       <Vital label="fuel" value={status?.idleCreditsUsd != null ? fmtUsd(status.idleCreditsUsd) : fmtUsd(m.keyRemainingUsd)} hint={status?.idleCreditsUsd != null ? "Orbio balance, shared" : m.keyLimitUsd ? "on its key" : "mints a key on first run"} />
     </dl>
   );
@@ -415,17 +429,29 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
           setAsking(false);
         }}
       >
-        <input
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder={runs.length ? `Ask ${m.name} about its report, tell it to do something, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
-          className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
-        />
-        <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">
-          {asking ? "…" : "Ask"}
-        </button>
+        {recording ? (
+          <VoiceRecorder
+            transcribe={(blob) => api.transcribe(owner, m.id, blob)}
+            onLive={(t) => setQuestion(spokenBase ? `${spokenBase} ${t}` : t)}
+            onDone={(t) => { setQuestion(spokenBase ? `${spokenBase} ${t}` : t); setRecording(false); }}
+            onCancel={() => { setQuestion(spokenBase); setRecording(false); }}
+          />
+        ) : (
+          <>
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder={runs.length ? `Ask ${m.name} about its report, tell it to do something, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
+              className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
+            />
+            {voiceOk && <MicButton disabled={asking} onClick={() => { setSpokenBase(question.trim()); setRecording(true); }} />}
+            <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">
+              {asking ? "…" : "Ask"}
+            </button>
+          </>
+        )}
       </form>
-      <p className="mt-2 font-mono text-[11px] text-ink-faint">Same brain, same tools, billed to its key. {tg ? "You can also reply to its Telegram messages." : ""}</p>
+      <p className="mt-2 font-mono text-[11px] text-ink-faint">Same brain, same tools, billed to its key. Tap the mic to speak; the words land here for you to check first. {tg ? "You can also reply to its Telegram messages." : ""}</p>
     </div>
   );
 

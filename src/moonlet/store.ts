@@ -3,6 +3,7 @@ import { randomBytes } from "node:crypto";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import type { KeyEvent, KeyState, TraceEvent } from "./runner";
+import { EARN_PER_TOKEN_PER_DAY_USD } from "./budget";
 import type { JobSpec } from "./spec";
 
 /**
@@ -31,6 +32,13 @@ export type MoonletRow = {
   autopilot: boolean;
   /** Compact notes the moonlet carries between runs (last values, seen ids). */
   memory: string | null;
+  /** Calls made on the last run, waiting to be scored on the next. */
+  openCalls: Array<{ claim: string; check: string; madeAt: number; runId: string | null }>;
+  /** Lifetime track record. */
+  hits: number;
+  misses: number;
+  /** Tripwire probe state: last value seen for free and when. */
+  watch: { value: number; at: number; tripped?: string } | null;
   /** The moonlet that spawned this one, if any. */
   parentId: string | null;
   key: KeyState;
@@ -67,6 +75,8 @@ export type RunRow = {
   keyEvents: KeyEvent[];
   trace?: TraceEvent[];
   sections?: Array<{ check: string; finding: string; changed: boolean }>;
+  calls?: Array<{ claim: string; check: string }>;
+  scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }>;
   error: string | null;
 };
 
@@ -139,10 +149,18 @@ export function migrate() {
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN memory TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE runs ADD COLUMN calls TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE runs ADD COLUMN scored TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN open_calls TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN hits INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN misses INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN watch TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN parent_id TEXT`).catch(() => undefined);
     await c.execute(`CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, owner TEXT NOT NULL, moonlet_id TEXT NOT NULL, run_id TEXT, name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, bytes BLOB NOT NULL, created_at INTEGER NOT NULL)`).catch(() => undefined);
     await c.execute(`CREATE INDEX IF NOT EXISTS files_run ON files(run_id)`).catch(() => undefined);
     await c.execute(`CREATE TABLE IF NOT EXISTS tg_messages (chat_id TEXT NOT NULL, message_id INTEGER NOT NULL, run_id TEXT, moonlet_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(chat_id, message_id))`).catch(() => undefined);
+    await c.execute(`CREATE TABLE IF NOT EXISTS asks (id TEXT PRIMARY KEY, moonlet_id TEXT NOT NULL, owner TEXT NOT NULL, run_id TEXT, q TEXT NOT NULL, a TEXT NOT NULL, created_at INTEGER NOT NULL)`).catch(() => undefined);
+    await c.execute(`CREATE INDEX IF NOT EXISTS asks_moonlet ON asks(moonlet_id, created_at DESC)`).catch(() => undefined);
   })();
   return ready;
 }
@@ -236,6 +254,10 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
     delivery: JSON.parse(row.delivery as string),
     autopilot: !!row.autopilot,
     memory: (row.memory as string | null) ?? null,
+    openCalls: row.open_calls ? JSON.parse(row.open_calls as string) : [],
+    hits: Number(row.hits ?? 0),
+    misses: Number(row.misses ?? 0),
+    watch: row.watch ? JSON.parse(row.watch as string) : null,
     parentId: (row.parent_id as string | null) ?? null,
     key: row.key ? (JSON.parse(open(row.key as string)) as KeyState) : null,
     cadence: row.cadence as string,
@@ -252,7 +274,7 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
   };
 }
 
-export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId"> & { autopilot?: boolean; parentId?: string | null }) {
+export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses" | "watch"> & { autopilot?: boolean; parentId?: string | null }) {
   await migrate();
   await db().execute({
     sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id)
@@ -297,6 +319,10 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
     delivery: (v) => JSON.stringify(v),
     autopilot: (v) => (v ? 1 : 0),
     memory: (v) => v,
+    openCalls: (v) => JSON.stringify(v ?? []),
+    hits: (v) => v,
+    misses: (v) => v,
+    watch: (v) => (v ? JSON.stringify(v) : null),
     key: (v) => (v ? seal(JSON.stringify(v)) : null),
     cadence: (v) => v,
     perRunCapUsd: (v) => v,
@@ -313,7 +339,7 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
     name: "name", spec: "spec", status: "status", delivery: "delivery", autopilot: "autopilot", memory: "memory", key: "key", cadence: "cadence",
     perRunCapUsd: "per_run_cap_usd", earnPerDayUsd: "earn_per_day_usd", burnPerDayUsd: "burn_per_day_usd",
     nextRunAt: "next_run_at", lastRunAt: "last_run_at", keysRotated: "keys_rotated", runsTotal: "runs_total",
-    runsFailed: "runs_failed", spentTotalUsd: "spent_total_usd",
+    runsFailed: "runs_failed", spentTotalUsd: "spent_total_usd", openCalls: "open_calls", hits: "hits", misses: "misses", watch: "watch",
   };
   for (const [k, v] of Object.entries(patch)) {
     if (!(k in cols) || v === undefined) continue;
@@ -323,6 +349,21 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
   if (!sets.length) return;
   args.push(id);
   await db().execute({ sql: `UPDATE moonlets SET ${sets.join(",")} WHERE id=?`, args });
+}
+
+/** Pause / resume, refused while a run is in flight (the run's own finish would otherwise overwrite or be overwritten). */
+export async function setStatusIfNotRunning(id: string, status: "paused" | "idle", nextRunAt?: number) {
+  const r = await db().execute({
+    sql: nextRunAt == null ? `UPDATE moonlets SET status=? WHERE id=? AND status != 'running' AND status != 'deleted'` : `UPDATE moonlets SET status=?, next_run_at=? WHERE id=? AND status != 'running' AND status != 'deleted'`,
+    args: nextRunAt == null ? [status, id] : [status, nextRunAt, id],
+  });
+  return r.rowsAffected === 1;
+}
+
+/** "Run now": claim immediately, but only if nothing else is running it. One statement, so two buttons can't both win. */
+export async function claimNow(id: string, now = Date.now()) {
+  const r = await db().execute({ sql: `UPDATE moonlets SET status='running', next_run_at=? WHERE id=? AND status IN ('idle','quiet','paused')`, args: [now, id] });
+  return r.rowsAffected === 1;
 }
 
 /** A moonlet left in "running" for too long (crashed worker) goes back to idle. */
@@ -348,11 +389,12 @@ export async function claimForRun(id: string, now = Date.now()) {
 export async function insertRun(r: RunRow) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace,sections)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace,sections,calls,scored)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
       r.id, r.moonletId, r.at, r.status, r.title, r.summary, r.body, JSON.stringify(r.sources), r.signal, r.nothingHappened ? 1 : 0,
       r.costUsd, r.model, r.modelCalls, r.durationMs, r.outputHash, r.txHash, JSON.stringify(r.keyEvents), r.error, JSON.stringify(r.trace ?? []), JSON.stringify(r.sections ?? []),
+      JSON.stringify(r.calls ?? []), JSON.stringify(r.scored ?? []),
     ],
   });
 }
@@ -383,6 +425,8 @@ function rowToRun(row: Record<string, unknown>): RunRow {
     keyEvents: JSON.parse(row.key_events as string),
     trace: row.trace ? JSON.parse(row.trace as string) : [],
     sections: row.sections ? JSON.parse(row.sections as string) : [],
+    calls: row.calls ? JSON.parse(row.calls as string) : [],
+    scored: row.scored ? JSON.parse(row.scored as string) : [],
     error: (row.error as string) ?? null,
   };
 }
@@ -416,7 +460,7 @@ export async function listRuns(moonletId: string, limit = 50): Promise<RunRow[]>
 export async function skyStats() {
   await migrate();
   const c = db();
-  const [m, r] = await Promise.all([
+  const [m, r, ownersRow, spentRow] = await Promise.all([
     c.execute(`SELECT
         SUM(CASE WHEN status IN ('running','idle') THEN 1 ELSE 0 END) AS alive,
         COUNT(*) AS total,
@@ -425,14 +469,21 @@ export async function skyStats() {
         SUM(spent_total_usd) AS spent
       FROM moonlets WHERE status != 'deleted'`),
     c.execute({ sql: `SELECT COUNT(*) AS today, SUM(CASE WHEN tx_hash IS NOT NULL THEN 1 ELSE 0 END) AS anchored FROM runs WHERE at >= ?`, args: [Date.now() - 86_400_000] }),
+    c.execute(`SELECT COUNT(*) AS bags, COALESCE(SUM(bag),0) AS tokens FROM owners WHERE bag >= 1000 AND address IN (SELECT DISTINCT owner FROM moonlets WHERE status != 'deleted')`),
+    c.execute(`SELECT COALESCE(SUM(cost_usd),0) AS spent, COUNT(*) AS runs FROM runs WHERE status = 'done'`),
   ]);
-  const a = m.rows[0], b = r.rows[0];
+  const a = m.rows[0], b = r.rows[0], o = ownersRow.rows[0], s = spentRow.rows[0];
+  const tokens = Number(o?.tokens ?? 0);
   return {
     alive: Number(a?.alive ?? 0),
     total: Number(a?.total ?? 0),
-    creditsPerDay: Number(a?.earn ?? 0),
+    // Credits the bags behind live moonlets earn per day (one bag can fund several moonlets, so this is per owner, not per moonlet).
+    creditsPerDay: tokens * EARN_PER_TOKEN_PER_DAY_USD,
     burnPerDay: Number(a?.burn ?? 0),
-    spentTotalUsd: Number(a?.spent ?? 0),
+    spentTotalUsd: Number(s?.spent ?? 0),
+    runsTotal: Number(s?.runs ?? 0),
+    bags: Number(o?.bags ?? 0),
+    tokens,
     runsToday: Number(b?.today ?? 0),
     anchoredToday: Number(b?.anchored ?? 0),
   };
@@ -556,6 +607,20 @@ export async function finishProposal(id: string, status: "executed" | "failed", 
 }
 
 /** Remember which Telegram message carried which report, so a reply can be routed to it. */
+// ---- composer conversations (web) --------------------------------------------
+
+export async function saveAsk(a: { moonletId: string; owner: string; runId: string | null; q: string; a: string }) {
+  await migrate();
+  await db().execute({ sql: `INSERT INTO asks(id,moonlet_id,owner,run_id,q,a,created_at) VALUES(?,?,?,?,?,?,?)`, args: [newId("ask"), a.moonletId, a.owner.toLowerCase(), a.runId, a.q, a.a, Date.now()] });
+}
+
+/** The owner's conversation with one moonlet, oldest first. */
+export async function listAsks(moonletId: string, limit = 30) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT q, a, run_id, created_at FROM asks WHERE moonlet_id=? ORDER BY created_at DESC LIMIT ?`, args: [moonletId, limit] });
+  return r.rows.reverse().map((x) => ({ q: x.q as string, a: x.a as string, runId: (x.run_id as string | null) ?? undefined, at: Number(x.created_at) }));
+}
+
 export async function rememberTelegramMessage(chatId: string, messageId: number, moonletId: string, runId: string | null) {
   await migrate();
   await db().execute({ sql: `INSERT OR REPLACE INTO tg_messages(chat_id,message_id,run_id,moonlet_id,created_at) VALUES(?,?,?,?,?)`, args: [chatId, messageId, runId, moonletId, Date.now()] });

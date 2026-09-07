@@ -106,8 +106,18 @@ export const JobSpec = z.object({
     .enum(MODEL_CHOICES)
     .default("auto")
     .describe("auto picks by bag size. Otherwise a fixed OpenRouter model id."),
+  tripwire: z
+    .object({
+      metric: z.enum(["price", "liquidity", "volume24h", "wallet_balance", "repo_activity"]).describe("what to watch for free between runs"),
+      target: z.string().min(1).max(80).describe("token symbol or 0x address for price/liquidity/volume24h; wallet 0x address for wallet_balance; owner/name for repo_activity"),
+      thresholdPct: z.number().min(1).max(90).describe("percent move that wakes the moonlet early (ignored for repo_activity: any new push, issue or pull request wakes it)"),
+    })
+    .nullable()
+    .default(null)
+    .describe("Watch jobs: a free check every 15 minutes wakes the moonlet as soon as the number moves this much, or the repo has a new push, issue or PR; the cadence becomes a heartbeat. null for inbox jobs, digests of pages, and one-off jobs."),
 });
 export type JobSpec = z.infer<typeof JobSpec>;
+export type Tripwire = NonNullable<JobSpec["tripwire"]>;
 
 export const JobSpecJsonSchema = z.toJSONSchema(JobSpec);
 
@@ -163,6 +173,18 @@ export const RunOutput = z.object({
   sources: z.array(z.url()).max(12).describe("Only URLs actually used. Verbatim."),
   signal: z.enum(["none", "low", "medium", "high"]).describe("How much the owner should care."),
   nothingHappened: z.boolean().describe("true when there was nothing worth reporting."),
+  calls: z
+    .array(z.object({ claim: z.string().min(8).max(200), check: z.string().min(4).max(200) }))
+    .max(2)
+    .default([])
+    .describe("Pre-committed calls about the next run: a concrete, checkable claim ('ORBIO liquidity above $450K') and exactly how you will check it next time. Empty for jobs with nothing that moves."),
+  scored: z
+    .array(z.object({ claim: z.string().max(200), result: z.enum(["hit", "miss", "void"]), evidence: z.string().max(300) }))
+    .max(2)
+    .default([])
+    .describe("Every open call from your last run, scored now with what you actually observed. void only when it could not be checked."),
 });
 export type RunOutput = z.infer<typeof RunOutput>;
+export type Call = RunOutput["calls"][number];
+export type Scored = RunOutput["scored"][number];
 export const RunOutputJsonSchema = z.toJSONSchema(RunOutput);

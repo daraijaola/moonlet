@@ -35,7 +35,7 @@ describe("gmail on real models", () => {
     await store.migrate();
     await store.setConnection(OWNER, "gmail", "micheal@gmail.com", { email: "micheal@gmail.com", refreshToken: "1//r", accessToken: "ya29.live", expiresAt: Date.now() + 3_600_000, scope: "gmail.modify" } satisfies GmailConn);
     const now = Date.now();
-    await store.insertMoonlet({ id: "m_live_tide", owner: OWNER, name: "Tide", spec: { name: "Tide", template: "market-watch", objective: "watch", cadence: "6h", sources: [], checks: [], tools: ["token_market", "deliver"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "", spendCapUsd: 0.02, model: "auto" }, status: "idle", delivery: {}, key: { key: KEY, limitUsd: 5, spentUsd: 0 }, cadence: "6h", perRunCapUsd: 0.02, earnPerDayUsd: 1, burnPerDayUsd: 0.08, nextRunAt: now + 3_600_000, createdAt: now });
+    await store.insertMoonlet({ id: "m_live_tide", owner: OWNER, name: "Tide", spec: { name: "Tide", template: "market-watch", objective: "watch", cadence: "6h", sources: [], checks: [], tools: ["token_market", "deliver"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "", spendCapUsd: 0.02, model: "auto", tripwire: null }, status: "idle", delivery: {}, key: { key: KEY, limitUsd: 5, spentUsd: 0 }, cadence: "6h", perRunCapUsd: 0.02, earnPerDayUsd: 1, burnPerDayUsd: 0.08, nextRunAt: now + 3_600_000, createdAt: now });
   });
 
   it("compiler: 'what's been going on in my email' → inbox tools, no web search, daily", async () => {
@@ -128,7 +128,7 @@ describe("gmail on real models", () => {
 
   it("inbox moonlet: briefs on what needs an answer, drafts the reply in-thread, remembers where it got to", async () => {
     const g = fakeGoogle();
-    const spec: JobSpec = { name: "Postie", template: "inbox", objective: "Tell me what came into my email that needs an answer, and draft a reply to each.", cadence: "24h", sources: [], checks: ["unread mail from people that needs a reply", "newsletters and notifications to skip"], tools: ["gmail_read", "gmail_draft", "deliver"], output: { kind: "digest", maxWords: 200, alwaysReport: true }, voice: "terse", spendCapUsd: 0.05, model: "auto" };
+    const spec: JobSpec = { name: "Postie", template: "inbox", objective: "Tell me what came into my email that needs an answer, and draft a reply to each.", cadence: "24h", sources: [], checks: ["unread mail from people that needs a reply", "newsletters and notifications to skip"], tools: ["gmail_read", "gmail_draft", "deliver"], output: { kind: "digest", maxWords: 200, alwaysReport: true }, voice: "terse", spendCapUsd: 0.05, model: "auto", tripwire: null };
     const r = await runMoonlet(
       { id: "m_postie_live", owner: OWNER, bag: 1_000_000, spec, key: { key: KEY, limitUsd: 5, spentUsd: 0 }, autopilot: false, runId: "run_pl", memory: null, parentId: null, delivery: {}, connections: { gmail: { owner: OWNER, email: "micheal@gmail.com" } } },
       { orbio: fakeOrbio({ realKey: KEY }).client, fetch: split(g), bagOf: async () => 1_000_000 },
@@ -146,7 +146,7 @@ describe("gmail on real models", () => {
   it("composer: after a run, 'reply to yash and say yes' from the moonlet page queues an approval card; 'what did I just ask you' uses history", async () => {
     const g = fakeGoogle();
     const now = Date.now();
-    const spec: JobSpec = { name: "Postie2", template: "inbox", objective: "Brief me on my inbox and draft replies.", cadence: "24h", sources: [], checks: [], tools: ["gmail_read", "gmail_draft", "gmail_send", "deliver"], output: { kind: "digest", maxWords: 200, alwaysReport: true }, voice: "terse", spendCapUsd: 0.05, model: "auto" };
+    const spec: JobSpec = { name: "Postie2", template: "inbox", objective: "Brief me on my inbox and draft replies.", cadence: "24h", sources: [], checks: [], tools: ["gmail_read", "gmail_draft", "gmail_send", "deliver"], output: { kind: "digest", maxWords: 200, alwaysReport: true }, voice: "terse", spendCapUsd: 0.05, model: "auto", tripwire: null };
     await store.insertMoonlet({ id: "m_postie2", owner: OWNER, name: "Postie2", spec, status: "idle", delivery: {}, key: { key: KEY, limitUsd: 5, spentUsd: 0 }, cadence: "24h", perRunCapUsd: 0.05, earnPerDayUsd: 1, burnPerDayUsd: 0.05, nextRunAt: now + 3_600_000, createdAt: now });
     await store.insertRun({ id: "run_p2", moonletId: "m_postie2", at: now - 60_000, status: "done", title: "1 needs reply", summary: "Yash (orbio.so) asks whether Thursday works for the demo.", body: "", sources: [], signal: "medium", nothingHappened: false, costUsd: 0.01, model: "test", modelCalls: 2, durationMs: 1000, outputHash: null, txHash: null, keyEvents: [], error: null });
     const a1 = await followup({ moonletId: "m_postie2", owner: OWNER, text: "reply to yash and tell him yes, thursday works", runId: "run_p2", fetch: split(g) });
