@@ -9,6 +9,7 @@ import { api, fmtBag, fmtUsd, shortenHexes, timeAgo, timeUntil, type ApiFile, ty
 import { GitHubMark, OrbioMark, TelegramMark } from "@/components/marks";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
+import { MicButton, VoiceRecorder, useVoiceSupported } from "@/components/voice-button";
 import { TEMPLATE_LABEL } from "@/components/labels";
 
 function DashboardInner() {
@@ -262,6 +263,9 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   const [files, setFiles] = useState<ApiFile[]>([]);
   const [showFiles, setShowFiles] = useState(false);
   const [thread, setThread] = useState<Array<{ q: string; a: string | null; runId?: string }>>([]);
+  const [recording, setRecording] = useState(false);
+  const [spokenBase, setSpokenBase] = useState("");
+  const voiceOk = useVoiceSupported();
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const tg = conns?.connections.find((c) => c.kind === "telegram");
@@ -420,17 +424,29 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
           setAsking(false);
         }}
       >
-        <input
-          value={question}
-          onChange={(e) => setQuestion(e.target.value)}
-          placeholder={runs.length ? `Ask ${m.name} about its report, tell it to do something, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
-          className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
-        />
-        <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">
-          {asking ? "…" : "Ask"}
-        </button>
+        {recording ? (
+          <VoiceRecorder
+            transcribe={(blob) => api.transcribe(owner, m.id, blob)}
+            onLive={(t) => setQuestion(spokenBase ? `${spokenBase} ${t}` : t)}
+            onDone={(t) => { setQuestion(spokenBase ? `${spokenBase} ${t}` : t); setRecording(false); }}
+            onCancel={() => { setQuestion(spokenBase); setRecording(false); }}
+          />
+        ) : (
+          <>
+            <input
+              value={question}
+              onChange={(e) => setQuestion(e.target.value)}
+              placeholder={runs.length ? `Ask ${m.name} about its report, tell it to do something, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
+              className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
+            />
+            {voiceOk && <MicButton disabled={asking} onClick={() => { setSpokenBase(question.trim()); setRecording(true); }} />}
+            <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">
+              {asking ? "…" : "Ask"}
+            </button>
+          </>
+        )}
       </form>
-      <p className="mt-2 font-mono text-[11px] text-ink-faint">Same brain, same tools, billed to its key. {tg ? "You can also reply to its Telegram messages." : ""}</p>
+      <p className="mt-2 font-mono text-[11px] text-ink-faint">Same brain, same tools, billed to its key. Tap the mic to speak; the words land here for you to check first. {tg ? "You can also reply to its Telegram messages." : ""}</p>
     </div>
   );
 
