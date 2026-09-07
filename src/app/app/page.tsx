@@ -343,6 +343,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       <Vital label="next run" value={m.status === "paused" ? "paused" : running ? "now" : timeUntil(m.nextRunAt)} hint={m.cadence} />
       <Vital label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : m.lastRunAt ? `last ${timeAgo(m.lastRunAt)}` : "none yet"} />
       <Vital label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)}/run`} />
+      {(m.hits + m.misses > 0 || m.openCalls.length > 0) && <Vital label="calls" value={`${m.hits} hit${m.hits === 1 ? "" : "s"} · ${m.misses} miss${m.misses === 1 ? "" : "es"}`} hint={m.openCalls.length ? `${m.openCalls.length} open, scored next run` : "record, on-chain"} />}
       <Vital label="fuel" value={status?.idleCreditsUsd != null ? fmtUsd(status.idleCreditsUsd) : fmtUsd(m.keyRemainingUsd)} hint={status?.idleCreditsUsd != null ? "Orbio balance, shared" : m.keyLimitUsd ? "on its key" : "mints a key on first run"} />
     </dl>
   );

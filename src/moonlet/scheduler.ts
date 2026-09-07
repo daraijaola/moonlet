@@ -252,6 +252,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const result = await run(
     {
       id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
+      openCalls: m.openCalls, record: { hits: m.hits, misses: m.misses },
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: gmConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
     },
@@ -280,6 +281,14 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     status: result.status === "quiet" ? "quiet" : "idle",
     key: result.key,
     ...(result.status === "done" && result.output ? { memory: result.output.remember?.slice(0, 1200) || m.memory } : {}),
+    ...(result.status === "done" && result.output
+      ? {
+          // Calls made this run wait for the next; the ones just scored are settled into the record.
+          openCalls: (result.output.calls ?? []).map((c) => ({ ...c, madeAt: now(), runId })),
+          hits: m.hits + (result.output.scored ?? []).filter((s) => s.result === "hit").length,
+          misses: m.misses + (result.output.scored ?? []).filter((s) => s.result === "miss").length,
+        }
+      : {}),
     cadence,
     perRunCapUsd: result.plan.perRunCapUsd,
     earnPerDayUsd: result.plan.earnPerDayUsd || estimateEarnPerDay(bag),
@@ -308,7 +317,12 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
       : o.body.trim() && o.body.trim() !== o.summary.trim()
         ? `\n\n${tg.mdToHtml(o.body.slice(0, 2500))}`
         : "";
-    const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
+    const proof = [
+      ...(o.scored ?? []).map((s) => `${s.result === "hit" ? "✓" : s.result === "miss" ? "✗" : "–"} <b>${s.result}</b> · ${tg.esc(s.claim)}${s.evidence ? ` <i>(${tg.esc(s.evidence)})</i>` : ""}`),
+      ...(o.calls ?? []).map((c) => `◎ <b>calls it</b> · ${tg.esc(c.claim)}`),
+    ];
+    const proofBlock = proof.length ? `\n\n${proof.join("\n")}` : "";
+    const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}${proofBlock}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
     const sent = await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch((e) => {
       console.error("telegram delivery failed", m.id, (e as Error).message);
       return null;
@@ -339,7 +353,7 @@ async function recordRun(
   r: {
     id?: string;
     status: "done" | "quiet" | "failed";
-    output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean; sections?: Array<{ check: string; finding: string; changed: boolean }> };
+    output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean; sections?: Array<{ check: string; finding: string; changed: boolean }>; calls?: Array<{ claim: string; check: string }>; scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }> };
     outputHash?: string;
     error?: string;
     model: string;
@@ -364,6 +378,8 @@ async function recordRun(
     signal: r.output?.signal ?? "none",
     nothingHappened: r.output?.nothingHappened ?? true,
     sections: r.output?.sections ?? [],
+    calls: r.output?.calls ?? [],
+    scored: r.output?.scored ?? [],
     costUsd: r.costUsd,
     model: r.model,
     modelCalls: r.modelCalls,

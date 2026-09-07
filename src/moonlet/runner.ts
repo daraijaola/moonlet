@@ -35,6 +35,8 @@ export type MoonletState = {
   runId?: string | null;
   /** Set when this moonlet was itself spawned; children do not spawn (no chain reactions). */
   parentId?: string | null;
+  openCalls?: Array<{ claim: string; check: string; madeAt: number }>;
+  record?: { hits: number; misses: number };
 };
 
 export type TraceEvent = { at: number; tool: string; summary: string };
@@ -105,7 +107,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       key: k.key,
       model,
       models: fallbackModels(model),
-      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, gmailAddress: m.connections?.gmail?.email, memory: m.memory ?? undefined }),
+      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, gmailAddress: m.connections?.gmail?.email, memory: m.memory ?? undefined, openCalls: m.openCalls, record: m.record }),
       input: "Run your job now. Finish with the structured output.",
       tools: built.tools,
       webSearch: built.webSearch,
@@ -154,6 +156,8 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
 
   const parsed = safeParseOutput(text) ?? salvageOutput(text, m.spec.name);
   if (!parsed) return fail(new Error("model did not return valid RunOutput"), "output", { t0, model, p, keyEvents, trace, key, cost, calls });
+  // Scores refer to the open calls in order; models sometimes leave the claim blank, so fill it from the call being scored.
+  parsed.scored = parsed.scored.map((s, i) => ({ ...s, claim: s.claim.trim() || m.openCalls?.[i]?.claim || "" })).filter((s) => s.claim);
 
   key = { ...key, spentUsd: key.spentUsd + cost };
   return {
@@ -269,6 +273,8 @@ function coerceOutput(o: unknown): unknown {
   x.sources = Array.isArray(x.sources) ? x.sources.filter((u) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 12) : [];
   if (!["none", "low", "medium", "high"].includes(x.signal as string)) x.signal = "low";
   x.nothingHappened = !!x.nothingHappened;
+  x.calls = Array.isArray(x.calls) ? x.calls.slice(0, 2).map((c) => { const k = (c ?? {}) as Record<string, unknown>; return { claim: str(k.claim ?? k.call ?? k.prediction).slice(0, 200).padEnd(8, "."), check: str(k.check ?? k.how ?? k.verify ?? "compare next run").slice(0, 200).padEnd(4, ".") }; }) : [];
+  x.scored = Array.isArray(x.scored) ? x.scored.slice(0, 2).map((c) => { const k = (c ?? {}) as Record<string, unknown>; const res = String(k.result ?? k.outcome ?? "").toLowerCase(); return { claim: str(k.claim).slice(0, 200), result: res.startsWith("hit") || res === "true" || res === "correct" ? "hit" : res.startsWith("miss") || res === "false" || res === "wrong" ? "miss" : "void", evidence: str(k.evidence ?? k.observed ?? k.note).slice(0, 300) }; }) : [];
   x.sections = Array.isArray(x.sections)
     ? x.sections.slice(0, 6).map((sec) => {
         const s = (sec ?? {}) as Record<string, unknown>;
@@ -298,7 +304,7 @@ function salvageOutput(text: string, name: string): RunOutput | null {
 }
 
 /** The receipt hash covers what the owner sees; private carry-over notes are not part of it. */
-export function hashOutput(o: RunOutput) {
+export function hashOutput(o: Omit<RunOutput, "calls" | "scored"> & Partial<Pick<RunOutput, "calls" | "scored">>) {
   const { remember: _remember, ...pub } = o;
   void _remember;
   return "0x" + createHash("sha256").update(JSON.stringify(pub)).digest("hex");

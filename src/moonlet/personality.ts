@@ -15,7 +15,12 @@ How you carry yourself:
 - You never hype, never speculate on price, never give financial advice. You describe what moved and what changed.
 - You never take actions outside your tools. You never ask for keys, seed phrases, or wallet access, and you never suggest the owner share them.
 - If the job is impossible today (source down, nothing new), you say that plainly and stop. A short honest "nothing happened" beats a padded report.
-- You finish with the structured output and nothing else: one JSON object, no prose before or after it, only the fields in the schema: title, summary, body, sections (each with check, finding, changed), remember, sources, signal, nothingHappened. Put the human-readable report in "body". That output is hashed and anchored on Robinhood Chain, so it must be exactly what you found.
+- You finish with the structured output and nothing else: one JSON object, no prose before or after it, only the fields in the schema: title, summary, body, sections (each with check, finding, changed), remember, sources, signal, nothingHappened, calls, scored. Put the human-readable report in "body". That output is hashed and anchored on Robinhood Chain, so it must be exactly what you found.
+
+Prove (calls):
+- When your job watches something that moves (a price, liquidity, holders, a wallet, a repo's activity, a page), end the run with at most one call in "calls": a concrete claim about your next run that you can check with your own tools, plus how you will check it. Numbers and thresholds, never vibes: "ORBIO liquidity stays above $450K" not "market looks strong". Not a prediction of price direction for the owner to trade on; a checkable statement you will be scored on.
+- At the start of every run, score the open calls you were given in "scored": hit, miss, or void (only if it truly could not be checked), with the number you observed as evidence. Score honestly; a miss recorded on-chain is worth more than a hit that isn't. Then make the next call.
+- Inbox, one-off and report-only jobs make no calls. Never make a call about something you cannot measure next run.
 
 Budget discipline:
 - You have a hard spend cap for this run. Web search is the most expensive thing you can do; use token_market, chain_read, github_read and web_fetch first, and search only when the answer genuinely lives on the open web. Stop as soon as the objective is met.
@@ -66,7 +71,7 @@ const CRAFT: Record<TemplateId, string> = {
 - Produce exactly the deliverable described. If the objective is ambiguous, choose the most literal reading and state the assumption in one line.`,
 };
 
-export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag: number; runAt: string; githubLogin?: string; gmailAddress?: string; memory?: string }) {
+export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag: number; runAt: string; githubLogin?: string; gmailAddress?: string; memory?: string; openCalls?: Array<{ claim: string; check: string; madeAt: number }>; record?: { hits: number; misses: number } }) {
   const checks = spec.checks?.length
     ? ["Checks to perform this run, in order (one `sections` entry each, in the same order):", ...spec.checks.map((c, i) => `  ${i + 1}. ${c}`), "Work through every check before writing. Mark `changed` true only when the finding differs from what you remembered from last run."].join("\n")
     : "";
@@ -77,6 +82,9 @@ export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag:
   const github = ctx.githubLogin
     ? `GitHub is connected as @${ctx.githubLogin}. When the owner says "my repo"/"my repository", they mean one under that account: call github_read with action=repos to find it (match the name they used), then read its README, tree and recent commits before summarising. Never ask them which repo; look it up.`
     : "";
+  const calls = ctx.openCalls?.length
+    ? `Open calls from your last run, to score now in \`scored\` (one entry each, same order):\n${ctx.openCalls.map((c, i) => `  ${i + 1}. "${c.claim}" · check: ${c.check} · made ${new Date(c.madeAt).toISOString().slice(0, 16).replace("T", " ")} UTC`).join("\n")}${ctx.record ? `\nYour record so far: ${ctx.record.hits} hit${ctx.record.hits === 1 ? "" : "s"}, ${ctx.record.misses} miss${ctx.record.misses === 1 ? "" : "es"}.` : ""}`
+    : spec.template === "inbox" ? "" : "No open calls. If this job watches something that moves, end with one call for next run.";
   const gmailLine = ctx.gmailAddress ? `Gmail is connected as ${ctx.gmailAddress}. "My email", "my inbox", "my mail" mean that account; read it with gmail_read, never guess its contents.` : "";
   return [
     CHARACTER,
@@ -91,6 +99,7 @@ export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag:
     `Spend cap this run: $${spec.spendCapUsd.toFixed(3)}.`,
     checks,
     memory,
+    calls,
     github,
     gmailLine,
     voice,

@@ -26,6 +26,9 @@ export type ApiMoonlet = {
   runsTotal: number;
   runsFailed: number;
   spentTotalUsd: number;
+  openCalls: Array<{ claim: string; check: string; madeAt: number; runId: string | null }>;
+  hits: number;
+  misses: number;
 };
 
 export type ApiFile = { id: string; name: string; mime: string; size: number; createdAt: number; runId: string | null; runTitle: string | null; url: string };
@@ -51,6 +54,8 @@ export type ApiRun = {
   keyEvents: Array<{ kind: string; detail: string; amountUsd?: number }>;
   trace?: Array<{ at: number; tool: string; summary: string }>;
   sections?: Array<{ check: string; finding: string; changed: boolean }>;
+  calls?: Array<{ claim: string; check: string }>;
+  scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }>;
   error: string | null;
   files?: Array<{ id: string; name: string; mime: string; size: number; url: string }>;
 };

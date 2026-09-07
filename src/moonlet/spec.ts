@@ -163,6 +163,18 @@ export const RunOutput = z.object({
   sources: z.array(z.url()).max(12).describe("Only URLs actually used. Verbatim."),
   signal: z.enum(["none", "low", "medium", "high"]).describe("How much the owner should care."),
   nothingHappened: z.boolean().describe("true when there was nothing worth reporting."),
+  calls: z
+    .array(z.object({ claim: z.string().min(8).max(200), check: z.string().min(4).max(200) }))
+    .max(2)
+    .default([])
+    .describe("Pre-committed calls about the next run: a concrete, checkable claim ('ORBIO liquidity above $450K') and exactly how you will check it next time. Empty for jobs with nothing that moves."),
+  scored: z
+    .array(z.object({ claim: z.string().max(200), result: z.enum(["hit", "miss", "void"]), evidence: z.string().max(300) }))
+    .max(2)
+    .default([])
+    .describe("Every open call from your last run, scored now with what you actually observed. void only when it could not be checked."),
 });
 export type RunOutput = z.infer<typeof RunOutput>;
+export type Call = RunOutput["calls"][number];
+export type Scored = RunOutput["scored"][number];
 export const RunOutputJsonSchema = z.toJSONSchema(RunOutput);
