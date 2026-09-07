@@ -83,10 +83,11 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
   const messages: ChatMessage[] = [{ role: "system", content: o.instructions }, { role: "user", content: o.input }];
   const models = Array.from(new Set([o.model, ...(o.models ?? [])]));
 
-  let cost = 0, calls = 0, usedModel = o.model;
+  let cost = 0, calls = 0, usedModel = o.model, lastCallCost = 0;
   for (let step = 0; step < o.maxSteps; step++) {
-    // Cost is only known after a call, so the last tool round starts well before the cap; a single answer can still land near it.
-    const lastStep = step === o.maxSteps - 1 || cost >= o.maxCostUsd * 0.6;
+    // Cost is only known after a call. Each call re-sends the whole conversation, so the next one costs at least as much as the
+    // last; when that projection would cross the cap, stop using tools now instead of discovering the overshoot afterwards.
+    const lastStep = step === o.maxSteps - 1 || cost >= o.maxCostUsd * 0.6 || (lastCallCost > 0 && cost + lastCallCost * 1.25 >= o.maxCostUsd);
     const body: Record<string, unknown> = {
       model: models[0],
       models: models.length > 1 ? models : undefined,
@@ -110,7 +111,8 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
       throw new ModelHttpError(res.status, msg);
     }
     calls++;
-    cost += j.usage?.cost ?? 0;
+    lastCallCost = j.usage?.cost ?? 0;
+    cost += lastCallCost;
     const msg = j.choices?.[0]?.message;
     if (!msg) throw new ModelHttpError(502, "empty completion");
     usedModel = (j as { model?: string }).model ?? usedModel;
