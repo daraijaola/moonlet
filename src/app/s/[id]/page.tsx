@@ -67,7 +67,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
           </div>
         </section>
 
-        <section className="mt-4 grid gap-3 sm:grid-cols-[auto_1fr]">
+        <section className="mt-4 grid gap-3 lg:grid-cols-[auto_1fr]">
           <div className="rounded-lg border border-ink/10 bg-white p-5">
             <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={keyRemaining} quiet={quiet} size="lg" />
           </div>
