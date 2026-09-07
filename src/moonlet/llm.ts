@@ -37,7 +37,7 @@ type ToolCall = { id: string; type: "function"; function: { name: string; argume
 type Completion = {
   choices?: Array<{ message: { content: string | null; tool_calls?: ToolCall[] }; finish_reason?: string }>;
   usage?: { cost?: number; prompt_tokens?: number; completion_tokens?: number };
-  error?: { message?: string; code?: string | number };
+  error?: { message?: string; code?: string | number; metadata?: { raw?: string; provider_name?: string } };
 };
 
 export type RunLoopOptions = {
@@ -59,7 +59,7 @@ export type RunLoopOptions = {
   onTool?: (name: string, args: unknown, result: unknown) => void;
 };
 
-export type RunLoopResult = { text: string; costUsd: number; modelCalls: number; model: string };
+export type RunLoopResult = { text: string; costUsd: number; modelCalls: number; model: string; stoppedForBudget: boolean };
 
 export class ModelHttpError extends Error {
   constructor(public status: number, message: string) {
@@ -83,9 +83,11 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
   const messages: ChatMessage[] = [{ role: "system", content: o.instructions }, { role: "user", content: o.input }];
   const models = Array.from(new Set([o.model, ...(o.models ?? [])]));
 
-  let cost = 0, calls = 0, usedModel = o.model;
+  let cost = 0, calls = 0, usedModel = o.model, lastCallCost = 0, stoppedForBudget = false;
   for (let step = 0; step < o.maxSteps; step++) {
-    const lastStep = step === o.maxSteps - 1 || cost >= o.maxCostUsd * 0.85;
+    // Cost is only known after a call. Each call re-sends the whole conversation, so the next one costs at least as much as the
+    // last; when that projection would cross the cap, stop using tools now instead of discovering the overshoot afterwards.
+    const lastStep = step === o.maxSteps - 1 || cost >= o.maxCostUsd * 0.6 || (lastCallCost > 0 && cost + lastCallCost * 1.25 >= o.maxCostUsd);
     const body: Record<string, unknown> = {
       model: models[0],
       models: models.length > 1 ? models : undefined,
@@ -95,26 +97,31 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
       ...(o.webSearch && !lastStep && step === 0 ? { plugins: [{ id: "web", max_results: 2 }] } : {}),
       ...(o.jsonSchema && (lastStep || !tools.length) ? { response_format: { type: "json_schema", json_schema: { name: o.jsonSchema.name, strict: true, schema: o.jsonSchema.schema } } } : {}),
     };
-    if (lastStep && tools.length) messages.push({ role: "user", content: "Stop using tools. Answer now with the final structured output." });
+    if (lastStep && tools.length) {
+      stoppedForBudget = step < o.maxSteps - 1;
+      messages.push({ role: "user", content: stoppedForBudget ? "The budget for this run is nearly spent. Stop using tools. Answer now with the final structured output from what you have, and say plainly in the summary what you did not get to." : "Stop using tools. Answer now with the final structured output." });
+    }
 
     const res = await f(url, {
       method: "POST",
-      headers: { authorization: `Bearer ${o.key}`, "content-type": "application/json", "http-referer": o.appUrl ?? "https://16labs.xyz", "x-title": "Moonlet" },
+      headers: { authorization: `Bearer ${o.key}`, "content-type": "application/json", "http-referer": o.appUrl ?? "https://moonlet.16labs.xyz", "x-title": "Moonlet" },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(120_000),
     });
     const j = (await res.json().catch(() => ({}))) as Completion;
     if (!res.ok || j.error) {
-      const msg = j.error?.message ?? `HTTP ${res.status}`;
+      const raw = j.error?.metadata?.raw ? ` (${j.error.metadata.provider_name ?? "provider"}: ${String(j.error.metadata.raw).slice(0, 300)})` : "";
+      const msg = (j.error?.message ?? `HTTP ${res.status}`) + raw;
       throw new ModelHttpError(res.status, msg);
     }
     calls++;
-    cost += j.usage?.cost ?? 0;
+    lastCallCost = j.usage?.cost ?? 0;
+    cost += lastCallCost;
     const msg = j.choices?.[0]?.message;
     if (!msg) throw new ModelHttpError(502, "empty completion");
     usedModel = (j as { model?: string }).model ?? usedModel;
 
-    if (!msg.tool_calls?.length) return { text: msg.content ?? "", costUsd: cost, modelCalls: calls, model: usedModel };
+    if (!msg.tool_calls?.length) return { text: msg.content ?? "", costUsd: cost, modelCalls: calls, model: usedModel, stoppedForBudget };
 
     messages.push({ role: "assistant", content: msg.content, tool_calls: msg.tool_calls });
     for (const tc of msg.tool_calls) {
@@ -141,7 +148,9 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
         }
       }
       o.onTool?.(tc.function.name, safeJson(tc.function.arguments), result);
-      messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result).slice(0, 30_000) });
+      // Tool output is the expensive part of the next call; tighten it as the budget drains and for small caps.
+      const roomChars = cost >= o.maxCostUsd * 0.4 ? 8_000 : o.maxCostUsd < 0.03 ? 14_000 : 30_000;
+      messages.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(result).slice(0, roomChars) });
     }
     if (cost >= o.maxCostUsd) {
       messages.push({ role: "user", content: "Budget reached. Answer now with the final structured output from what you have." });
@@ -165,7 +174,7 @@ export function webFetchTool(f: typeof fetch = fetch): LocalTool {
     description: "Fetch a web page or JSON API by URL and return its readable text (HTML tags stripped, capped at ~12k chars). Use for pages you already know the address of.",
     schema: z.object({ url: z.string().url(), maxChars: z.number().int().min(500).max(20_000).default(12_000) }),
     execute: (async ({ url, maxChars }: { url: string; maxChars: number }) => {
-      const r = await f(url, { headers: { "user-agent": "Mozilla/5.0 (compatible; moonlet/1.0; +https://16labs.xyz)", accept: "text/html,application/json,text/plain,*/*" }, redirect: "follow", signal: AbortSignal.timeout(15_000) });
+      const r = await f(url, { headers: { "user-agent": "Mozilla/5.0 (compatible; moonlet/1.0; +https://moonlet.16labs.xyz)", accept: "text/html,application/json,text/plain,*/*" }, redirect: "follow", signal: AbortSignal.timeout(15_000) });
       const ct = r.headers.get("content-type") ?? "";
       const raw = await r.text();
       const text = /json/.test(ct)

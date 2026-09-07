@@ -5,7 +5,8 @@ import { ModelHttpError, runLoop } from "./llm";
 import { OrbioAuthError, type OrbioClient } from "./orbio";
 import { buildInstructions } from "./personality";
 import { RunOutput, RunOutputJsonSchema, type JobSpec } from "./spec";
-import { buildTools, type DeliverySink, type ToolDeps } from "./tools";
+import { buildTools, type DeliverySink, type FileSink, type ToolDeps } from "./tools";
+import { compileJob } from "./compile";
 
 /**
  * One moonlet run, end to end:
@@ -26,16 +27,18 @@ export type MoonletState = {
   owner: string;
   bag: number;
   spec: JobSpec;
-  delivery: { telegram?: string; x?: string };
+  delivery: { telegram?: string; x?: string; discord?: string; email?: string };
   key: KeyState;
   autopilot?: boolean;
   connections?: ToolDeps["connections"];
   memory?: string | null;
   runId?: string | null;
+  /** Set when this moonlet was itself spawned; children do not spawn (no chain reactions). */
+  parentId?: string | null;
 };
 
 export type TraceEvent = { at: number; tool: string; summary: string };
-export type KeyEvent = { kind: "claimed" | "topped_up" | "rotated" | "quiet"; detail: string; amountUsd?: number };
+export type KeyEvent = { kind: "claimed" | "topped_up" | "rotated" | "quiet" | "budget"; detail: string; amountUsd?: number };
 
 export type RunResult = {
   ok: boolean;
@@ -57,6 +60,7 @@ export type RunDeps = {
   orbio: OrbioClient;
   fetch?: typeof fetch;
   deliver?: DeliverySink;
+  files?: FileSink;
   now?: () => Date;
   bagOf?: (owner: string) => Promise<number>;
 };
@@ -87,19 +91,21 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   }
 
   const attempt = async (k: NonNullable<KeyState>) => {
-    const built = buildTools(m.spec.tools, {
+    const built = buildTools([...m.spec.tools, "write_document", ...(m.parentId ? [] : ["spawn_moonlet" as const])], {
       fetch: deps.fetch,
       deliver: deps.deliver,
+      files: deps.files,
       delivery: m.delivery,
       connections: m.connections,
       propose: { owner: m.owner, moonletId: m.id, moonletName: m.spec.name, runId: m.runId ?? null, autopilot: !!m.autopilot },
+      compile: m.parentId ? undefined : (i) => compileJob(k.key, i),
       trace: (e) => trace.push({ at: Date.now() - t0, ...e }),
     });
     const r = await runLoop({
       key: k.key,
       model,
       models: fallbackModels(model),
-      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, memory: m.memory ?? undefined }),
+      instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, gmailAddress: m.connections?.gmail?.email, memory: m.memory ?? undefined }),
       input: "Run your job now. Finish with the structured output.",
       tools: built.tools,
       webSearch: built.webSearch,
@@ -108,6 +114,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       maxSteps: 8,
       fetch: deps.fetch,
     });
+    if (r.stoppedForBudget) keyEvents.push({ kind: "budget", detail: `stopped early: the $${p.perRunCapUsd.toFixed(3)} cap ran out before the job was finished. Raise the cap on the moonlet page or pick a cheaper model`, amountUsd: r.costUsd });
     return { text: r.text, cost: r.costUsd, calls: r.modelCalls };
   };
 
@@ -119,7 +126,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
         return await attempt(k);
       } catch (e) {
         lastErr = e;
-        if (!isRateLimited(e)) throw e;
+        if (!isRateLimited(e) && !isTransient(e)) throw e;
       }
     }
     throw lastErr;
@@ -211,6 +218,13 @@ async function ensureFunded(key: KeyState, p: Plan, orbio: OrbioClient, events: 
 function httpStatus(e: unknown) {
   if (e instanceof ModelHttpError) return e.status;
   return (e as { statusCode?: number })?.statusCode ?? (e as { status?: number })?.status;
+}
+
+/** Upstream hiccups (a provider 5xx, OpenRouter's "Provider returned error", a timeout) that a retry usually clears. */
+function isTransient(e: unknown) {
+  const s = httpStatus(e);
+  const msg = String((e as Error)?.message ?? e).toLowerCase();
+  return (typeof s === "number" && s >= 500) || /provider returned error|overloaded|timeout|timed out|econnreset|fetch failed|empty completion/.test(msg);
 }
 
 function isRateLimited(e: unknown) {

@@ -21,11 +21,14 @@ export type ApiMoonlet = {
   nextRunAt: number;
   lastRunAt: number | null;
   createdAt: number;
+  parentId: string | null;
   keysRotated: number;
   runsTotal: number;
   runsFailed: number;
   spentTotalUsd: number;
 };
+
+export type ApiFile = { id: string; name: string; mime: string; size: number; createdAt: number; runId: string | null; runTitle: string | null; url: string };
 
 export type ApiRun = {
   id: string;
@@ -49,17 +52,18 @@ export type ApiRun = {
   trace?: Array<{ at: number; tool: string; summary: string }>;
   sections?: Array<{ check: string; finding: string; changed: boolean }>;
   error: string | null;
+  files?: Array<{ id: string; name: string; mime: string; size: number; url: string }>;
 };
 
-export type ConnectionKind = "telegram" | "github" | "x";
+export type ConnectionKind = "telegram" | "github" | "x" | "discord" | "gmail";
 export type Connections = {
   connections: Array<{ kind: ConnectionKind; label: string; createdAt: number }>;
-  available: { telegram: boolean; telegramBot: string | null; github: boolean; githubOAuth: boolean; x: boolean };
+  available: { telegram: boolean; telegramBot: string | null; github: boolean; githubOAuth: boolean; x: boolean; discord: boolean; gmailOAuth: boolean };
 };
 export type Proposal = {
   id: string;
   moonletId: string;
-  kind: "tweet" | "pull_request" | "issue_comment";
+  kind: "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create";
   status: "pending" | "approved" | "rejected" | "executed" | "failed";
   title: string;
   body: string;
@@ -92,6 +96,7 @@ export const api = {
   listMoonlets: (owner: string) => req<{ moonlets: ApiMoonlet[] }>(owner, "/api/moonlets"),
   getMoonlet: (id: string) => req<{ moonlet: ApiMoonlet }>(null, `/api/moonlets/${id}`),
   runs: (id: string) => req<{ runs: ApiRun[]; anchoring?: boolean }>(null, `/api/moonlets/${id}/runs`),
+  files: (owner: string, id: string) => req<{ files: ApiFile[] }>(owner, `/api/moonlets/${id}/files`),
   compile: (owner: string, body: { sentence: string; template: JobSpec["template"]; name?: string }) =>
     req<{ spec: JobSpec; compiled: boolean }>(owner, "/api/moonlets/compile", { method: "POST", body: JSON.stringify(body) }),
   launch: (owner: string, body: { spec: JobSpec; delivery: { telegram?: string; x?: string }; autopilot?: boolean; runNow?: boolean }) =>
@@ -106,14 +111,18 @@ export const api = {
   telegramPoll: (owner: string) => req<{ linked: boolean; label: string | null }>(owner, "/api/connections/telegram"),
   githubStart: (owner: string) => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
   githubConnect: (owner: string, token: string) => req<{ ok: boolean; login: string }>(owner, "/api/connections/github", { method: "POST", body: JSON.stringify({ token }) }),
+  gmailStart: (owner: string, redirectTo?: string) => req<{ url: string }>(owner, "/api/connections/gmail/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo }) }),
+  discordConnect: (owner: string, webhookUrl: string) => req<{ ok: boolean; label: string }>(owner, "/api/connections/discord", { method: "POST", body: JSON.stringify({ webhookUrl }) }),
   xConnect: (owner: string, keys: { apiKey: string; apiSecret: string; accessToken: string; accessSecret: string }) => req<{ ok: boolean; username: string }>(owner, "/api/connections/x", { method: "POST", body: JSON.stringify(keys) }),
-  ask: (owner: string, id: string, text: string, runId?: string) => req<{ reply: string }>(owner, `/api/moonlets/${id}/ask`, { method: "POST", body: JSON.stringify({ text, runId }) }),
+  ask: (owner: string, id: string, text: string, runId?: string, history?: Array<{ q: string; a: string }>) => req<{ reply: string }>(owner, `/api/moonlets/${id}/ask`, { method: "POST", body: JSON.stringify({ text, runId, history }) }),
   proposals: (owner: string, status?: Proposal["status"]) => req<{ proposals: Proposal[] }>(owner, `/api/proposals${status ? `?status=${status}` : ""}`),
-  decide: (owner: string, id: string, action: "approve" | "reject") => req<{ ok: boolean; status: string; result?: Record<string, unknown> }>(owner, `/api/proposals/${id}`, { method: "POST", body: JSON.stringify({ action }) }),
+  decide: (owner: string, id: string, action: "approve" | "reject") => req<{ ok: boolean; status: string; result?: Record<string, unknown>; autopilotOn?: boolean }>(owner, `/api/proposals/${id}`, { method: "POST", body: JSON.stringify({ action }) }),
   sky: () => req<{ alive: number; total: number; creditsPerDay: number; burnPerDay: number; spentTotalUsd: number; runsToday: number; anchoredToday: number }>(null, "/api/sky/stats"),
 };
 
 export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+/** Display only: full 0x addresses and tx hashes in prose become 0x8366…0951 (the stored/hashed text is untouched). */
+export const shortenHexes = (s: string) => s.replace(/0x[0-9a-fA-F]{40,64}/g, shortAddr);
 export const fmtUsd = (n: number, digits = 2) => (n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : n >= 100 && digits >= 2 ? `$${n.toFixed(0)}` : `$${n.toFixed(digits)}`);
 export const fmtBag = (n: number) => (n >= 1_000_000 ? `${(n / 1_000_000).toFixed(n % 1_000_000 ? 2 : 0)}M` : n >= 1_000 ? `${(n / 1_000).toFixed(n % 1_000 ? 1 : 0)}K` : String(Math.round(n)));
 export function timeAgo(ms: number) {

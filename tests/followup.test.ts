@@ -39,7 +39,7 @@ describe("follow-up on a report (real model)", () => {
   }, 90_000);
 
   it("reads an image the owner sends", async () => {
-    const r = await followup({ moonletId: "m_f", owner: OWNER, text: "describe this image in one sentence", runId: "run_f1", imageUrl: "https://16labs.xyz/mascot/moonlet-rest.png" });
+    const r = await followup({ moonletId: "m_f", owner: OWNER, text: "describe this image in one sentence", runId: "run_f1", imageUrl: "https://moonlet.16labs.xyz/mascot/moonlet-rest.png" });
     console.log("followup4:", r);
     expect(r.length).toBeGreaterThan(20);
     expect(r.toLowerCase()).toMatch(/moon|cartoon|character|face|sleep|antenna|round/);
@@ -51,9 +51,34 @@ describe("follow-up on a report (real model)", () => {
       if (String(url).includes("/mascot/")) return new Response(await res.arrayBuffer(), { status: 200, headers: { "content-type": "application/octet-stream" } });
       return res;
     };
-    const r = await followup({ moonletId: "m_f", owner: OWNER, text: "describe this image in one sentence", runId: "run_f1", imageUrl: "https://16labs.xyz/mascot/moonlet-rest.png", fetch: octet });
+    const r = await followup({ moonletId: "m_f", owner: OWNER, text: "describe this image in one sentence", runId: "run_f1", imageUrl: "https://moonlet.16labs.xyz/mascot/moonlet-rest.png", fetch: octet });
     console.log("followup5:", r);
     expect(r.toLowerCase()).not.toMatch(/binary|raw data|cannot be rendered|pasted/);
     expect(r.toLowerCase()).toMatch(/moon|cartoon|character|face|sleep|antenna|round/);
+  }, 90_000);
+
+  it("'send me this as a docx' → writes the file once and answers in one line", async () => {
+    process.env.TELEGRAM_BOT_TOKEN = "test-token";
+    const uploads: string[] = [];
+    const f: typeof fetch = async (url, init) => {
+      if (String(url).endsWith("/sendDocument")) {
+        uploads.push((((init!.body as FormData).get("document")) as File).name);
+        return new Response(JSON.stringify({ ok: true, result: { message_id: 900 } }), { headers: { "content-type": "application/json" } });
+      }
+      return fetch(url, init);
+    };
+    try {
+      await store.setConnection(OWNER, "telegram", "@t", { chatId: "4242" });
+      const r = await followup({ moonletId: "m_f", owner: OWNER, text: "send me this report as a docx please", runId: "run_f1", fetch: f });
+      console.log("followup6:", r, uploads);
+      expect(uploads).toHaveLength(1);
+      expect(uploads[0]).toMatch(/\.docx$/);
+      expect(r.length).toBeLessThan(400);
+      const files = await store.filesForRuns(["run_f1"]);
+      expect(files.run_f1?.[0]?.mime).toContain("wordprocessingml");
+    } finally {
+      await store.deleteConnection(OWNER, "telegram");
+      delete process.env.TELEGRAM_BOT_TOKEN;
+    }
   }, 90_000);
 });

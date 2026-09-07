@@ -4,6 +4,9 @@ import { buildTools } from "./tools";
 import { CADENCE_MS, Cadence } from "./spec";
 import { cadenceReply } from "./budget";
 import type { GitHubConn } from "./connections/github";
+import type { TelegramConn } from "./connections/telegram";
+import type { GmailConn } from "./connections/gmail";
+import { fileSink } from "./files";
 
 /**
  * A follow-up on one report. The owner replies to a result ("why did it move?",
@@ -11,8 +14,11 @@ import type { GitHubConn } from "./connections/github";
  * grounded in that run, with the same read-only tools the moonlet used, billed
  * to the moonlet's own key. Schedule changes are applied directly.
  *
- * Kept deliberately small: one model call with a hard cap, at most three tool
- * steps, no acting tools. If the moonlet has no key yet, we say so.
+ * Kept small: one model call with a hard cap and a few tool steps. Acting
+ * tools the moonlet already has (send an email, open a PR, tidy the inbox) go
+ * through the same draft → approve path as a scheduled run, so "reply to Yash
+ * and say Thursday works" from the composer puts a card in the queue. If the
+ * moonlet has no key yet, we say so.
  */
 
 export type FollowupInput = {
@@ -23,6 +29,8 @@ export type FollowupInput = {
   runId?: string | null;
   /** Optional image the owner attached (a chart screenshot, a message). */
   imageUrl?: string | null;
+  /** Earlier turns of this conversation, oldest first, so a follow-up can say "that one" or "also". */
+  history?: Array<{ q: string; a: string }>;
   fetch?: typeof fetch;
 };
 
@@ -56,8 +64,15 @@ export async function followup(input: FollowupInput): Promise<string> {
   const runs = await store.listRuns(m.id, 3);
   const run = (input.runId && runs.find((r) => r.id === input.runId)) ?? (input.runId ? await store.getRun(input.runId) : null) ?? runs[0] ?? null;
   const gh = await store.getConnection<GitHubConn>(m.owner, "github");
-  const readOnly = m.spec.tools.filter((t) => !["deliver", "open_pull_request", "comment_on_issue", "post_tweet"].includes(t));
-  const built = buildTools(readOnly, { fetch: input.fetch, delivery: {}, connections: { github: gh?.data } });
+  const usable = m.spec.tools.filter((t) => !["deliver", "spawn_moonlet"].includes(t));
+  const [tgConn, gmConn] = await Promise.all([store.getConnection<TelegramConn>(m.owner, "telegram"), store.getConnection<GmailConn>(m.owner, "gmail")]);
+  const built = buildTools([...usable, "write_document"], {
+    fetch: input.fetch,
+    delivery: {},
+    connections: { github: gh?.data, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
+    propose: { owner: m.owner, moonletId: m.id, moonletName: m.name, runId: run ? run.id : null, autopilot: m.autopilot, fetch: input.fetch },
+    files: fileSink({ owner: m.owner, moonletId: m.id, runId: run ? run.id : null, chatId: tgConn?.data.chatId, fetch: input.fetch }),
+  });
 
   const context = run
     ? [
@@ -73,15 +88,24 @@ export async function followup(input: FollowupInput): Promise<string> {
         .join("\n")
     : "No report yet.";
 
+  const acting = built.tools.map((t) => t.name).filter((n) => ["open_pull_request", "comment_on_issue", "open_issue", "post_tweet", "gmail_send", "gmail_forward", "gmail_organize"].includes(n));
+  const history = input.history?.length
+    ? `Earlier in this conversation:\n${input.history.slice(-6).map((h) => `Owner: ${h.q}\nYou: ${h.a}`).join("\n")}`
+    : "";
   const instructions = [
-    `You are ${m.name}, a moonlet (small autonomous agent) working for one $ORBIO holder. They are replying to one of your reports. Answer their question about it.`,
+    `You are ${m.name}, a moonlet (small autonomous agent) working for one $ORBIO holder. They are talking to you about your job and your reports: answer questions, dig into details, and when they ask you to do something your tools allow, do it.`,
     "Terse, concrete, plain text, no markdown, no emoji. Two to six sentences unless they ask for detail. Name sources.",
-    "Use the report first. Use a tool only if the answer needs fresh data the report doesn't contain. Never invent numbers.",
+    "Use the report first. Use a tool only if the answer needs fresh data the report doesn't contain, or the owner asked for an action. Never invent numbers.",
+    acting.length
+      ? `Actions you can take: ${acting.join(", ")}. ${m.autopilot ? "This moonlet is on autopilot, so they execute at once; say what you did." : "Each one becomes a draft that waits for the owner's Approve in the queue on this page and in Telegram; call it once, then tell them in one line it is waiting for their OK. Never say it was done."} Read before you act (a thread before replying, a message before archiving).`
+      : "",
     "Never speculate on price direction or give financial advice. Describe what happened.",
+    "If they ask for the report as a file (pdf, docx, txt, md), call write_document once with the full report from the context (and anything new you fetched), then answer in one line naming the file.",
     "If they ask you to change your job (schedule, what to watch), say what they should do: reply 'every 6 hours' style for schedule, or edit the job at the site for scope. Do not pretend to change it.",
     m.memory ? `Your notes from the last run:\n${m.memory}` : "",
     `Your job: ${m.spec.objective}`,
     context,
+    history,
   ]
     .filter(Boolean)
     .join("\n\n");
@@ -110,8 +134,8 @@ export async function followup(input: FollowupInput): Promise<string> {
       input: inputContent,
       tools: built.tools,
       webSearch: built.webSearch,
-      maxCostUsd: Math.max(0.02, m.spec.spendCapUsd),
-      maxSteps: 3,
+      maxCostUsd: Math.max(0.03, m.spec.spendCapUsd),
+      maxSteps: acting.length ? 5 : 3,
       fetch: input.fetch,
     });
     const text = r.text.trim();

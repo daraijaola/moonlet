@@ -96,10 +96,10 @@ export function FuelGauge({
           >
             {t.label}
           </span>
-          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-0.5 font-mono text-[12.5px]">
-            <dt className="text-ink-soft">in / day</dt>
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 font-mono text-[12.5px]">
+            <dt className="whitespace-nowrap text-ink-soft">in / day</dt>
             <dd className="text-ink">{fmtUsd(earnPerDay)}</dd>
-            <dt className="text-ink-soft">out / day</dt>
+            <dt className="whitespace-nowrap text-ink-soft">out / day</dt>
             <dd className="text-ink">{fmtUsd(burnPerDay)}</dd>
             {runwayDays !== null && (
               <>

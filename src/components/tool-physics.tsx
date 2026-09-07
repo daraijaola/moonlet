@@ -6,7 +6,7 @@ import { Bodies, Body, Composite, Engine, Events, Mouse, MouseConstraint, Render
 /* Sprites are 340px renders of a 170px tile; scaled to a 96px body. */
 const TILE = 96;
 const SPRITE_SCALE = TILE / 340;
-const SPRITES = ["moonlet", "github", "orbio", "openrouter", "robinhood"] as const;
+const SPRITES = ["moonlet", "gmail", "github", "telegram", "discord", "orbio", "openrouter", "robinhood"] as const;
 
 export function ToolPhysics({ className }: { className?: string }) {
   const host = useRef<HTMLDivElement>(null);
@@ -40,17 +40,20 @@ export function ToolPhysics({ className }: { className?: string }) {
         },
       });
 
+      // Walls sit a little inside the panel so resting tiles clear its rounded corners instead of being clipped by them.
+      const PAD = 14;
       const wall = { isStatic: true, render: { visible: false } };
       const bounds = [
-        Bodies.rectangle(W / 2, H + 15, W + 30, 30, { ...wall, friction: 0.6 }),
-        Bodies.rectangle(-15, -H / 2, 30, 3 * H, wall),
-        Bodies.rectangle(W + 15, -H / 2, 30, 3 * H, wall),
-        Bodies.rectangle(W / 2, -2 * H - 15, 2 * W, 30, wall),
+        Bodies.rectangle(W / 2, H - PAD + 15, W + 30, 30, { ...wall, friction: 0.6 }),
+        Bodies.rectangle(PAD - 15, -H / 2, 30, 3 * H, wall),
+        Bodies.rectangle(W - PAD + 15, -H / 2, 30, 3 * H, wall),
+        Bodies.rectangle(W / 2, -6 * H - 15, 2 * W, 30, wall),
       ];
 
       const tiles = SPRITES.map((name, i) => {
-        const x = W * 0.3 + (W * 0.4 * i) / (SPRITES.length - 1) + (Math.random() - 0.5) * 24;
-        const y = reduced ? H - TILE / 2 - 1 : -TILE - 60 - i * 110 - Math.random() * 40;
+        // Spread across the panel and drop in two waves so eight tiles land as a pile, not a tower.
+        const x = W * 0.16 + (W * 0.68 * (i % 4)) / 3 + (Math.random() - 0.5) * 30;
+        const y = reduced ? H - PAD - TILE / 2 - 1 - (i >= 4 ? TILE : 0) : -TILE - 60 - Math.floor(i / 4) * 260 - (i % 4) * 70 - Math.random() * 40;
         const body = Bodies.rectangle(x, y, TILE, TILE, {
           chamfer: { radius: 22 },
           restitution: 0.15,
@@ -168,7 +171,7 @@ export function ToolPhysics({ className }: { className?: string }) {
   return (
     <div
       ref={host}
-      aria-label="Tiles for moonlet, GitHub, Orbio, OpenRouter and Robinhood Chain"
+      aria-label="Tiles for moonlet, Gmail, GitHub, Telegram, Discord, Orbio, OpenRouter and Robinhood Chain"
       role="img"
       className={`${className ?? ""} [&>canvas]:absolute [&>canvas]:inset-0 [&>canvas]:cursor-grab [&>canvas]:active:cursor-grabbing`}
     />

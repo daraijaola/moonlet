@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { PublicHeader } from "@/components/public-header";
+import { DitherField } from "@/components/dither-field";
 import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
 import { StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { CADENCE_LABEL, TEMPLATE_LABEL } from "@/components/labels";
@@ -24,9 +25,12 @@ export default async function SkyPage() {
   const items: SkyItem[] = all.map((m) => ({ id: m.id, name: m.name, status: m.status, objective: m.spec.objective, template: m.spec.template, cadence: m.cadence, owner: m.owner, bag: owners.get(m.owner) ?? 0, earn: m.earnPerDayUsd, burn: m.burnPerDayUsd }));
 
   return (
-    <div className="min-h-screen bg-cream text-ink">
+    <div className="relative min-h-screen bg-cream text-ink">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[22vh] min-h-[200px] overflow-hidden">
+        <DitherField className="inset-0" from="top" />
+      </div>
       <PublicHeader />
-      <main className="mx-auto max-w-[1280px] px-4 py-8 sm:px-6">
+      <main className="relative mx-auto max-w-[1280px] px-4 py-8 sm:px-6">
         <header className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <h1 className="font-display text-[3.4rem] leading-[0.9] text-ink sm:text-[4.2rem]">The sky</h1>

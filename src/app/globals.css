@@ -186,6 +186,13 @@ body {
 .dither-around {
   mask-image: radial-gradient(ellipse 62% 70% at 50% 50%, transparent 0%, transparent 42%, rgba(0, 0, 0, 0.55) 70%, black 100%);
 }
+/* A band along the top of a page: solid at the top edge, gone by the bottom of the band; softened at both sides. */
+.dither-top {
+  mask-image:
+    linear-gradient(to bottom, black 0%, black 35%, rgba(0, 0, 0, 0.5) 65%, transparent 100%),
+    linear-gradient(to right, transparent 0%, black 12%, black 88%, transparent 100%);
+  mask-composite: intersect;
+}
 /* No-WebGL fallback: a static Bayer-style dot field. */
 .dither-css {
   background-color: transparent;

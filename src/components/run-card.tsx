@@ -1,7 +1,8 @@
 "use client";
 
+import { LightMarkdown } from "@/components/light-markdown";
 import { useState } from "react";
-import { fmtUsd, timeAgo, type ApiRun } from "@/lib/api";
+import { fmtUsd, shortenHexes, timeAgo, type ApiRun } from "@/lib/api";
 
 export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: boolean }) {
   const [open, setOpen] = useState(false);
@@ -17,31 +18,58 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
             {run.nothingHappened && run.status === "done" && <span className="rounded-full bg-ink/5 px-1.5 py-0.5 font-mono text-[10px] text-ink-soft">nothing new</span>}
             {run.status === "failed" && <span className="rounded-full bg-red-50 px-1.5 py-0.5 font-mono text-[10px] text-red-700">failed</span>}
           </div>
-          <h4 className="mt-1 text-[15.5px] font-semibold leading-[1.3] tracking-[-0.01em] text-ink">{run.title}</h4>
-          <p className={`mt-1.5 text-[13.5px] leading-[1.6] text-ink-soft ${open ? "" : "line-clamp-3"}`}>{run.summary}</p>
+          <h4 className="mt-1 text-[15.5px] font-semibold leading-[1.3] tracking-[-0.01em] text-ink [overflow-wrap:anywhere]" title={run.title}>{shortenHexes(run.title)}</h4>
+          <p className={`mt-1.5 text-[13.5px] leading-[1.6] text-ink-soft [overflow-wrap:anywhere] ${open ? "" : "line-clamp-3"}`}>{shortenHexes(run.summary)}</p>
           {(run.sections?.length ?? 0) > 0 && (
             <ul className="mt-3 space-y-2">
               {run.sections!.slice(0, open ? 6 : 3).map((sec, i) => (
-                <li key={i} className="flex gap-2.5 text-[13px] leading-[1.5]">
+                <li key={i} className="flex gap-2.5 text-[13px] leading-[1.5] [overflow-wrap:anywhere]">
                   <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${sec.changed ? "bg-gold" : "bg-ink/20"}`} title={sec.changed ? "changed since last run" : "unchanged"} />
                   <span className="min-w-0">
-                    <span className="font-medium text-ink">{sec.check}</span>
-                    <span className={`block text-ink-soft ${open ? "" : "line-clamp-2"}`}>{sec.finding}</span>
+                    <span className="font-medium text-ink">{shortenHexes(sec.check)}</span>
+                    <span className={`block text-ink-soft ${open ? "" : "line-clamp-2"}`}>{shortenHexes(sec.finding)}</span>
                   </span>
                 </li>
               ))}
               {!open && run.sections!.length > 3 && <li className="font-mono text-[11px] text-ink-faint">+{run.sections!.length - 3} more</li>}
             </ul>
           )}
-          {open && hasBody && <pre className="mt-3 whitespace-pre-wrap rounded-md bg-paper p-3 font-sans text-[13px] leading-[1.6] text-ink">{run.body}</pre>}
+          {(run.files?.length ?? 0) > 0 && (
+            <ul className="mt-3 flex flex-wrap gap-2">
+              {run.files!.map((f) => (
+                <li key={f.id}>
+                  <a href={f.url} download={f.name} className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[11.5px] text-ink hover:border-ink/40" title={`${f.mime} · ${(f.size / 1024).toFixed(0)} KB`}>
+                    <FileGlyph /> {f.name}
+                    <span className="text-ink-faint">{(f.size / 1024).toFixed(0)} KB</span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          )}
+          {open && hasBody && <LightMarkdown text={run.body} className="mt-3 rounded-md bg-paper p-3 text-[13px] leading-[1.6] text-ink" />}
+          {open && (run.trace?.length ?? 0) > 0 && (
+            <ol className="mt-3 space-y-1 rounded-md border border-ink/[0.07] bg-paper/60 p-3 font-mono text-[11.5px]">
+              <li className="mb-1.5 text-[10.5px] uppercase tracking-[0.14em] text-ink-soft">Steps · {run.trace!.length} tool calls</li>
+              {run.trace!.map((t, i) => (
+                <li key={i} className="grid grid-cols-[3rem_auto_1fr] items-baseline gap-x-2">
+                  <span className="text-ink-faint">{(t.at / 1000).toFixed(1)}s</span>
+                  <span className="text-ink">{t.tool}</span>
+                  <span className="truncate text-ink-soft" title={t.summary}>{shortenHexes(t.summary)}</span>
+                </li>
+              ))}
+            </ol>
+          )}
           {open && run.sources.length > 0 && (
             <ul className="mt-2 space-y-0.5 font-mono text-[11.5px]">
               {run.sources.map((s) => (
-                <li key={s}>
+                <li key={s} className="truncate">
                   <a href={s} target="_blank" rel="noreferrer" className="text-ink-soft underline decoration-ink/20 hover:text-ink">{s}</a>
                 </li>
               ))}
             </ul>
+          )}
+          {run.keyEvents.some((e) => e.kind === "budget") && (
+            <p className="mt-2 rounded-md border border-gold bg-gold/10 px-2.5 py-1.5 font-mono text-[11.5px] text-ink">⚠ Cut short by the spend cap: the report covers what it managed. Raise the cap under Edit job, or choose a cheaper model.</p>
           )}
           {open && run.keyEvents.length > 0 && (
             <ul className="mt-2 space-y-0.5 font-mono text-[11.5px] text-ink-soft">
@@ -54,7 +82,7 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[11.5px] text-ink-soft">
-        {(hasBody || run.sources.length > 0 || run.keyEvents.length > 0 || (run.sections?.length ?? 0) > 3) && (
+        {(hasBody || run.sources.length > 0 || run.keyEvents.length > 0 || (run.sections?.length ?? 0) > 3 || (run.trace?.length ?? 0) > 0) && (
           <button onClick={() => setOpen((o) => !o)} className="rounded-md border border-ink/15 bg-paper px-2 py-1 text-ink hover:border-ink/40">
             {open ? "Collapse" : hasBody ? "Read" : "Details"}
           </button>
@@ -80,5 +108,12 @@ const Check = () => (
   <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
     <circle cx="6" cy="6" r="5.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
     <path d="M3.6 6.2 5.3 7.8 8.5 4.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+const FileGlyph = () => (
+  <svg width="11" height="12" viewBox="0 0 11 12" aria-hidden>
+    <path d="M1.5 1.5h5l3 3v6h-8z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
+    <path d="M6.5 1.5v3h3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
   </svg>
 );

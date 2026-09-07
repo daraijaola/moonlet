@@ -12,9 +12,10 @@ const OTHER = "0x00000000000000000000000000000000000000bb";
 
 /** A fake Telegram Bot API: records sends, hands out queued updates. */
 function fakeTelegram() {
-  const sent: Array<{ chat_id: string; text: string; buttons?: string[] }> = [];
+  const sent: Array<{ chat_id: string; text: string; id?: string; replyTo?: number; buttons?: string[] }> = [];
   const edited: Array<{ message_id: number; text: string }> = [];
   const configured: string[] = [];
+  const webhooks: Array<{ url: string; secret_token: string }> = [];
   let queue: unknown[] = [];
   let nextId = 100;
   const fetchImpl: typeof fetch = async (input, init) => {
@@ -22,7 +23,7 @@ function fakeTelegram() {
     const body = JSON.parse(String(init?.body ?? "{}"));
     const ok = (result: unknown) => new Response(JSON.stringify({ ok: true, result }), { headers: { "content-type": "application/json" } });
     if (url.endsWith("/sendMessage")) {
-      sent.push({ chat_id: String(body.chat_id), text: body.text, buttons: body.reply_markup?.inline_keyboard?.flat().map((b: { callback_data: string }) => b.callback_data) });
+      sent.push({ chat_id: String(body.chat_id), text: body.text, id: String(nextId), replyTo: body.reply_parameters?.message_id, buttons: body.reply_markup?.inline_keyboard?.flat().map((b: { callback_data: string }) => b.callback_data) });
       return ok({ message_id: nextId++ });
     }
     if (url.endsWith("/editMessageText")) {
@@ -35,13 +36,14 @@ function fakeTelegram() {
       return ok(out);
     }
     if (url.endsWith("/answerCallbackQuery")) return ok(true);
-    if (/\/setMy(Commands|Description|ShortDescription)$/.test(url)) {
+    if (/\/(setMy(Commands|Description|ShortDescription)|setWebhook|deleteWebhook)$/.test(url)) {
       configured.push(url.split("/").pop()!);
+      if (url.endsWith("/setWebhook")) webhooks.push(JSON.parse(String(init?.body)) as { url: string; secret_token: string });
       return ok(true);
     }
     return new Response("not found", { status: 404 });
   };
-  return { fetchImpl, sent, edited, configured, push: (u: unknown) => queue.push(u) };
+  return { fetchImpl, sent, edited, configured, webhooks, push: (u: unknown) => queue.push(u) };
 }
 
 // Reference vector from X's "Creating a signature" guide.
@@ -58,6 +60,8 @@ beforeAll(async () => {
   rmSync("/tmp/moonlet-conn.db", { force: true });
   process.env.DATABASE_URL = "file:/tmp/moonlet-conn.db";
   await store.migrate();
+  const spec = { name: "Lumen", template: "market-watch", objective: "watch", cadence: "6h", sources: [], checks: [], tools: ["token_market", "deliver", "post_tweet"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto" } as unknown as import("@/moonlet/spec").JobSpec;
+  await store.insertMoonlet({ id: "m1", owner: OWNER, name: "Lumen", spec, status: "idle", delivery: {}, key: null, cadence: "6h", perRunCapUsd: 0.02, earnPerDayUsd: 0.05, burnPerDayUsd: 0.02, nextRunAt: Date.now(), createdAt: Date.now() });
 });
 
 describe("x: own developer app keys (OAuth 1.0a)", () => {
@@ -120,7 +124,7 @@ describe("connections + proposals", () => {
     const t = fakeTelegram();
     expect(await tg.configureBot(t.fetchImpl)).toBe(true);
     expect(await tg.configureBot(t.fetchImpl)).toBe(false);
-    expect(t.configured.sort()).toEqual(["setMyCommands", "setMyDescription", "setMyShortDescription"]);
+    expect(t.configured.sort()).toEqual(["deleteWebhook", "setMyCommands", "setMyDescription", "setMyShortDescription"]);
 
     t.push({ update_id: 10, message: { message_id: 1, text: "/start", chat: { id: 5555, type: "private" } } });
     t.push({ update_id: 11, message: { message_id: 2, text: "/status", chat: { id: 4242, type: "private" } } });
@@ -178,6 +182,9 @@ describe("connections + proposals", () => {
     expect(p?.status).toBe("executed");
     expect((p?.result as { url: string }).url).toBe("https://x.com/dara/status/777");
     expect(t.edited.at(-1)?.text).toContain("Done");
+    // one approval is consent: the moonlet is on autopilot from here
+    expect((await store.getMoonlet("m1"))?.autopilot).toBe(true);
+    expect((await decide(pid, "approve", xFetch)).ok).toBe(false);
 
     // a second tap on the same button does nothing
     const again = await decide(pid, "approve", xFetch);
@@ -218,16 +225,93 @@ describe("connections + proposals", () => {
     expect(String((await store.getProposal(r.proposalId!))?.result?.error)).toMatch(/^X post failed: X refused \(403\): Forbidden/);
   });
 
+  it("open_issue: proposed, approved, opened on GitHub with title, body and labels", async () => {
+    await store.setConnection(OWNER, "github", "@dara", { token: "ghp_test", login: "dara" });
+    let created: Record<string, unknown> | null = null;
+    const ghFetch: typeof fetch = async (i, init) => {
+      if (String(i).endsWith("/repos/dara/moonlet/issues") && init?.method === "POST") {
+        created = JSON.parse(String(init.body));
+        return new Response(JSON.stringify({ html_url: "https://github.com/dara/moonlet/issues/7", number: 7 }), { status: 201 });
+      }
+      return new Response("{}", { status: 404 });
+    };
+    const r = await propose({ kind: "issue_create", repo: "dara/moonlet", title: "Webhook 401 on restart", body: "Seen twice after deploy.", labels: ["bug"] }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: ghFetch });
+    expect(r.status).toBe("pending");
+    expect(created).toBeNull();
+    const d = await decide(r.proposalId!, "approve", ghFetch);
+    expect(d).toMatchObject({ ok: true, status: "executed", result: { url: "https://github.com/dara/moonlet/issues/7", number: 7 } });
+    expect(created).toEqual({ title: "Webhook 401 on restart", body: "Seen twice after deploy.", labels: ["bug"] });
+    await store.deleteConnection(OWNER, "github");
+  });
+
   it("proposing without the connection fails fast instead of queueing a doomed draft", async () => {
     const r = await propose({ kind: "pull_request", plan: { repo: "a/b", title: "t", body: "", files: [{ path: "x", content: "y" }] } }, { owner: OTHER, moonletId: "m", moonletName: "N", runId: null, autopilot: false });
     expect(r.status).toBe("failed");
     expect(r.proposalId).toBeNull();
   });
 
+  it("free text gets a Thinking… bubble under the question, which turns into the answer with the time taken", async () => {
+    const t = fakeTelegram();
+    tg.setChatHandler(async (owner, text, ctx) => {
+      await new Promise((r) => setTimeout(r, 30));
+      return `${owner.slice(0, 4)} asked "${text}" (reply to ${ctx.replyToMessageId ?? "none"})`;
+    });
+    try {
+      t.push({ update_id: 30, message: { message_id: 77, text: "what did it find?", reply_to_message: { message_id: 70 }, chat: { id: 4242, type: "private" } } });
+      await tg.processUpdates(telegramCallback, t.fetchImpl);
+      expect(t.sent.at(-1)).toMatchObject({ chat_id: "4242", text: "<i>Reading that report…</i>", replyTo: 77 });
+      expect(t.edited.at(-1)?.message_id).toBe(Number(t.sent.at(-1)!.id));
+      expect(t.edited.at(-1)?.text).toMatch(/^0x00 asked "what did it find\?" \(reply to 70\)\n\n<i>answered in \d+s<\/i>$/);
+
+      tg.setChatHandler(async () => {
+        throw new Error("model down");
+      });
+      t.push({ update_id: 31, message: { message_id: 78, text: "hello?", chat: { id: 4242, type: "private" } } });
+      await tg.processUpdates(telegramCallback, t.fetchImpl);
+      expect(t.sent.at(-1)?.text).toBe("<i>Thinking…</i>");
+      expect(t.edited.at(-1)?.text).toMatch(/couldn't think just now \(model down\)/);
+    } finally {
+      tg.setChatHandler(null);
+    }
+  });
+
   it("a Telegram 409 (another poller / webhook) is skipped, not thrown", async () => {
     const f: typeof fetch = async () => new Response(JSON.stringify({ ok: false, description: "Conflict: terminated by other getUpdates request" }), { status: 409 });
     const r = await tg.processUpdates(telegramCallback, f);
     expect(r.skipped).toBe(true);
+  });
+
+  it("with a public https APP_URL the bot registers a webhook, polling steps aside, and the route answers updates", async () => {
+    process.env.APP_URL = "https://m.example";
+    try {
+      const t = fakeTelegram();
+      expect(await tg.configureBot(t.fetchImpl)).toBe(true);
+      expect(t.webhooks).toMatchObject([{ url: "https://m.example/api/telegram/webhook", secret_token: tg.webhookSecret() }]);
+      expect(tg.webhookSecret()).toMatch(/^[0-9a-f]{64}$/);
+
+      t.push({ update_id: 40, message: { message_id: 1, text: "/status", chat: { id: 4242, type: "private" } } });
+      expect((await tg.processUpdates(telegramCallback, t.fetchImpl)).skipped).toBe(true);
+      expect(t.sent).toHaveLength(0);
+
+      const { POST } = await import("@/app/api/telegram/webhook/route");
+      const post = (secret: string, body: unknown) => POST(new Request("https://m.example/api/telegram/webhook", { method: "POST", headers: { "content-type": "application/json", "x-telegram-bot-api-secret-token": secret }, body: JSON.stringify(body) }));
+      expect((await post("nope", { update_id: 41 })).status).toBe(401);
+      expect((await post(tg.webhookSecret(), { hello: 1 })).status).toBe(400);
+
+      const realFetch = globalThis.fetch;
+      globalThis.fetch = t.fetchImpl;
+      try {
+        const res = await post(tg.webhookSecret(), { update_id: 42, message: { message_id: 2, text: "/status", chat: { id: 4242, type: "private" } } });
+        expect(res.status).toBe(200);
+        for (let i = 0; i < 50 && t.sent.length === 0; i++) await new Promise((r) => setTimeout(r, 20));
+      } finally {
+        globalThis.fetch = realFetch;
+      }
+      expect(t.sent[0]?.text).toMatch(/No moonlets yet|Your moonlets/);
+    } finally {
+      delete process.env.APP_URL;
+      await store.kvSet("telegram.configured", "");
+    }
   });
 
   it("github oauth: exchanges the code, verifies the user, stores the token sealed", async () => {

@@ -6,12 +6,12 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, fmtBag, fmtUsd, type Connections, type OrbioStatus } from "@/lib/api";
 import { plan, HOLDER_FLOOR } from "@/moonlet/budget";
-import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
+import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, recommendedCapUsd, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
 import { FuelGauge } from "@/components/fuel-gauge";
 import { CADENCE_LABEL, MODEL_LABEL, TEMPLATE_BLURB, TEMPLATE_EXAMPLE, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
-import { GitHubMark, OpenRouterMark, TelegramMark, VENDOR_MARK, XMark } from "@/components/marks";
+import { GitHubMark, OpenRouterMark, TelegramMark, VENDOR_MARK, XMark, DiscordMark, GmailMark } from "@/components/marks";
 
-const ORDER: TemplateId[] = ["market-watch", "repo-mechanic", "digest", "custom"];
+const ORDER: TemplateId[] = ["market-watch", "repo-mechanic", "inbox", "digest", "custom"];
 const CADENCES: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
 const STEPS = ["The job", "Review", "Delivery", "Confirm"] as const;
 
@@ -55,7 +55,7 @@ function NewInner() {
 
   const bag = status?.bag ?? 0;
   const p = useMemo(() => (spec ? plan(spec, bag) : null), [spec, bag]);
-  const linked = (k: "telegram" | "x" | "github") => conns?.connections.find((c) => c.kind === k) ?? null;
+  const linked = (k: "telegram" | "x" | "github" | "discord" | "gmail") => conns?.connections.find((c) => c.kind === k) ?? null;
 
   const compile = async () => {
     if (!address) return;
@@ -182,21 +182,57 @@ function NewInner() {
                   <Link href="/app/connections" className="shrink-0 rounded-md border border-ink/15 bg-white px-2.5 py-1.5 font-mono text-[12px] text-ink hover:border-ink/40">Link</Link>
                 )}
               </li>
-              {(["x", "github"] as const).filter((k) => linked(k)).map((k) => (
-                <li key={k} className="flex items-center justify-between gap-3 rounded-lg border border-moss/40 bg-white p-3.5">
+              {linked("discord") && (
+                <li className="flex items-center justify-between gap-3 rounded-lg border border-moss/40 bg-white p-3.5">
                   <div className="flex min-w-0 items-start gap-3">
-                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink">{k === "x" ? <XMark size={16} /> : <GitHubMark size={18} />}</span>
+                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink"><DiscordMark size={18} /></span>
                     <div className="min-w-0">
-                      <p className="text-[14px] font-semibold text-ink">{k === "x" ? "X" : "GitHub"} <span className="ml-1 font-mono text-[11px] font-normal text-ink-faint">{linked(k)!.label}</span></p>
-                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">{k === "x" ? "It may draft posts. Each one waits for your approval before it goes out." : "It may read repos and draft pull requests or comments. Each one waits for your approval."}</p>
+                      <p className="text-[14px] font-semibold text-ink">Discord <span className="ml-1 font-mono text-[11px] font-normal text-ink-faint">{linked("discord")!.label}</span></p>
+                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">Every report is posted in the channel as a card, files as attachments. Free to send.</p>
                     </div>
                   </div>
-                  <span className="shrink-0 rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">asks first</span>
+                  <span className="shrink-0 rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">on</span>
+                </li>
+              )}
+              {(["x", "github", "gmail"] as const).filter((k) => linked(k)).map((k) => (
+                <li key={k} className="flex items-center justify-between gap-3 rounded-lg border border-moss/40 bg-white p-3.5">
+                  <div className="flex min-w-0 items-start gap-3">
+                    <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink">{k === "x" ? <XMark size={16} /> : k === "gmail" ? <GmailMark size={18} /> : <GitHubMark size={18} />}</span>
+                    <div className="min-w-0">
+                      <p className="text-[14px] font-semibold text-ink">{k === "x" ? "X" : k === "gmail" ? "Gmail" : "GitHub"} <span className="ml-1 font-mono text-[11px] font-normal text-ink-faint">{linked(k)!.label}</span></p>
+                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">{k === "x" ? (autopilot ? "It may post on its own, the moment it decides to." : "It drafts its first post for your approval; once you approve, it posts on its own.") : k === "gmail" ? (autopilot ? "It may read your inbox, draft, send and tidy on its own." : "It reads and drafts freely; the first send or archive waits for your approval, then it acts on its own.") : autopilot ? "It may read repos and open pull requests or comments on its own." : "It drafts its first pull request or comment for your approval; once you approve, it acts on its own."}</p>
+                    </div>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[11px] ${autopilot ? "bg-ink text-cream" : "bg-moss/10 text-moss"}`}>{autopilot ? "acts on its own" : "asks once"}</span>
                 </li>
               ))}
             </ul>
-            {!linked("x") && !linked("github") && (
-              <p className="mt-3 font-mono text-[11.5px] text-ink-faint">Want it to post on X or open pull requests? Connect those under <Link href="/app/connections" className="underline">Connections</Link>; it will always ask you first.</p>
+            {(linked("x") || linked("github") || linked("gmail")) && (
+              <div className="mt-4 flex items-start justify-between gap-3 rounded-lg border border-ink/10 bg-paper p-3.5">
+                <div className="min-w-0">
+                  <p className="text-[13.5px] font-semibold text-ink">{autopilot ? "Autopilot: on" : "Autopilot: off"}</p>
+                  <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft">
+                    {autopilot
+                      ? "Posts, pull requests and comments go out the moment the moonlet decides, in your name. Reading never needs approval either way."
+                      : "Its first action that speaks for you is drafted and sent to Telegram with Approve / Reject. One approval and it's on autopilot from then on. You can switch this any time on the moonlet page."}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={autopilot}
+                  onClick={() => setAutopilot((v) => !v)}
+                  className={`relative mt-0.5 h-6 w-11 shrink-0 rounded-full border-2 border-ink transition-colors ${autopilot ? "bg-ink" : "bg-white"}`}
+                >
+                  <span className={`absolute top-0.5 h-4 w-4 rounded-full transition-all ${autopilot ? "left-[22px] bg-cream" : "left-0.5 bg-ink"}`} />
+                </button>
+              </div>
+            )}
+            {template === "inbox" && !linked("gmail") && (
+              <p className="mt-3 rounded-md border border-gold bg-gold/10 px-3 py-2 font-mono text-[11.5px] text-ink">This is an inbox job, but Gmail isn&apos;t connected, so it would have nothing to read. <Link href="/app/connections" className="underline">Connect Gmail</Link> first; the moonlet waits quietly until you do.</p>
+            )}
+            {!linked("x") && !linked("github") && !linked("gmail") && (
+              <p className="mt-3 font-mono text-[11.5px] text-ink-faint">Want it to post on X, open pull requests or work in your Gmail? Connect those under <Link href="/app/connections" className="underline">Connections</Link>; it asks once, then acts on its own.</p>
             )}
           </>
         )}
@@ -304,7 +340,7 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
         <div className="sm:col-span-2">
           <span className={label}>Tools</span>
           <div className="mt-1.5 flex flex-wrap gap-2">
-            {TOOL_IDS.map((t) => {
+            {TOOL_IDS.filter((t) => t !== "spawn_moonlet" && t !== "write_document").map((t) => {
               const on = spec.tools.includes(t);
               return (
                 <button key={t} type="button" onClick={() => toggleTool(t)} disabled={t === "deliver"} className={`rounded-md border px-2.5 py-1 font-mono text-[12px] transition-colors ${on ? "border-ink bg-ink text-cream" : "border-ink/15 text-ink-soft hover:border-ink/40"} disabled:opacity-70`}>
@@ -322,7 +358,7 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
               const Mark = VENDOR_MARK[m.vendor];
               const on = (spec.model ?? "auto") === id;
               return (
-                <button key={id} type="button" onClick={() => set("model", id as ModelChoice)} className={`flex min-w-0 items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${on ? "border-ink bg-paper" : "border-ink/10 hover:border-ink/30"}`}>
+                <button key={id} type="button" onClick={() => onChange({ ...spec, model: id as ModelChoice, spendCapUsd: Math.max(spec.spendCapUsd, recommendedCapUsd(spec.template, id as ModelChoice)) })} className={`flex min-w-0 items-start gap-3 rounded-md border px-3 py-2.5 text-left transition-colors ${on ? "border-ink bg-paper" : "border-ink/10 hover:border-ink/30"}`}>
                   <Mark size={18} className={on ? "text-ink" : "text-ink-soft"} />
                   <span className="min-w-0 flex-1">
                     <span className="block text-[13.5px] font-semibold text-ink">{m.name}</span>
@@ -344,7 +380,16 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
           <span className="text-[13px] text-ink">Stay silent when nothing happened <span className="font-mono text-[11px] text-ink-soft">(alerts)</span></span>
         </label>
         <label className="block"><span className={label}>Voice</span><input value={spec.voice} maxLength={160} onChange={(e) => set("voice", e.target.value)} className={field} /></label>
-        <label className="block"><span className={label}>Spend cap per run (USD)</span><input type="number" step={0.001} min={0.001} max={5} value={spec.spendCapUsd} onChange={(e) => set("spendCapUsd", Math.max(0.001, Number(e.target.value) || 0.01))} className={field} /></label>
+        <label className="block"><span className={label}>Spend cap per run (USD)</span><input type="number" step={0.001} min={0.001} max={5} value={spec.spendCapUsd} onChange={(e) => set("spendCapUsd", Math.max(0.001, Number(e.target.value) || 0.01))} className={field} />
+          {spec.spendCapUsd < recommendedCapUsd(spec.template, spec.model ?? "auto") ? (
+            <span className="mt-1 block font-mono text-[11px] text-red-800">
+              {MODEL_LABEL[spec.model ?? "auto"].name} on a {TEMPLATE_LABEL[spec.template].toLowerCase()} job usually needs ~{fmtUsd(recommendedCapUsd(spec.template, spec.model ?? "auto"), 3)} to finish; at {fmtUsd(spec.spendCapUsd, 3)} it will stop early and report what it managed.{" "}
+              <button type="button" onClick={() => set("spendCapUsd", recommendedCapUsd(spec.template, spec.model ?? "auto"))} className="underline">Set to {fmtUsd(recommendedCapUsd(spec.template, spec.model ?? "auto"), 3)}</button>
+            </span>
+          ) : (
+            <span className="mt-1 block font-mono text-[11px] text-ink-faint">Hard ceiling per run. If it is reached mid-job the moonlet stops, reports what it did, and says what it skipped.</span>
+          )}
+        </label>
       </div>
     </>
   );

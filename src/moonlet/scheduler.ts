@@ -6,9 +6,16 @@ import { devOrbio } from "./orbio-dev";
 import { runMoonlet } from "./runner";
 import { CADENCE_MS, type Cadence } from "./spec";
 import * as store from "./store";
-import { RH_RPC, type DeliverySink } from "./tools";
+import type { DeliverySink } from "./tools";
+import { fileSink } from "./files";
+import { bagOf } from "./bag";
+export { bagOf } from "./bag";
 import * as tg from "./connections/telegram";
 import type { GitHubConn } from "./connections/github";
+import * as discord from "./connections/discord";
+import type { DiscordConn } from "./connections/discord";
+import * as gmail from "./connections/gmail";
+import type { GmailConn } from "./connections/gmail";
 import { telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
 import { followup } from "./followup";
@@ -30,7 +37,6 @@ export type SchedulerDeps = {
   now?: () => number;
 };
 
-const ORBIO_TOKEN = "0xAa07A0e9209e16aC99708C3EC70159c6eF3128A3";
 
 /** Live ERC-20 balance read; cached per owner for 10 minutes in the owners table. */
 const ownerLocks = new Map<string, Promise<unknown>>();
@@ -39,30 +45,6 @@ async function withOwnerLock<T>(owner: string, fn: () => Promise<T>): Promise<T>
   const next = prev.then(fn, fn);
   ownerLocks.set(owner, next.catch(() => undefined));
   return next;
-}
-
-export async function bagOf(owner: string, fetchImpl: typeof fetch = fetch): Promise<number> {
-  const cached = await store.getOwner(owner);
-  if (cached && Date.now() - cached.bagCheckedAt < 10 * 60_000) return cached.bag;
-  try {
-    const r = await fetchImpl(RH_RPC, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        id: 1,
-        method: "eth_call",
-        params: [{ to: ORBIO_TOKEN, data: `0x70a08231${owner.slice(2).padStart(64, "0")}` }, "latest"],
-      }),
-      signal: AbortSignal.timeout(8000),
-    });
-    const j = (await r.json()) as { result?: string };
-    const bag = j.result ? Number(BigInt(j.result)) / 1e18 : (cached?.bag ?? 0);
-    await store.setOwnerBag(owner, bag);
-    return bag;
-  } catch {
-    return cached?.bag ?? 0;
-  }
 }
 
 /** Orbio client for an owner, refreshing the OAuth token if it's near expiry. */
@@ -107,6 +89,13 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
   await anchorPending(deps).catch(() => undefined);
   await tg.configureBot(deps.fetch).catch(() => undefined);
+  installChatHandler(deps);
+  await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
+  return results;
+}
+
+/** Free text from a linked Telegram chat, whether it arrives on the webhook or the tick's poll. */
+export function installChatHandler(deps: SchedulerDeps = {}) {
   tg.setChatHandler(async (owner, text, ctx) => {
     // A reply to a report (or a photo, or a short question right after one) is a follow-up on that report.
     const ref = ctx.replyToMessageId ? await store.telegramMessageRef(ctx.chatId, ctx.replyToMessageId) : null;
@@ -115,10 +104,8 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
       const last = await store.lastTelegramRef(ctx.chatId);
       if (last) return followup({ moonletId: last.moonletId, owner, text, runId: last.runId, imageUrl: ctx.imageUrl, fetch: deps.fetch });
     }
-    return concierge(owner, text, { appUrl: process.env.APP_URL ?? "https://16labs.xyz", fetch: deps.fetch });
+    return concierge(owner, text, { appUrl: process.env.APP_URL ?? "https://moonlet.16labs.xyz", fetch: deps.fetch });
   });
-  await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
-  return results;
 }
 
 function pickAnchor(deps: SchedulerDeps) {
@@ -215,42 +202,60 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
         return minted;
       }),
   };
-  const [ghConnStored, tgConn, xConn] = await Promise.all([
+  const [ghConnStored, tgConn, xConn, dcConn, gmConn] = await Promise.all([
     store.getConnection<GitHubConn>(m.owner, "github"),
     store.getConnection<tg.TelegramConn>(m.owner, "telegram"),
     store.getConnection(m.owner, "x"),
+    store.getConnection<DiscordConn>(m.owner, "discord"),
+    store.getConnection<GmailConn>(m.owner, "gmail"),
   ]);
   let ghConn = ghConnStored;
   // A revoked GitHub token would make every repo job fail quietly; check it before the run and tell the owner once.
-  if (ghConn && m.spec.tools.some((t) => t.startsWith("github") || t === "open_pull_request" || t === "comment_on_issue")) {
+  if (ghConn && m.spec.tools.some((t) => t.startsWith("github") || t === "open_pull_request" || t === "comment_on_issue" || t === "open_issue")) {
     const probe = await (deps.fetch ?? fetch)("https://api.github.com/user", { headers: { authorization: `Bearer ${ghConn.data.token}`, "user-agent": "moonlet" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
     if (probe?.status === 401) {
       await store.deleteConnection(m.owner, "github");
       if (tgConn && tg.telegramConfigured()) {
-        await tg.sendMessage(tgConn.data.chatId, `GitHub disconnected: the access you granted (@${tg.esc(ghConn.data.login)}) was revoked or expired. Reconnect at ${tg.esc(process.env.APP_URL ?? "https://16labs.xyz")}/app/connections so <b>${tg.esc(m.spec.name)}</b> can read your repos again.`, { fetch: deps.fetch }).catch(() => undefined);
+        await tg.sendMessage(tgConn.data.chatId, `GitHub disconnected: the access you granted (@${tg.esc(ghConn.data.login)}) was revoked or expired. Reconnect at ${tg.esc(process.env.APP_URL ?? "https://moonlet.16labs.xyz")}/app/connections so <b>${tg.esc(m.spec.name)}</b> can read your repos again.`, { fetch: deps.fetch }).catch(() => undefined);
       }
       ghConn = null;
     }
   }
-  if (!ghConn && m.spec.tools.some((t) => t === "github_read" || t === "open_pull_request" || t === "comment_on_issue") && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read")) {
+  if (!ghConn && m.spec.tools.some((t) => t === "github_read" || t === "open_pull_request" || t === "comment_on_issue" || t === "open_issue") && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read")) {
     // A repo job without GitHub access has nothing to read; park it rather than burn credits reporting 404s.
     await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
     await recordRun(m.id, now(), { status: "quiet", error: "GitHub isn't connected; reconnect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "GitHub isn't connected. Reconnect it under Connections and this moonlet resumes on its own." }] });
     return { status: "quiet" };
   }
+  if (!gmConn && m.spec.tools.some((t) => t.startsWith("gmail_")) && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read" || t === "web_fetch" || t === "web_search")) {
+    await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
+    await recordRun(m.id, now(), { status: "quiet", error: "Gmail isn't connected; connect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "Gmail isn't connected. Connect it under Connections and this moonlet resumes on its own." }] });
+    return { status: "quiet" };
+  }
   const deliver: DeliverySink | undefined =
     deps.deliver ??
-    (tgConn && tg.telegramConfigured()
-      ? async ({ channel, text }) => (channel === "telegram" ? tg.sendMessage(tgConn.data.chatId, tg.esc(text), { fetch: deps.fetch }) : { ok: false })
+    ((tgConn && tg.telegramConfigured()) || dcConn || gmConn
+      ? async ({ channel, text }) => {
+          if (channel === "telegram" && tgConn && tg.telegramConfigured()) return tg.sendMessage(tgConn.data.chatId, tg.esc(text), { fetch: deps.fetch });
+          if (channel === "discord" && dcConn) return discord.postText(dcConn.data.webhookUrl, text, deps.fetch);
+          if (channel === "email" && gmConn) {
+            const { token, email } = await gmail.accessToken(m.owner, deps.fetch);
+            const firstLine = text.split("\n").find((l) => l.trim())?.trim() ?? "update";
+            const r = await gmail.sendMail(token, email, { to: email, subject: `${m.spec.name}: ${firstLine.slice(0, 80)}`, body: text }, deps.fetch);
+            return { ok: true, id: r.messageId };
+          }
+          return { ok: false };
+        }
       : undefined);
   const runId = store.newId("run");
+  const files = fileSink({ owner: m.owner, moonletId: m.id, runId, chatId: tgConn?.data.chatId, discordWebhook: dcConn?.data.webhookUrl, fetch: deps.fetch });
   const result = await run(
     {
-      id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory,
-      delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined },
-      connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn },
+      id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
+      delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: gmConn ? "connected" : undefined },
+      connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
     },
-    { orbio: guardedOrbio, fetch: deps.fetch, deliver, bagOf: async () => bag },
+    { orbio: guardedOrbio, fetch: deps.fetch, deliver, files, bagOf: async () => bag },
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;
@@ -296,11 +301,12 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const alreadyDelivered = result.trace.some((t) => t.tool === "deliver" && t.summary.startsWith("telegram"));
   if (result.status === "done" && result.output && !result.output.nothingHappened && tgConn && tg.telegramConfigured() && !deps.deliver && !alreadyDelivered) {
     const o = result.output;
-    const page = `${process.env.APP_URL ?? "https://16labs.xyz"}/s/${m.id}`;
-    const sections = (o.sections ?? []).length
+    const page = `${process.env.APP_URL ?? "https://moonlet.16labs.xyz"}/s/${m.id}`;
+    // Inbox reports are written for reading (links to each email), so the body goes out; other jobs read best as their per-check sections.
+    const sections = (o.sections ?? []).length && !(m.spec.template === "inbox" && o.body.trim())
       ? "\n\n" + o.sections.map((sec) => `${sec.changed ? "●" : "○"} <b>${tg.esc(sec.check)}</b>\n${tg.esc(sec.finding)}`).join("\n\n")
       : o.body.trim() && o.body.trim() !== o.summary.trim()
-        ? `\n\n${tg.esc(o.body.slice(0, 2500))}`
+        ? `\n\n${tg.mdToHtml(o.body.slice(0, 2500))}`
         : "";
     const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
     const sent = await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch((e) => {
@@ -310,6 +316,14 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     if (sent) await store.rememberTelegramMessage(tgConn.data.chatId, Number(sent.id), m.id, runId).catch((e) => console.error("tg_messages insert failed", (e as Error).message));
   } else if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && !alreadyDelivered) {
     await deliver({ channel: "telegram", text: `${result.output.title}\n\n${result.output.summary}` }).catch(() => undefined);
+  }
+  // Discord gets the same report as an embed. Free to send, so every connected channel gets a copy.
+  const postedToDiscord = result.trace.some((t) => t.tool === "deliver" && t.summary.startsWith("discord"));
+  if (result.status === "done" && result.output && !result.output.nothingHappened && dcConn && !deps.deliver && !postedToDiscord) {
+    const o = result.output;
+    await discord
+      .postEmbed(dcConn.data.webhookUrl, discord.reportEmbed({ moonletName: m.spec.name, title: o.title, summary: o.summary, sections: o.sections, sources: o.sources, costUsd: result.costUsd, hashed: !!result.outputHash, publicUrl: `${process.env.APP_URL ?? "https://moonlet.16labs.xyz"}/s/${m.id}`, at: now(), signal: o.signal }), deps.fetch)
+      .catch((e) => console.error("discord delivery failed", m.id, (e as Error).message));
   }
 
   if ((result.error ?? "").includes("authorization expired")) {

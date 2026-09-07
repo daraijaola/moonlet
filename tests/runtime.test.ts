@@ -58,6 +58,7 @@ describe("runner", () => {
     expect(r.keyEvents.map((e) => e.kind)).toContain("claimed");
     expect(orbio.state.calls).toEqual(expect.arrayContaining(["status", "balance", "create"]));
     expect(r.costUsd).toBeLessThan(r.plan.perRunCapUsd * 4);
+    expect(r.trace.map((t) => t.tool)).not.toContain("spawn_moonlet");
   });
 
   it("2. cost cap stops a greedy job and still yields output", async () => {
@@ -116,12 +117,20 @@ describe("runner", () => {
   });
 
   it("6b. a moonlet still on a legacy key with room keeps using it; once nearly dry it moves to the account key", async () => {
+    // The legacy key must look like an OpenRouter key (sk-or-…) but still reach a real model: swap it for ours at the wire.
+    const LEGACY = "sk-or-v1-legacy-test-key";
+    const swap: typeof fetch = (u, init) => {
+      const h = new Headers(init?.headers);
+      if (h.get("authorization") !== `Bearer ${LEGACY}`) return fetch(u, init);
+      h.set("authorization", `Bearer ${KEY}`);
+      return fetch(String(u).replace("https://openrouter.ai/api/v1", "https://www.orbio.so/api/v1"), { ...init, headers: h });
+    };
     const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 5, legacy: { remainingUsd: 3 } });
-    const r = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: KEY, limitUsd: 3.5, spentUsd: 0.5 } }, { orbio: orbio.client });
+    const r = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: LEGACY, limitUsd: 3.5, spentUsd: 0.5 } }, { orbio: orbio.client, fetch: swap });
     expect(r.status).toBe("done");
     expect(orbio.state.calls).not.toContain("create");
     orbio.state.legacy!.remainingUsd = 0.005;
-    const r2 = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: KEY, limitUsd: 3.5, spentUsd: 3.495 } }, { orbio: orbio.client });
+    const r2 = await runMoonlet({ id: "m_t6b", owner: OWNER, bag: 1_250_000, spec: marketWatch, delivery: {}, key: { key: LEGACY, limitUsd: 3.5, spentUsd: 3.495 } }, { orbio: orbio.client, fetch: swap });
     console.log("run6b:", r2.status, r2.keyEvents.map((e) => e.detail));
     expect(r2.status).toBe("done");
     expect(orbio.state.calls).toContain("create");
@@ -140,6 +149,55 @@ describe("runner", () => {
     expect(r.output?.nothingHappened).toBe(false);
     expect(r.output?.summary.toLowerCase()).toMatch(/moonlet|orbio|agent/);
   });
+
+  it("9. a job that calls for a separate watcher → the moonlet proposes a child (once) and says it awaits approval", async () => {
+    process.env.DATABASE_URL = "file:/tmp/moonlet-runtime.db";
+    process.env.SECRET_KEY = "test";
+    const store = await import("@/moonlet/store");
+    const orbio = fakeOrbio({ realKey: KEY });
+    const spec: Spec = {
+      ...marketWatch,
+      name: "Scout",
+      objective: `Find the single largest recent $ORBIO (${ORBIO_CA}) transfer on Robinhood Chain and set up a separate moonlet that watches that wallet's ORBIO moves from now on. Report the wallet, the amount, and that the watcher awaits my approval.`,
+      spendCapUsd: 0.05,
+      model: "openai/gpt-5.6-terra",
+    };
+    const r = await runMoonlet({ id: "m_t9", owner: OWNER, bag: 1_250_000, spec, delivery: {}, key: null, runId: null }, { orbio: orbio.client });
+    console.log("run9:", r.status, r.error, "\n", r.output?.title, "\n", r.output?.summary, "\n", r.trace.map((t) => `${t.tool}: ${t.summary}`));
+    expect(r.status).toBe("done");
+    const spawns = r.trace.filter((t) => t.tool === "spawn_moonlet");
+    expect(spawns).toHaveLength(1);
+    expect(spawns[0].summary).toMatch(/^pending · p_/);
+    const pending = await store.listProposals(OWNER, "pending");
+    expect(pending.some((p) => p.kind === "spawn_moonlet" && p.moonletId === "m_t9")).toBe(true);
+    const payload = pending.find((p) => p.kind === "spawn_moonlet")!.payload as { spec: Spec; reason: string };
+    expect(payload.spec.sources.join(" ")).toMatch(/0x[0-9a-fA-F]{40}/);
+    expect(payload.reason.length).toBeGreaterThan(8);
+    expect(r.output?.summary.toLowerCase()).toMatch(/approv|awaiting|pending/);
+  }, 180_000);
+
+  it("10. 'send it as a PDF' → the run writes one file, the summary names it, the report is not duplicated", async () => {
+    process.env.DATABASE_URL = "file:/tmp/moonlet-runtime.db";
+    process.env.SECRET_KEY = "test";
+    const orbio = fakeOrbio({ realKey: KEY });
+    const files: Array<{ name: string; mime: string; size: number; caption: string }> = [];
+    const spec: Spec = { ...marketWatch, name: "Quill", objective: `Brief me on $ORBIO (${ORBIO_CA}) on Robinhood Chain: price, liquidity and volume right now, and send me the brief as a PDF.`, spendCapUsd: 0.05 };
+    const r = await runMoonlet({ id: "m_t10", owner: OWNER, bag: 1_250_000, spec, delivery: {}, key: null }, {
+      orbio: orbio.client,
+      files: async (f) => {
+        files.push({ name: f.name, mime: f.mime, size: f.bytes.byteLength, caption: f.caption });
+        return { ok: true, id: "f_1", sentTo: ["moonlet page", "telegram"] };
+      },
+    });
+    console.log("run10:", r.status, r.error, "\n", r.output?.title, "\n", r.output?.summary, "\n", files, "\n", r.trace.map((t) => `${t.tool}: ${t.summary}`));
+    expect(r.status).toBe("done");
+    expect(files).toHaveLength(1);
+    expect(files[0].mime).toBe("application/pdf");
+    expect(files[0].size).toBeGreaterThan(800);
+    expect(files[0].name).toMatch(/\.pdf$/);
+    expect(r.trace.filter((t) => t.tool === "write_document")).toHaveLength(1);
+    expect(r.output?.summary.toLowerCase()).toMatch(/pdf|file|attached|document/);
+  }, 180_000);
 
   it("delivery tool refuses channels the owner didn't configure, and uses the sink when they did", async () => {
     const orbio = fakeOrbio({ realKey: KEY });

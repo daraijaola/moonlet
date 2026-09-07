@@ -156,6 +156,12 @@ export async function openPullRequest(token: string, plan: PullRequestPlan, fetc
   return { number: pr.number, url: pr.html_url, branch };
 }
 
+export async function openIssue(token: string, repo: string, title: string, body: string, labels: string[] = [], fetchImpl?: typeof fetch) {
+  const [o, r] = repo.split("/");
+  const c = await gh<{ html_url: string; number: number }>(token, `/repos/${o}/${r}/issues`, { method: "POST", body: JSON.stringify({ title, body, labels }) }, fetchImpl);
+  return { url: c.html_url, number: c.number };
+}
+
 export async function commentOnIssue(token: string, repo: string, number: number, body: string, fetchImpl?: typeof fetch) {
   const [o, r] = repo.split("/");
   const c = await gh<{ html_url: string }>(token, `/repos/${o}/${r}/issues/${number}/comments`, { method: "POST", body: JSON.stringify({ body }) }, fetchImpl);

@@ -21,7 +21,8 @@ type AuthState = Saved & { ready: boolean; orbioApproved: boolean; orbioChecked:
 type Auth = AuthState & {
   signed: boolean;
   connect: (wallet?: WalletId) => Promise<string>;
-  approveOrbio: (redirectTo?: string) => Promise<void>;
+  /** Resolves "handoff" when the approval was sent to the wallet app's browser and this tab is now polling for it. */
+  approveOrbio: (redirectTo?: string) => Promise<"redirect" | "handoff">;
   refreshOrbio: () => Promise<boolean>;
   disconnect: () => void;
   hasInjected: boolean;
@@ -60,17 +61,35 @@ type Eip1193 = { request: (a: { method: string; params?: unknown[] }) => Promise
 const injected = () => (typeof window !== "undefined" ? (window as unknown as { ethereum?: Eip1193 }).ethereum : undefined);
 
 export type WalletId = "metamask" | "rabby" | "robinhood" | "walletconnect" | "injected";
-/** Which injected wallets are present. Multi-provider windows expose `providers[]`. */
+
+/**
+ * EIP-6963: every wallet extension announces itself with an rdns, so we can
+ * talk to MetaMask directly instead of whichever extension last won
+ * window.ethereum (the cause of "wallet must has at least one account").
+ */
+const announced = new Map<string, Eip1193>();
+const RDNS: Record<string, WalletId> = { "io.metamask": "metamask", "io.metamask.flask": "metamask", "io.rabby": "rabby", "com.robinhood.wallet": "robinhood" };
+if (typeof window !== "undefined") {
+  window.addEventListener("eip6963:announceProvider", (e) => {
+    const d = (e as CustomEvent<{ info: { rdns: string }; provider: Eip1193 }>).detail;
+    if (d?.info?.rdns && d.provider) announced.set(d.info.rdns, d.provider);
+  });
+  window.dispatchEvent(new Event("eip6963:requestProvider"));
+}
+
+/** Which injected wallets are present: announced (EIP-6963) first, then the legacy window.ethereum / providers[]. */
 export function detectWallets(): WalletId[] {
-  const eth = injected();
-  if (!eth) return [];
-  const all = eth.providers?.length ? eth.providers : [eth];
   const ids = new Set<WalletId>();
-  for (const p of all) {
-    if (p.isRabby) ids.add("rabby");
-    else if (p.isRobinhood) ids.add("robinhood");
-    else if (p.isMetaMask) ids.add("metamask");
-    else ids.add("injected");
+  for (const rdns of announced.keys()) ids.add(RDNS[rdns] ?? "injected");
+  const eth = injected();
+  if (eth) {
+    const all = eth.providers?.length ? eth.providers : [eth];
+    for (const p of all) {
+      if (p.isRabby) ids.add("rabby");
+      else if (p.isRobinhood) ids.add("robinhood");
+      else if (p.isMetaMask) ids.add("metamask");
+      else ids.add("injected");
+    }
   }
   return [...ids];
 }
@@ -155,8 +174,9 @@ async function metamaskSdkProvider(): Promise<Eip1193> {
 }
 
 function providerFor(id: WalletId): Eip1193 | undefined {
+  for (const [rdns, p] of announced) if (RDNS[rdns] === id) return p;
   const eth = injected();
-  if (!eth) return undefined;
+  if (!eth) return id === "injected" ? undefined : announced.values().next().value;
   const all = eth.providers?.length ? eth.providers : [eth];
   return all.find((p) => (id === "rabby" ? p.isRabby : id === "robinhood" ? p.isRobinhood : id === "metamask" ? p.isMetaMask && !p.isRabby : true)) ?? eth;
 }
@@ -201,10 +221,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!eth) {
       throw new Error(`${walletName(wallet)} isn't available in this browser. Use MetaMask, or open this page inside your wallet app's browser.`);
     }
-    await ensureRobinhoodChain(eth);
+    // Accounts first: on a fresh origin MetaMask refuses a chain switch ("wallet must has at least one account") until the site is connected.
     const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
     const address = accounts[0]?.toLowerCase() ?? "";
     if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error("No account was shared. Unlock your wallet and try again.");
+    await ensureRobinhoodChain(eth);
     // The signature is the login. Without it nothing is stored and nothing is shown.
     await siwe(eth, address);
     write({ address, signed: true });
@@ -214,9 +235,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const approveOrbio = useCallback(async (redirectTo = "/app") => {
     const address = read().address;
     if (!address) throw new Error("connect a wallet first");
+    // Orbio's page connects the wallet through Privy, which on a phone browser
+    // without an injected wallet just waits forever. Hand the approval to the
+    // MetaMask in-app browser instead (the callback needs no cookie: the state
+    // carries the wallet) and watch for it from here.
+    const phone = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
+    if (phone && !injected()) {
+      const { url } = await api.orbioStart(address, "/orbio/done");
+      window.location.assign(`https://metamask.app.link/dapp/${url.replace(/^https?:\/\//, "")}`);
+      const started = Date.now();
+      const poll = async () => {
+        if (await refreshOrbio()) return;
+        if (Date.now() - started < 15 * 60_000) setTimeout(poll, 3000);
+      };
+      setTimeout(poll, 3000);
+      return "handoff" as const;
+    }
     const { url } = await api.orbioStart(address, redirectTo);
     window.location.assign(url);
-  }, []);
+    return "redirect" as const;
+  }, [refreshOrbio]);
 
   const disconnect = useCallback(() => {
     void fetch("/api/auth/logout", { method: "POST" });

@@ -27,10 +27,12 @@ export type MoonletRow = {
   name: string;
   spec: JobSpec;
   status: "running" | "idle" | "paused" | "quiet" | "deleted";
-  delivery: { telegram?: string; x?: string };
+  delivery: { telegram?: string; x?: string; discord?: string; email?: string };
   autopilot: boolean;
   /** Compact notes the moonlet carries between runs (last values, seen ids). */
   memory: string | null;
+  /** The moonlet that spawned this one, if any. */
+  parentId: string | null;
   key: KeyState;
   cadence: string;
   perRunCapUsd: number;
@@ -137,6 +139,9 @@ export function migrate() {
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN memory TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN parent_id TEXT`).catch(() => undefined);
+    await c.execute(`CREATE TABLE IF NOT EXISTS files (id TEXT PRIMARY KEY, owner TEXT NOT NULL, moonlet_id TEXT NOT NULL, run_id TEXT, name TEXT NOT NULL, mime TEXT NOT NULL, size INTEGER NOT NULL, bytes BLOB NOT NULL, created_at INTEGER NOT NULL)`).catch(() => undefined);
+    await c.execute(`CREATE INDEX IF NOT EXISTS files_run ON files(run_id)`).catch(() => undefined);
     await c.execute(`CREATE TABLE IF NOT EXISTS tg_messages (chat_id TEXT NOT NULL, message_id INTEGER NOT NULL, run_id TEXT, moonlet_id TEXT NOT NULL, created_at INTEGER NOT NULL, PRIMARY KEY(chat_id, message_id))`).catch(() => undefined);
   })();
   return ready;
@@ -231,6 +236,7 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
     delivery: JSON.parse(row.delivery as string),
     autopilot: !!row.autopilot,
     memory: (row.memory as string | null) ?? null,
+    parentId: (row.parent_id as string | null) ?? null,
     key: row.key ? (JSON.parse(open(row.key as string)) as KeyState) : null,
     cadence: row.cadence as string,
     perRunCapUsd: Number(row.per_run_cap_usd),
@@ -246,14 +252,14 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
   };
 }
 
-export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory"> & { autopilot?: boolean }) {
+export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId"> & { autopilot?: boolean; parentId?: string | null }) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
       m.id, m.owner.toLowerCase(), m.name, JSON.stringify(m.spec), m.status, JSON.stringify(m.delivery), m.autopilot ? 1 : 0,
-      m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt,
+      m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt, m.parentId ?? null,
     ],
   });
 }
@@ -434,7 +440,7 @@ export async function skyStats() {
 
 // ---- connections -----------------------------------------------------------
 
-export type ConnectionKind = "telegram" | "github" | "x";
+export type ConnectionKind = "telegram" | "github" | "x" | "discord" | "gmail";
 export type ConnectionRow<T = Record<string, unknown>> = { owner: string; kind: ConnectionKind; label: string; data: T; createdAt: number };
 
 export async function setConnection(owner: string, kind: ConnectionKind, label: string, data: Record<string, unknown>) {
@@ -485,7 +491,7 @@ export async function takeLinkCode(code: string) {
 
 // ---- proposals (draft → approve → act) --------------------------------------
 
-export type ProposalKind = "tweet" | "pull_request" | "issue_comment";
+export type ProposalKind = "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create";
 export type ProposalStatus = "pending" | "approved" | "rejected" | "executed" | "failed";
 export type ProposalRow = {
   id: string;
@@ -605,4 +611,55 @@ export function open(sealed: string) {
   const d = createDecipheriv("aes-256-gcm", secretKey(), Buffer.from(iv, "base64url"));
   d.setAuthTag(Buffer.from(tag, "base64url"));
   return Buffer.concat([d.update(Buffer.from(enc, "base64url")), d.final()]).toString("utf8");
+}
+
+// ---- files a moonlet wrote (reports as PDF/DOCX/TXT), kept on the run ---------
+
+export type FileMeta = { id: string; owner: string; moonletId: string; runId: string | null; name: string; mime: string; size: number; createdAt: number };
+
+export async function saveFile(f: { owner: string; moonletId: string; runId: string | null; name: string; mime: string; bytes: Uint8Array }): Promise<FileMeta> {
+  await migrate();
+  const id = newId("f");
+  const createdAt = Date.now();
+  await db().execute({
+    sql: `INSERT INTO files(id,owner,moonlet_id,run_id,name,mime,size,bytes,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
+    args: [id, f.owner.toLowerCase(), f.moonletId, f.runId, f.name, f.mime, f.bytes.byteLength, f.bytes, createdAt],
+  });
+  return { id, owner: f.owner.toLowerCase(), moonletId: f.moonletId, runId: f.runId, name: f.name, mime: f.mime, size: f.bytes.byteLength, createdAt };
+}
+
+export async function getFile(id: string): Promise<(FileMeta & { bytes: Uint8Array }) | null> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM files WHERE id=?`, args: [id] });
+  const row = r.rows[0] as Record<string, unknown> | undefined;
+  if (!row) return null;
+  const raw = row.bytes as ArrayBuffer | Uint8Array;
+  return { ...fileMeta(row), bytes: raw instanceof Uint8Array ? raw : new Uint8Array(raw) };
+}
+
+/** Files attached to any of these runs, newest first; a run with none simply has no entry. */
+export async function filesForRuns(runIds: string[]): Promise<Record<string, FileMeta[]>> {
+  await migrate();
+  if (!runIds.length) return {};
+  const r = await db().execute({ sql: `SELECT id,owner,moonlet_id,run_id,name,mime,size,created_at FROM files WHERE run_id IN (${runIds.map(() => "?").join(",")}) ORDER BY created_at DESC`, args: runIds });
+  const out: Record<string, FileMeta[]> = {};
+  for (const row of r.rows as unknown as Record<string, unknown>[]) {
+    const m = fileMeta(row);
+    (out[m.runId ?? ""] ??= []).push(m);
+  }
+  return out;
+}
+
+/** Everything a moonlet has ever written, newest first, with the run each came from. */
+export async function filesForMoonlet(moonletId: string): Promise<Array<FileMeta & { runTitle: string | null; runAt: number | null }>> {
+  await migrate();
+  const r = await db().execute({
+    sql: `SELECT f.id,f.owner,f.moonlet_id,f.run_id,f.name,f.mime,f.size,f.created_at, r.title AS run_title, r.at AS run_at FROM files f LEFT JOIN runs r ON r.id=f.run_id WHERE f.moonlet_id=? ORDER BY f.created_at DESC LIMIT 200`,
+    args: [moonletId],
+  });
+  return (r.rows as unknown as Record<string, unknown>[]).map((row) => ({ ...fileMeta(row), runTitle: (row.run_title as string | null) ?? null, runAt: row.run_at == null ? null : Number(row.run_at) }));
+}
+
+function fileMeta(row: Record<string, unknown>): FileMeta {
+  return { id: row.id as string, owner: row.owner as string, moonletId: row.moonlet_id as string, runId: (row.run_id as string | null) ?? null, name: row.name as string, mime: row.mime as string, size: Number(row.size), createdAt: Number(row.created_at) };
 }
