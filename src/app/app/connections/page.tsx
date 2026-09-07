@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
@@ -39,89 +38,94 @@ function ConnectionsInner() {
   const has = (k: ConnectionKind) => data.connections.find((c) => c.kind === k);
 
   return (
-    <div className="mx-auto max-w-[820px]">
-      <nav className="flex items-center gap-2 font-mono text-[12px] text-ink-soft">
-        <Link href="/app" className="hover:text-ink">Moonlets</Link>
-        <span>/</span>
-        <span className="text-ink">Connections</span>
-      </nav>
-      <header className="mt-4">
-        <h1 className="text-[1.6rem] font-semibold tracking-[-0.02em] text-ink">What your moonlets may touch</h1>
-        <p className="mt-1.5 max-w-[46rem] text-[14px] leading-[1.6] text-ink-soft">
-          Each connection unlocks a tool. Nothing connected, nothing pretended. Anything a moonlet wants to <em>do</em> on your behalf, a post or a pull request, is drafted first and waits for your OK. One approval puts that moonlet on autopilot; switch it back any time on its page.
-        </p>
-      </header>
-      {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{err}</p>}
-
-      <div className="mt-6 space-y-3">
-        {[
-          {
-            key: "orbio",
-            on: !!orbio?.approved,
-            node: (
-              <Shell
-                mark={<OrbioMark size={22} />}
-                name="Orbio"
-                blurb="The budget. Once approved on orbio.so, your moonlets mint one capped inference key for your wallet from the credits your $ORBIO earns. Moonlet can read the balance, mint and revoke that key, nothing else."
-                unlocks="get_balance, create_key, revoke_key"
-                conn={orbio?.approved ? { label: orbio.orbio.dev ? "dev stub" : `${orbio.orbio.tools.length || "MCP"} tools`, createdAt: 0 } : undefined}
-                onDisconnect={orbio?.approved ? async () => { await api.orbioDisconnect(address); await load(); } : undefined}
-              >
-                {orbio && !orbio.approved && (
-                  <button onClick={() => approveOrbio("/app/connections").catch((e) => setErr((e as Error).message))} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[13px] font-medium text-midnight">
-                    <OrbioMark size={14} /> Approve on Orbio
-                  </button>
-                )}
-                {orbio?.orbio.error && <p className="font-mono text-[11.5px] text-red-700">{orbio.orbio.error}</p>}
-              </Shell>
-            ),
-          },
-          { key: "telegram", on: !!has("telegram"), node: <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} setErr={setErr} /> },
-          { key: "gmail", on: !!has("gmail"), node: <GmailCard owner={address} conn={has("gmail")} oauth={data.available.gmailOAuth} onChange={load} /> },
-          { key: "discord", on: !!has("discord"), node: <DiscordCard owner={address} conn={has("discord")} onChange={load} setErr={setErr} /> },
-          { key: "github", on: !!has("github"), node: <GitHubCard owner={address} conn={has("github")} oauth={data.available.githubOAuth} onChange={load} /> },
-          { key: "x", on: !!has("x"), node: <XCard owner={address} conn={has("x")} onChange={load} setErr={setErr} /> },
-        ]
-          .sort((a, b) => Number(b.on) - Number(a.on))
-          .map((c) => <div key={c.key}>{c.node}</div>)}
+    <div className="flex min-h-[calc(100vh-56px)] flex-col lg:min-h-screen">
+      <div className="sticky top-14 z-20 border-b border-ink/10 bg-cream/90 backdrop-blur lg:top-0">
+        <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
+          <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Connections</h1>
+          <span className="font-mono text-[12px] text-ink-faint">{data.connections.length + (orbio?.approved ? 1 : 0)} connected</span>
+        </div>
       </div>
+      <div className="mx-auto w-full max-w-[760px] px-4 py-6 sm:px-6">
+        <p className="text-[13.5px] leading-[1.6] text-ink-soft">
+          Each connection unlocks a tool. Anything a moonlet wants to <em>do</em> on your behalf is drafted first and waits for your OK; one approval puts that moonlet on autopilot, and you can switch it back on its page.
+        </p>
+        {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{err}</p>}
 
-      <p className="mt-8 text-[12px] leading-[1.6] text-ink-faint">
-        Tokens are encrypted at rest and only ever used by your own moonlets. Disconnecting removes them immediately. Moonlet never sees your wallet key and never moves tokens.
-      </p>
+        <div className="mt-5 divide-y divide-ink/[0.07] rounded-lg border border-ink/10 bg-white">
+          {[
+            {
+              key: "orbio",
+              on: !!orbio?.approved,
+              node: (
+                <Shell
+                  mark={<OrbioMark size={20} />}
+                  name="Orbio"
+                  blurb="The budget. Once approved on orbio.so, your moonlets mint one capped inference key for your wallet from the credits your $ORBIO earns. Moonlet can read the balance, mint and revoke that key, nothing else."
+                  unlocks="get_balance, create_key, revoke_key"
+                  conn={orbio?.approved ? { label: orbio.orbio.dev ? "dev stub" : `${orbio.orbio.tools.length || "MCP"} tools`, createdAt: 0 } : undefined}
+                  onDisconnect={orbio?.approved ? async () => { await api.orbioDisconnect(address); await load(); } : undefined}
+                  action={orbio && !orbio.approved ? (
+                    <button onClick={() => approveOrbio("/app/connections").catch((e) => setErr((e as Error).message))} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3 py-1.5 font-mono text-[12.5px] font-medium text-midnight">
+                      <OrbioMark size={13} /> Approve
+                    </button>
+                  ) : undefined}
+                >
+                  {orbio?.orbio.error && <p className="font-mono text-[11.5px] text-red-700">{orbio.orbio.error}</p>}
+                </Shell>
+              ),
+            },
+            { key: "telegram", on: !!has("telegram"), node: <TelegramCard owner={address} conn={has("telegram")} available={data.available.telegram} bot={data.available.telegramBot} onChange={load} setErr={setErr} /> },
+            { key: "gmail", on: !!has("gmail"), node: <GmailCard owner={address} conn={has("gmail")} oauth={data.available.gmailOAuth} onChange={load} /> },
+            { key: "discord", on: !!has("discord"), node: <DiscordCard owner={address} conn={has("discord")} onChange={load} setErr={setErr} /> },
+            { key: "github", on: !!has("github"), node: <GitHubCard owner={address} conn={has("github")} oauth={data.available.githubOAuth} onChange={load} /> },
+            { key: "x", on: !!has("x"), node: <XCard owner={address} conn={has("x")} onChange={load} setErr={setErr} /> },
+          ]
+            .sort((a, b) => Number(b.on) - Number(a.on))
+            .map((c) => <div key={c.key}>{c.node}</div>)}
+        </div>
+
+        <p className="mt-6 text-[12px] leading-[1.6] text-ink-faint">
+          Tokens are encrypted at rest and only ever used by your own moonlets. Disconnecting removes them immediately. Moonlet never sees your wallet key and never moves tokens.
+        </p>
+      </div>
     </div>
   );
 }
 
 type CardProps = { conn?: { label: string; createdAt: number }; onChange: () => Promise<void> };
 
-function Shell({ mark, name, blurb, unlocks, conn, children, onDisconnect }: { mark: React.ReactNode; name: string; blurb: string; unlocks: string; conn?: { label: string; createdAt: number }; children?: React.ReactNode; onDisconnect?: () => void }) {
+/**
+ * One row per service, settings-style: mark, name, state, one line; the control on the right (`action`). Setup flows that
+ * need more than a click render under the row once started.
+ */
+function Shell({ mark, name, blurb, unlocks, conn, children, onDisconnect, action }: { mark: React.ReactNode; name: string; blurb: string; unlocks: string; conn?: { label: string; createdAt: number }; children?: React.ReactNode; onDisconnect?: () => void; action?: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
   return (
-    <section className={`rounded-lg border bg-white p-5 ${conn ? "border-moss/40" : "border-ink/10"}`}>
-      <div className="flex items-start gap-4">
-        <span className="mt-0.5 inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-lg border border-ink/10 bg-paper text-ink">{mark}</span>
+    <section className="px-4 py-3">
+      <div className="flex items-center gap-3.5">
+        <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink">{mark}</span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{name}</h2>
+            <h2 className="text-[14px] font-medium tracking-[-0.01em] text-ink">{name}</h2>
             {conn ? (
-              <span className="rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss">connected · {conn.label}</span>
+              <span className="rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[10.5px] text-moss">{conn.label}</span>
             ) : (
-              <span className="rounded-full bg-ink/5 px-2 py-0.5 font-mono text-[11px] text-ink-soft">not connected</span>
+              <span className="hidden rounded-full bg-ink/5 px-2 py-0.5 font-mono text-[10.5px] text-ink-soft sm:inline">not connected</span>
             )}
           </div>
-          <p className="mt-1 text-[13px] leading-[1.55] text-ink-soft">{blurb}</p>
-          <p className="mt-1.5 font-mono text-[11.5px] text-ink-faint">unlocks: {unlocks}</p>
-          <div className="mt-3">{children}</div>
+          <p className={`mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft ${open ? "" : "line-clamp-1 max-sm:hidden"}`}>{blurb}</p>
+          {open && <p className="mt-1 font-mono text-[11px] text-ink-faint">unlocks: {unlocks}</p>}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          {conn && conn.createdAt ? <span className="hidden font-mono text-[11px] text-ink-faint sm:inline">linked {timeAgo(conn.createdAt)}</span> : null}
           {conn && onDisconnect && (
-            <div className="mt-3 flex flex-wrap items-center gap-3">
-              <button onClick={onDisconnect} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink/60 bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink hover:border-red-700 hover:text-red-700">
-                Disconnect
-              </button>
-              {conn.createdAt ? <span className="font-mono text-[11.5px] text-ink-faint">linked {timeAgo(conn.createdAt)}</span> : null}
-            </div>
+            <button onClick={onDisconnect} className="rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[12px] text-ink-soft hover:border-red-700 hover:text-red-700">Disconnect</button>
           )}
+          {!conn && action}
+          <button onClick={() => setOpen((v) => !v)} aria-label={open ? "Less" : "More"} className="rounded px-1 font-mono text-[12px] text-ink-faint hover:text-ink">{open ? "–" : "···"}</button>
         </div>
       </div>
+      {children ? <div className="mt-3 pl-[52px] empty:hidden">{children}</div> : null}
     </section>
   );
 }
@@ -144,39 +148,43 @@ function TelegramCard({ owner, conn, available, bot, onChange, setErr }: CardPro
   }, [waiting, owner, onChange]);
 
   return (
-    <Shell mark={<TelegramMark size={24} />} name="Telegram" blurb="Tap Link, open the moonlet bot in Telegram and press Start. Your moonlets report there, and you can talk back: reply to any report to dig in, send a screenshot, say “run now” or “every 6 hours”, or just ask a question. Anything that needs your OK arrives with Approve / Reject buttons." unlocks="deliver, approvals" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "telegram"); await onChange(); }}>
-      {!conn && (available ? (
-        link ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <a href={link} target="_blank" rel="noreferrer" className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[13px] font-medium text-midnight">
-              <TelegramMark size={14} /> Open @{bot} and tap Start
-            </a>
-            <span className="font-mono text-[11.5px] text-ink-soft">{waiting ? "waiting for you to press Start in Telegram…" : ""}</span>
-          </div>
-        ) : (
-          <button
-            disabled={busy}
-            onClick={async () => {
-              setBusy(true);
-              setErr(null);
-              try {
-                const r = await api.telegramLink(owner);
-                if (!r.url) throw new Error("The bot has no username set on this deployment.");
-                setLink(r.url);
-                setWaiting(true);
-              } catch (e) {
-                setErr((e as Error).message);
-              }
-              setBusy(false);
-            }}
-            className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink disabled:opacity-60"
-          >
-            <TelegramMark size={14} /> {busy ? "One moment…" : "Link Telegram"}
-          </button>
-        )
-      ) : (
-        <span className="font-mono text-[11.5px] text-ink-faint">Telegram isn’t switched on for this deployment yet.</span>
-      ))}
+    <Shell
+      mark={<TelegramMark size={20} />}
+      name="Telegram"
+      blurb="Tap Link, open the moonlet bot in Telegram and press Start. Your moonlets report there, and you can talk back: reply to any report to dig in, send a screenshot, say “run now” or “every 6 hours”, or just ask a question. Anything that needs your OK arrives with Approve / Reject buttons."
+      unlocks="deliver, approvals"
+      conn={conn}
+      onDisconnect={async () => { await api.disconnect(owner, "telegram"); await onChange(); }}
+      action={available ? (link ? undefined : (
+        <button
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            setErr(null);
+            try {
+              const r = await api.telegramLink(owner);
+              if (!r.url) throw new Error("The bot has no username set on this deployment.");
+              setLink(r.url);
+              setWaiting(true);
+            } catch (e) {
+              setErr((e as Error).message);
+            }
+            setBusy(false);
+          }}
+          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3 py-1.5 font-mono text-[12.5px] font-medium text-ink disabled:opacity-60"
+        >
+          <TelegramMark size={13} /> {busy ? "One moment…" : "Link"}
+        </button>
+      )) : <span className="font-mono text-[11px] text-ink-faint">not switched on here</span>}
+    >
+      {!conn && link && (
+        <div className="flex flex-wrap items-center gap-3">
+          <a href={link} target="_blank" rel="noreferrer" className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[13px] font-medium text-midnight">
+            <TelegramMark size={14} /> Open @{bot} and tap Start
+          </a>
+          <span className="font-mono text-[11.5px] text-ink-soft">{waiting ? "waiting for you to press Start in Telegram…" : ""}</span>
+        </div>
+      )}
     </Shell>
   );
 }
@@ -185,8 +193,14 @@ function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: strin
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   return (
-    <Shell mark={<GitHubMark size={24} />} name="GitHub" blurb="Sign in with GitHub once. A moonlet can then read your repos and open pull requests, issues or comments; the first one waits for your approval, then it acts on its own." unlocks="github_read, open_pull_request, open_issue, comment_on_issue" conn={conn} onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}>
-      {!conn && (oauth ? (
+    <Shell
+      mark={<GitHubMark size={20} />}
+      name="GitHub"
+      blurb="Sign in with GitHub once. A moonlet can then read your repos and open pull requests, issues or comments; the first one waits for your approval, then it acts on its own."
+      unlocks="github_read, open_pull_request, open_issue, comment_on_issue"
+      conn={conn}
+      onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}
+      action={oauth ? (
         <button
           disabled={busy}
           onClick={async () => {
@@ -200,14 +214,13 @@ function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: strin
               setBusy(false);
             }
           }}
-          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream disabled:opacity-60"
+          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3 py-1.5 font-mono text-[12.5px] font-medium text-cream disabled:opacity-60"
         >
-          <GitHubMark size={14} /> {busy ? "Opening GitHub…" : "Connect GitHub"}
+          <GitHubMark size={13} /> {busy ? "Opening…" : "Connect"}
         </button>
-      ) : (
-        <span className="font-mono text-[11.5px] text-ink-faint">GitHub sign-in isn’t switched on for this deployment yet.</span>
-      ))}
-      {err && <p className="mt-2 font-mono text-[11.5px] text-red-700">{err}</p>}
+      ) : <span className="font-mono text-[11px] text-ink-faint">not switched on here</span>}
+    >
+      {err && <p className="font-mono text-[11.5px] text-red-700">{err}</p>}
     </Shell>
   );
 }
@@ -246,12 +259,12 @@ function XCard({ owner, conn, onChange, setErr }: CardProps & { owner: string; s
       unlocks="post_tweet"
       conn={conn}
       onDisconnect={async () => { await api.disconnect(owner, "x"); await onChange(); }}
-    >
-      {!conn && !open && (
-        <button onClick={() => setOpen(true)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink">
-          <XMark size={14} /> Connect X
+      action={!open ? (
+        <button onClick={() => setOpen(true)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3 py-1.5 font-mono text-[12.5px] font-medium text-ink">
+          <XMark size={13} /> Connect
         </button>
-      )}
+      ) : undefined}
+    >
       {!conn && open && (
         <div className="rounded-lg border border-ink/10 bg-paper/60 p-4">
           <p className="text-[13px] font-semibold text-ink">Four steps on developer.x.com, about five minutes.</p>
@@ -321,12 +334,12 @@ function DiscordCard({ owner, conn, onChange, setErr }: CardProps & { owner: str
       unlocks="deliver"
       conn={conn}
       onDisconnect={async () => { await api.disconnect(owner, "discord"); await onChange(); }}
-    >
-      {!conn && !open && (
-        <button onClick={() => setOpen(true)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink">
-          <DiscordMark size={14} /> Connect a channel
+      action={!open ? (
+        <button onClick={() => setOpen(true)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3 py-1.5 font-mono text-[12.5px] font-medium text-ink">
+          <DiscordMark size={13} /> Connect
         </button>
-      )}
+      ) : undefined}
+    >
       {!conn && open && (
         <div className="rounded-lg border border-ink/10 bg-paper/60 p-4">
           <p className="text-[13px] font-semibold text-ink">Three steps in Discord, about a minute.</p>
@@ -391,14 +404,13 @@ function GmailCard({ owner, conn, oauth, onChange }: CardProps & { owner: string
   const [err, setErr] = useState<string | null>(null);
   return (
     <Shell
-      mark={<GmailMark size={26} />}
+      mark={<GmailMark size={22} />}
       name="Gmail"
       blurb="Sign in with Google once. A moonlet can then work in your inbox: tell you what came in and what needs an answer, find things, draft replies, and, with your OK, send mail or tidy up (archive, label, mark read). It never deletes permanently. Revoke it any time from your Google account."
       unlocks="gmail_read, gmail_draft, gmail_send, gmail_organize"
       conn={conn}
       onDisconnect={async () => { await api.disconnect(owner, "gmail"); await onChange(); }}
-    >
-      {!conn && (oauth ? (
+      action={oauth ? (
         <button
           disabled={busy}
           onClick={async () => {
@@ -412,14 +424,13 @@ function GmailCard({ owner, conn, oauth, onChange }: CardProps & { owner: string
               setBusy(false);
             }
           }}
-          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3.5 py-2 font-mono text-[13px] font-medium text-ink disabled:opacity-60"
+          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3 py-1.5 font-mono text-[12.5px] font-medium text-ink disabled:opacity-60"
         >
-          <GmailMark size={14} /> {busy ? "Opening Google…" : "Connect Gmail"}
+          <GmailMark size={13} /> {busy ? "Opening…" : "Connect"}
         </button>
-      ) : (
-        <span className="font-mono text-[11.5px] text-ink-faint">Google sign-in isn&apos;t switched on for this deployment yet.</span>
-      ))}
-      {err && <p className="mt-2 font-mono text-[11.5px] text-red-700">{err}</p>}
+      ) : <span className="font-mono text-[11px] text-ink-faint">not switched on here</span>}
+    >
+      {err && <p className="font-mono text-[11.5px] text-red-700">{err}</p>}
     </Shell>
   );
 }

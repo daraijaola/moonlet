@@ -96,14 +96,15 @@ function NewInner() {
   const canNext = step === 0 ? sentence.trim().length > 8 : step === 1 ? !!spec && spec.objective.length > 8 : true;
 
   return (
-    <div className="mx-auto max-w-[760px]">
-      <nav className="flex items-center gap-2 font-mono text-[12px] text-ink-soft">
-        <Link href="/app" className="hover:text-ink">Moonlets</Link>
-        <span>/</span>
-        <span className="text-ink">{editId ? "Edit" : "Launch"}</span>
-      </nav>
-
-      <ol className="mt-6 grid grid-cols-4 gap-2">
+    <div className="flex min-h-[calc(100vh-56px)] flex-col lg:min-h-screen">
+      <div className="sticky top-14 z-20 border-b border-ink/10 bg-cream/90 backdrop-blur lg:top-0">
+        <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
+          <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{editId ? "Edit job" : "Launch a moonlet"}</h1>
+          <span className="font-mono text-[12px] text-ink-faint">step {step + 1} of {STEPS.length}</span>
+        </div>
+      </div>
+    <div className="mx-auto w-full max-w-[760px] px-4 py-6 sm:px-6">
+      <ol className="grid grid-cols-4 gap-2">
         {STEPS.map((l, i) => {
           const state = i < step ? "done" : i === step ? "active" : "todo";
           return (
@@ -302,6 +303,7 @@ function NewInner() {
           </div>
         )}
       </section>
+    </div>
     </div>
   );
 }
