@@ -17,7 +17,7 @@ export function Rails() {
               Nothing to install.
             </h2>
             <p className="mt-5 max-w-[30rem] text-[16px] leading-[1.55] text-ink-soft">
-              Orbio pays for it, Robinhood Chain remembers it, and it acts through the accounts you already have. GitHub, Discord and X connect in a click; anything that speaks for you waits for your approval the first time.
+              Orbio pays for it, Robinhood Chain remembers it, and it acts through the accounts you already have. Gmail, GitHub, Telegram, Discord and X connect in a click; anything that speaks for you waits for your approval the first time.
             </p>
           </div>
 

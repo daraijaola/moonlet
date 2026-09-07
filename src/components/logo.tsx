@@ -6,7 +6,7 @@ type MarkProps = {
   ink?: string;
   /** Colour of the face cut-outs; set it to the surface behind the mark. */
   face?: string;
-  /** Antenna tip; defaults to the silhouette colour. */
+  /** Antenna tip; gold by default, the one spot of colour in the mark. */
   tip?: string;
   title?: string;
 };
@@ -20,13 +20,13 @@ export function MoonletMark({
   className,
   ink = "var(--ink)",
   face = "#fff",
-  tip,
+  tip = "var(--gold, #E6B64A)",
   title = "moonlet",
 }: MarkProps) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title} className={className} style={{ overflow: "visible" }}>
       <path d="M45.5 18.5 L52.5 9.5" stroke={ink} strokeWidth="4.2" strokeLinecap="round" />
-      <circle cx="53.5" cy="8" r="4.6" fill={tip ?? ink} />
+      <circle cx="53.5" cy="8" r="4.6" fill={tip} />
       <circle cx="30" cy="37" r="24.5" fill={ink} />
       <circle cx="19.5" cy="28" r="2.7" fill={face} />
       <circle cx="41" cy="51" r="2.1" fill={face} />

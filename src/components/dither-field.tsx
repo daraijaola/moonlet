@@ -9,7 +9,7 @@ import { Dithering } from "@paper-design/shaders-react";
  * multiplied onto the page). Anchored to the right edge and dissolving toward
  * the left, so it reads as a texture the hero emerges from, not a background.
  */
-export function DitherField({ className, from = "right" }: { className?: string; from?: "left" | "right" | "around" }) {
+export function DitherField({ className, from = "right" }: { className?: string; from?: "left" | "right" | "around" | "top" }) {
   const [ready, setReady] = useState<"webgl" | "css" | null>(null);
   const [reduced, setReduced] = useState(false);
   useEffect(() => {
@@ -26,9 +26,9 @@ export function DitherField({ className, from = "right" }: { className?: string;
     };
   }, []);
   if (!ready) return null;
-  if (ready === "css") return <div aria-hidden className={`dither-field dither-css pointer-events-none absolute ${from === "left" ? "dither-left" : from === "around" ? "dither-around" : ""} ${className ?? ""}`} />;
+  if (ready === "css") return <div aria-hidden className={`dither-field dither-css pointer-events-none absolute ${from === "left" ? "dither-left" : from === "around" ? "dither-around" : from === "top" ? "dither-top" : ""} ${className ?? ""}`} />;
   return (
-    <div aria-hidden className={`dither-field pointer-events-none absolute ${from === "left" ? "dither-left" : from === "around" ? "dither-around" : ""} ${className ?? ""}`}>
+    <div aria-hidden className={`dither-field pointer-events-none absolute ${from === "left" ? "dither-left" : from === "around" ? "dither-around" : from === "top" ? "dither-top" : ""} ${className ?? ""}`}>
       <Dithering
         style={{ width: "100%", height: "100%" }}
         // Paper Shaders renders at 2x device pixels by default: 6M+ shader evaluations per frame per field, and
