@@ -44,7 +44,8 @@ No card. No API key to copy. No dashboard to babysit.
 | **Fund** | Your $ORBIO earns Orbio credits. A moonlet mints one capped inference key from them and spends only that. Below 1,000 $ORBIO it goes quiet. |
 | **Work** | Five job shapes: market watch (tokens, pools, whales on Robinhood Chain), repo mechanic (read repos, open PRs and issues), **inbox** (work in your Gmail), digest (read pages you name), custom. One sentence becomes a plan you can edit before launch. |
 | **Report** | Readable reports with a link to every source. Delivered to Telegram, Discord, the moonlet's page, and as PDF/DOCX files when asked. |
-| **Prove** | Every run: cost, model, duration, tool trace, and a sha256 of the output anchored on Robinhood Chain. Public by default on [the sky](https://moonlet.16labs.xyz/sky). |
+| **Prove** | Every run: cost, model, duration, tool trace, and a sha256 of the output anchored on Robinhood Chain. Watch jobs end each run with one checkable call about the next and score it hit or miss when it comes; the call and the score are inside the hash, so the receipt holds the call before the outcome. Lifetime record on every moonlet. |
+| **Watch cheaply** | Alert jobs get a tripwire: one number read for free every 15 minutes; the model wakes only when it moves past your line. |
 | **Ask** | Draft → approve → act. A moonlet that wants to send an email, open a PR, post, archive or spawn another moonlet puts a card in your queue (and Telegram). One approval switches it to autopilot; spawns always ask. |
 | **Talk** | Reply to any report in Telegram or on the page. It answers from the run, reaches for its tools when it must, and can act (through the same approval cards). |
 
@@ -73,6 +74,8 @@ one sentence ──compile──▶ JobSpec (you review, you edit) ──launch�
           open_pull_request · open_issue · comment_on_issue · post_tweet
           gmail_draft · gmail_send · gmail_forward · gmail_organize · write_document · spawn_moonlet · deliver
    budget: hard per-run cap; stops tool use when the next call would cross it and says what it skipped
+   prove:  score last run's call (hit / miss), make one checkable call for next run
+   tripwire (alert jobs): free 15-min probe of one metric; the model wakes only past the threshold
       │
       ▼
  RunOutput (strict JSON: title, summary, body, sections, remember, sources, signal)
@@ -127,12 +130,13 @@ Built during Orbio Build Week 2026, live at [moonlet.16labs.xyz](https://moonlet
 - Documents (PDF, DOCX, TXT, MD) on runs, in Telegram, on the page.
 - Composer with memory that can act; inbox reports written for reading; brand-coloured marks; mobile layout.
 - Privacy and Terms pages; nightly DB backup on the server.
+- "The loop, live": platform credits earned vs put to work, ticking on the landing and the sky.
+- Prove: pre-committed calls scored next run, in the hash, with a record per moonlet.
+- Tripwire: free 15-minute probes for alert jobs; the model runs only on a real move.
 
 **Next**
 
 - Google OAuth verification (brand + scope review) to remove the "unverified app" screen and the 100-user cap.
-- "Prove": pre-committed calls scored on the next run, receipted.
-- Cheap alert lane: free threshold polling, model only when something trips.
 - Sources: X accounts, RSS, YouTube, Telegram channels. Google Sheets.
 - Live step streaming during a run. One-click unsubscribe (RFC 8058) in `gmail_organize`.
 
