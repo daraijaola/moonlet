@@ -2,6 +2,8 @@
 
 ## 2026-09-07 · Build Week day 2
 
+Live at [moonlet.16labs.xyz](https://moonlet.16labs.xyz).
+
 - Gmail as a workspace: sign in with Google; moonlets read, search, draft in-thread, send, forward and tidy the inbox (bulk by search), behind the same approve card as PRs and posts. Inbox template, inbox reports written for reading with a link into every thread, PDF inbox reports from Telegram.
 - Composer keeps the conversation and can act; delete withdraws pending drafts.
 - Spend caps follow the model; runs cut short by their cap say so. Transient provider errors retried.
