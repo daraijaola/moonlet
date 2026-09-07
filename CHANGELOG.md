@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-09-07 · Build Week day 2
+
+- Gmail as a workspace: sign in with Google; moonlets read, search, draft in-thread, send, forward and tidy the inbox (bulk by search), behind the same approve card as PRs and posts. Inbox template, inbox reports written for reading with a link into every thread, PDF inbox reports from Telegram.
+- Composer keeps the conversation and can act; delete withdraws pending drafts.
+- Spend caps follow the model; runs cut short by their cap say so. Transient provider errors retried.
+- App moved to moonlet.16labs.xyz; Privacy and Terms pages; EIP-6963 wallet discovery.
+- Landing and sky polish: official OpenRouter mark, brand-coloured marks and tiles (Gmail and Telegram join the pile), gold antenna tip, dither band on the sky. Mobile moonlet rail.
+- README rewritten with banner and where-we-stand.
+
 ## 2026-09-04
 
 - Added real per-wallet Orbio approval flow, hardened for proxied origins (`9e819f3`)
