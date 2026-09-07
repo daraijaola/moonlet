@@ -51,7 +51,7 @@ export const MODEL_CHOICES = ["auto", "google/gemini-3.8-flash", "openai/gpt-5.6
 export type ModelChoice = (typeof MODEL_CHOICES)[number];
 
 /** How much more a run costs on each model than on Flash, which the template costs assume. Auto is planned at the middle tier. */
-export const MODEL_COST_MULT: Record<ModelChoice, number> = { auto: 2.5, "google/gemini-3.8-flash": 1, "openai/gpt-5.6-terra": 2.5, "anthropic/claude-sonnet-5": 6 };
+export const MODEL_COST_MULT: Record<ModelChoice, number> = { auto: 4, "google/gemini-3.8-flash": 1, "openai/gpt-5.6-terra": 4, "anthropic/claude-sonnet-5": 6 };
 
 /** A per-run cap that lets this template finish on this model. Templates were costed on Flash; heavier models need room. */
 export function recommendedCapUsd(template: TemplateId, model: ModelChoice = "auto") {
