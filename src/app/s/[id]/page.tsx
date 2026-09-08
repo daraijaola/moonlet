@@ -16,14 +16,6 @@ import { fmtBag, fmtUsd, shortAddr, shortenHexes, timeAgo, timeUntil } from "@/l
 
 export const dynamic = "force-dynamic";
 
-const MASCOT: Record<string, string> = {
-  running: "/mascot/moonlet-work.png",
-  idle: "/mascot/moonlet-rest.png",
-  paused: "/mascot/moonlet-doze.png",
-  quiet: "/mascot/moonlet-doze.png",
-  deleted: "/mascot/moonlet-doze.png",
-};
-
 export async function generateMetadata({ params }: PageProps<"/s/[id]">): Promise<Metadata> {
   const { id } = await params;
   const m = (await store.getMoonlet(id).then((x) => x && redactMoonlet(x)));
@@ -66,11 +58,11 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
               <h1 className="mt-2 font-display text-[3.4rem] leading-[0.9] text-ink sm:text-[4.2rem]">{m.name}</h1>
               <p className="mt-3 max-w-[34rem] text-[15px] leading-[1.55] text-ink [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
               <p className="mt-3 font-mono text-[12px] text-ink-soft">
-                {TEMPLATE_LABEL[m.spec.template]} · orbits {shortAddr(m.owner)} · {owner ? `${fmtBag(owner.bag)} $ORBIO` : ""}
+                {m.id} · {TEMPLATE_LABEL[m.spec.template]} · orbits {shortAddr(m.owner)} · {owner ? `${fmtBag(owner.bag)} $ORBIO` : ""}
               </p>
               <p className="mt-1 font-mono text-[12px] text-ink-faint">tools: {m.spec.tools.map((t) => TOOL_LABEL[t]).join(", ")}</p>
             </div>
-            <Image src={MASCOT[m.status]} alt="" width={520} height={357} className={`pointer-events-none mx-auto w-[200px] select-none ${m.status === "running" ? "animate-drift" : ""}`} priority />
+            <Image src={`/avatars/${m.avatar}.png`} alt="" width={256} height={256} className={`pointer-events-none mx-auto h-[168px] w-[168px] select-none rounded-full shadow-[0_18px_40px_-20px_rgba(21,22,29,0.45)] ${m.status === "running" ? "animate-drift" : ""}`} priority />
           </div>
         </section>
 

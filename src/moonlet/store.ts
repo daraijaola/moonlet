@@ -22,12 +22,15 @@ export type OwnerRow = {
   bagCheckedAt: number;
 };
 
+export const AVATAR_COUNT = 10;
+
 export type MoonletRow = {
   id: string;
   owner: string;
   name: string;
   spec: JobSpec;
   status: "running" | "idle" | "paused" | "quiet" | "deleted";
+  avatar: number;
   delivery: { telegram?: string; x?: string; discord?: string; email?: string };
   autopilot: boolean;
   /** Compact notes the moonlet carries between runs (last values, seen ids). */
@@ -147,6 +150,9 @@ export function migrate() {
     );
     await c.execute(`ALTER TABLE moonlets ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE owners ADD COLUMN avatar INTEGER`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN avatar INTEGER`).catch(() => undefined);
+    // Every moonlet wears one of ten faces; older rows draw theirs once here.
+    await c.execute(`UPDATE moonlets SET avatar = 1 + (abs(random()) % ${AVATAR_COUNT}) WHERE avatar IS NULL`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN memory TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
@@ -175,8 +181,7 @@ export async function upsertOwner(address: string) {
   await db().execute({ sql: `INSERT INTO owners(address) VALUES(?) ON CONFLICT(address) DO NOTHING`, args: [address.toLowerCase()] });
 }
 
-/** There are ten profile pictures. A wallet draws one the first time it is seen and keeps it. */
-export const AVATAR_COUNT = 10;
+/** Ten faces. Wallets and moonlets each draw one and keep it. */
 export async function avatarOf(address: string): Promise<number> {
   await upsertOwner(address);
   const r = await db().execute({ sql: `SELECT avatar FROM owners WHERE address=?`, args: [address.toLowerCase()] });
@@ -265,6 +270,7 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
     name: row.name as string,
     spec: JSON.parse(row.spec as string),
     status: row.status as MoonletRow["status"],
+    avatar: Number(row.avatar ?? 1),
     delivery: JSON.parse(row.delivery as string),
     autopilot: !!row.autopilot,
     memory: (row.memory as string | null) ?? null,
@@ -288,14 +294,15 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
   };
 }
 
-export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses" | "watch"> & { autopilot?: boolean; parentId?: string | null }) {
+export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses" | "watch" | "avatar"> & { autopilot?: boolean; parentId?: string | null; avatar?: number }) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id,avatar)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
       m.id, m.owner.toLowerCase(), m.name, JSON.stringify(m.spec), m.status, JSON.stringify(m.delivery), m.autopilot ? 1 : 0,
       m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt, m.parentId ?? null,
+      m.avatar ?? 1 + Math.floor(Math.random() * AVATAR_COUNT),
     ],
   });
 }

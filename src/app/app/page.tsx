@@ -8,12 +8,13 @@ import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/app-data";
 import { api, fmtBag, fmtUsd, shortenHexes, timeAgo, timeUntil, type ApiFile, type ApiMoonlet, type ApiRun, type Connections, type OrbioStatus, type Proposal } from "@/lib/api";
 import { GitHubMark, OrbioMark, TelegramMark } from "@/components/marks";
-import { FuelGauge, StatusDot } from "@/components/fuel-gauge";
+import { FuelGauge } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
 import { MicButton, VoiceRecorder, useVoiceSupported } from "@/components/voice-button";
 import { TEMPLATE_LABEL } from "@/components/labels";
 import { DitherField } from "@/components/dither-field";
-import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp, Plus, Download, Ellipsis, Pencil, KeyRound } from "lucide-react";
+import { Avatar, publicUrl } from "@/components/app-shell";
+import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp, Plus, Download, Ellipsis, Pencil, KeyRound, Share2 } from "lucide-react";
 import { JobInput } from "@/components/job-input";
 
 function DashboardInner() {
@@ -64,8 +65,8 @@ function MobileRail({ moonlets, selected }: { moonlets: ApiMoonlet[]; selected: 
         const active = m.id === selected;
         return (
           <li key={m.id} data-active={active || undefined} className="shrink-0 snap-start">
-            <Link href={`/app?m=${m.id}`} className={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-[13px] ${active ? "border-ink bg-ink text-cream" : "border-ink/15 bg-white text-ink"}`}>
-              <StatusDot tone={m.status === "running" || m.status === "idle" ? "green" : "grey"} pulse={m.status === "running"} />
+            <Link href={`/app?m=${m.id}`} className={`inline-flex items-center gap-2 rounded-full border py-1 pl-1 pr-3 text-[13px] ${active ? "border-ink bg-ink text-cream" : "border-ink/15 bg-white text-ink"}`}>
+              <Avatar n={m.avatar} size={22} />
               {m.name}
             </Link>
           </li>
@@ -395,9 +396,13 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       {/* ── top bar: what it is, the one action, and the panel toggle ─────── */}
       <div className="z-20 shrink-0 border-b border-ink/[0.07] bg-cream">
         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
-          <StatusDot tone={quiet ? "grey" : "green"} pulse={running} />
+          <span className="relative shrink-0">
+            <Avatar n={m.avatar} size={28} />
+            <span className={`absolute -bottom-px -right-px h-2 w-2 rounded-full ring-2 ring-cream ${running ? "bg-gold" : quiet ? "bg-ink-faint" : "bg-moss"}`} />
+          </span>
           <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-ink">{m.name}</h1>
           <span className="hidden text-[12.5px] text-ink-faint sm:inline">{TEMPLATE_LABEL[m.spec.template]}{autopilotOn ? " · autopilot" : ""}</span>
+          <button type="button" onClick={() => { navigator.clipboard?.writeText(m.id).catch(() => undefined); flash("ID copied."); }} title="Copy ID" className="hidden rounded-md px-1.5 py-0.5 font-mono text-[11.5px] text-ink-faint hover:bg-ink/[0.05] hover:text-ink md:inline">{m.id}</button>
           <div className="ml-auto flex items-center gap-2">
             <span className="hidden text-[12px] text-ink-faint md:inline"><span className="font-mono tabular-nums">{fmtUsd(m.spentTotalUsd, 3)}</span> spent</span>
             <button disabled={!!busy || running} onClick={() => go("run", () => api.runNow(owner, m.id), "Run finished.")} className="ui-btn ui-btn-gold">
@@ -408,6 +413,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
             </button>
             <Menu
               items={[
+                { label: "Share", icon: <Share2 size={14} strokeWidth={1.75} />, onClick: async () => { const url = publicUrl(m.id); if (navigator.share) { try { await navigator.share({ title: `${m.name} · moonlet`, url }); return; } catch {} } await navigator.clipboard?.writeText(url).catch(() => undefined); flash("Link copied."); } },
                 { label: "Edit job", icon: <Pencil size={14} strokeWidth={1.75} />, href: `/app/new?edit=${m.id}` },
                 { label: "Public page", icon: <ExternalLink size={14} strokeWidth={1.75} />, href: `/s/${m.id}` },
                 { label: "Rotate key", icon: <KeyRound size={14} strokeWidth={1.75} />, onClick: () => go("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.") },

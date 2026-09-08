@@ -1,16 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import Image from "next/image";
 import { PublicHeader } from "@/components/public-header";
 import { DitherField } from "@/components/dither-field";
 import { FuelLive } from "@/components/fuel-live";
 import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
-import { StatusDot, fuelTone } from "@/components/fuel-gauge";
-import { CADENCE_LABEL, TEMPLATE_LABEL } from "@/components/labels";
-import type { Cadence } from "@/moonlet/spec";
+import { fuelTone } from "@/components/fuel-gauge";
 import * as store from "@/moonlet/store";
 import { isPrivateSpec, PRIVATE_OBJECTIVE } from "@/moonlet/privacy";
-import { fmtBag, fmtUsd, shortAddr } from "@/lib/api";
+import { SkyCard, type SkyItem } from "@/components/sky-card";
+import { fmtUsd } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
@@ -19,13 +17,13 @@ export const metadata: Metadata = {
   description: "Every moonlet alive right now, funded by the bags they orbit.",
 };
 
-type SkyItem = { id: string; name: string; status: store.MoonletRow["status"]; objective: string; template: store.MoonletRow["spec"]["template"]; cadence: string; owner: string; bag: number; earn: number; burn: number; avatar: number; runs: number; lastRunAt: number | null };
+const SHOWCASE = 9;
 
 export default async function SkyPage() {
   const [all, stats] = await Promise.all([store.listMoonlets(), store.skyStats()]);
-  const owners = new Map<string, { bag: number; avatar: number }>();
-  for (const m of all) if (!owners.has(m.owner)) owners.set(m.owner, { bag: (await store.getOwner(m.owner))?.bag ?? 0, avatar: await store.avatarOf(m.owner) });
-  const items: SkyItem[] = all.map((m) => ({ id: m.id, name: m.name, status: m.status, objective: isPrivateSpec(m.spec) ? PRIVATE_OBJECTIVE : m.spec.objective, template: m.spec.template, cadence: m.cadence, owner: m.owner, bag: owners.get(m.owner)?.bag ?? 0, avatar: owners.get(m.owner)?.avatar ?? 1, earn: m.earnPerDayUsd, burn: m.burnPerDayUsd, runs: m.runsTotal, lastRunAt: m.lastRunAt }));
+  const owners = new Map<string, { bag: number }>();
+  for (const m of all) if (!owners.has(m.owner)) owners.set(m.owner, { bag: (await store.getOwner(m.owner))?.bag ?? 0 });
+  const items: SkyItem[] = all.map((m) => ({ id: m.id, name: m.name, status: m.status, objective: isPrivateSpec(m.spec) ? PRIVATE_OBJECTIVE : m.spec.objective, template: m.spec.template, cadence: m.cadence, owner: m.owner, bag: owners.get(m.owner)?.bag ?? 0, avatar: m.avatar, earn: m.earnPerDayUsd, burn: m.burnPerDayUsd, runs: m.runsTotal, lastRunAt: m.lastRunAt }));
   const running = items.filter((m) => m.status === "running").length;
 
   return (
@@ -59,37 +57,11 @@ export default async function SkyPage() {
         {items.length > 0 && (
           <section className="mt-10">
             <div className="mb-4 flex items-baseline justify-between">
-              <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">All moonlets</h2>
-              <span className="text-[12.5px] text-ink-faint">{items.length} total</span>
+              <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{items.length > SHOWCASE ? "Working right now" : "All moonlets"}</h2>
+              <Link href="/sky/all" className="text-[12.5px] font-medium text-ink-soft hover:text-ink">See all {items.length} →</Link>
             </div>
             <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {items.map((m) => {
-                const quiet = m.status === "quiet" || m.status === "paused";
-                const tone = fuelTone(m.earn, m.burn, quiet);
-                return (
-                  <li key={m.id}>
-                    <Link href={`/s/${m.id}`} className="group block h-full rounded-2xl border border-ink/[0.08] bg-white p-5 shadow-[0_1px_2px_rgba(21,22,29,0.04)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-ink/20 hover:shadow-[0_12px_28px_-16px_rgba(21,22,29,0.25)]">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex min-w-0 items-center gap-2.5">
-                          <StatusDot tone={tone} pulse={m.status === "running"} />
-                          <span className="truncate text-[16px] font-semibold tracking-[-0.01em] text-ink">{m.name}</span>
-                        </div>
-                        <span className="shrink-0 rounded-full bg-ink/[0.05] px-2 py-0.5 text-[11px] font-medium text-ink-soft">{TEMPLATE_LABEL[m.template]}</span>
-                      </div>
-                      <p className="mt-3 line-clamp-2 min-h-[2.9em] text-[13.5px] leading-[1.5] text-ink-soft">“{m.objective}”</p>
-                      <div className="mt-4 flex items-center justify-between border-t border-ink/[0.06] pt-3">
-                        <span className="flex items-center gap-2 text-[12px] text-ink-soft">
-                          <Image src={`/avatars/${m.avatar}.png`} alt="" width={20} height={20} className="rounded-full" />
-                          <span className="font-mono">{shortAddr(m.owner)}</span>
-                          <span className="text-ink-faint">·</span>
-                          <span className="font-mono tabular-nums">{fmtBag(m.bag)} $ORBIO</span>
-                        </span>
-                        <span className="text-[12px] text-ink-faint">{CADENCE_LABEL[m.cadence as Cadence] ?? m.cadence} · {m.runs} run{m.runs === 1 ? "" : "s"}</span>
-                      </div>
-                    </Link>
-                  </li>
-                );
-              })}
+              {[...items].sort((a, b) => Number(b.status === "running") - Number(a.status === "running") || (b.lastRunAt ?? 0) - (a.lastRunAt ?? 0)).slice(0, SHOWCASE).map((m) => <li key={m.id}><SkyCard m={m} /></li>)}
             </ul>
           </section>
         )}
@@ -149,3 +121,4 @@ function Orbits({ items }: { items: SkyItem[] }) {
     </section>
   );
 }
+

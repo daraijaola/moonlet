@@ -27,6 +27,7 @@ export type ApiMoonlet = {
   runsFailed: number;
   spentTotalUsd: number;
   openCalls: Array<{ claim: string; check: string; madeAt: number; runId: string | null }>;
+  avatar: number;
   hits: number;
   misses: number;
 };

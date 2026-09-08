@@ -8,9 +8,8 @@ import { fmtBag, shortAddr, timeUntil, type ApiMoonlet } from "@/lib/api";
 import { AppDataProvider, useAppData } from "@/lib/app-data";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
-import { StatusDot } from "./fuel-gauge";
 import { TEMPLATE_LABEL } from "./labels";
-import { Orbit, Rocket, Cable, Telescope, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, type LucideIcon } from "lucide-react";
+import { Orbit, Rocket, Cable, Telescope, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, Link as LinkIcon, Hash, ExternalLink, type LucideIcon } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import type { OrbioStatus } from "@/lib/api";
@@ -110,13 +109,7 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
             <ul className="space-y-0.5">
               {items.map((m) => (
                 <li key={m.id}>
-                  <Link href={`/app?m=${m.id}`} className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 ${m.id === selected ? "bg-ink/[0.06]" : "hover:bg-ink/[0.04]"}`}>
-                    <StatusDot tone={m.status === "running" || m.status === "idle" ? "green" : "grey"} pulse={m.status === "running"} />
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate text-[13.5px] font-medium text-ink">{m.name}</span>
-                      <span className="block truncate text-[11.5px] text-ink-faint">{TEMPLATE_LABEL[m.spec.template]} · {m.status === "running" ? "running" : m.status === "paused" ? "paused" : m.status === "quiet" ? "quiet" : timeUntil(m.nextRunAt)}</span>
-                    </span>
-                  </Link>
+                  <MoonletRow m={m} active={m.id === selected} />
                 </li>
               ))}
             </ul>
@@ -218,7 +211,7 @@ function AccountMenu({ address, status, onDisconnect }: { address: string; statu
       {open && (
         <div role="menu" className="ui-in absolute bottom-[calc(100%+6px)] left-0 right-0 z-40 rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]">
           <div className="flex items-center gap-2.5 px-2.5 py-2">
-            <Avatar n={status?.avatar} size={32} />
+            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-ink font-mono text-[11px] text-cream">{address.slice(2, 4)}</span>
             <div className="min-w-0">
               <p className="truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</p>
               <p className="truncate text-[11.5px] text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}` : "…"}</p>
@@ -245,7 +238,7 @@ function AccountMenu({ address, status, onDisconnect }: { address: string; statu
         className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${open ? "bg-ink/[0.06]" : "hover:bg-ink/[0.05]"}`}
       >
         <span className="relative shrink-0">
-          <Avatar n={status?.avatar} size={30} />
+          <span className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-ink font-mono text-[10.5px] text-cream">{address.slice(2, 4)}</span>
           <span className={`absolute -bottom-px -right-px h-2.5 w-2.5 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
         </span>
         <span className="min-w-0 flex-1">
@@ -259,12 +252,11 @@ function AccountMenu({ address, status, onDisconnect }: { address: string; statu
 }
 
 function PhoneAccount({ address, onDisconnect }: { address: string; onDisconnect: () => void }) {
-  const { status } = useAppData();
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
       <button type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} className="inline-flex items-center gap-2 rounded-full border border-ink/[0.1] bg-white py-1 pl-1 pr-2.5">
-        <Avatar n={status?.avatar} size={24} />
+        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-ink font-mono text-[9.5px] text-cream">{address.slice(2, 4)}</span>
         <span className="font-mono text-[12px] text-ink">{shortAddr(address)}</span>
       </button>
       {open && (
@@ -277,5 +269,72 @@ function PhoneAccount({ address, onDisconnect }: { address: string; onDisconnect
         </>
       )}
     </div>
+  );
+}
+
+/** Where a moonlet's link lives. */
+export const publicUrl = (id: string) => `${typeof window !== "undefined" ? window.location.origin : "https://moonlet.16labs.xyz"}/s/${id}`;
+
+/** One row in the sidebar list: face, name, template · when. Right-click (or the ··· on hover) for Share and Public page. */
+function MoonletRow({ m, active }: { m: ApiMoonlet; active: boolean }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [copied, setCopied] = useState<"link" | "id" | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    document.addEventListener("mousedown", close); document.addEventListener("keydown", onKey); document.addEventListener("scroll", close, true);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", onKey); document.removeEventListener("scroll", close, true); };
+  }, [menu]);
+  const copy = async (what: "link" | "id") => {
+    try { await navigator.clipboard.writeText(what === "link" ? publicUrl(m.id) : m.id); } catch {}
+    setCopied(what); setTimeout(() => { setCopied(null); setMenu(null); }, 900);
+  };
+  const share = async () => {
+    if (typeof navigator !== "undefined" && navigator.share) { try { await navigator.share({ title: `${m.name} · moonlet`, url: publicUrl(m.id) }); setMenu(null); return; } catch {} }
+    void copy("link");
+  };
+  return (
+    <>
+      <Link
+        href={`/app?m=${m.id}`}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
+        className={`group flex items-center gap-2.5 rounded-md px-2 py-1.5 ${active ? "bg-ink/[0.06]" : "hover:bg-ink/[0.04]"}`}
+      >
+        <span className="relative shrink-0">
+          <Avatar n={m.avatar} size={28} />
+          <span className={`absolute -bottom-px -right-px h-2 w-2 rounded-full ring-2 ring-paper ${m.status === "running" ? "bg-gold" : m.status === "idle" ? "bg-moss" : "bg-ink-faint"}`} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-[13.5px] font-medium text-ink">{m.name}</span>
+          <span className="block truncate text-[11.5px] text-ink-faint">{TEMPLATE_LABEL[m.spec.template]} · {m.status === "running" ? "running" : m.status === "paused" ? "paused" : m.status === "quiet" ? "quiet" : timeUntil(m.nextRunAt)}</span>
+        </span>
+        <button
+          type="button"
+          aria-label="More"
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ x: r.right, y: r.bottom + 4 }); }}
+          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-opacity hover:bg-ink/[0.06] hover:text-ink ${menu ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+        >
+          <Ellipsis size={14} strokeWidth={1.75} />
+        </button>
+      </Link>
+      {menu && (
+        <div role="menu" onMouseDown={(e) => e.stopPropagation()} className="ui-in fixed z-50 min-w-[200px] rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]" style={{ left: Math.min(menu.x, window.innerWidth - 216), top: Math.min(menu.y, window.innerHeight - 200) }}>
+          <div className="flex items-center gap-2.5 px-2.5 py-2">
+            <Avatar n={m.avatar} size={28} />
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-medium text-ink">{m.name}</p>
+              <p className="truncate font-mono text-[11px] text-ink-faint">{m.id}</p>
+            </div>
+          </div>
+          <div className="my-1 h-px bg-ink/[0.06]" />
+          <button role="menuitem" type="button" onClick={share} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><Share2 size={14} strokeWidth={1.75} className="text-ink-soft" /> Share</button>
+          <button role="menuitem" type="button" onClick={() => copy("link")} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">{copied === "link" ? <Check size={14} strokeWidth={2} className="text-moss" /> : <LinkIcon size={14} strokeWidth={1.75} className="text-ink-soft" />} {copied === "link" ? "Link copied" : "Copy link"}</button>
+          <button role="menuitem" type="button" onClick={() => copy("id")} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">{copied === "id" ? <Check size={14} strokeWidth={2} className="text-moss" /> : <Hash size={14} strokeWidth={1.75} className="text-ink-soft" />} {copied === "id" ? "ID copied" : "Copy ID"}</button>
+          <div className="my-1 h-px bg-ink/[0.06]" />
+          <Link role="menuitem" href={`/s/${m.id}`} onClick={() => setMenu(null)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><ExternalLink size={14} strokeWidth={1.75} className="text-ink-soft" /> Public page</Link>
+        </div>
+      )}
+    </>
   );
 }
