@@ -17,7 +17,7 @@ export default async function SkyAllPage({ searchParams }: PageProps<"/sky/all">
   const owners = new Map<string, number>();
   for (const m of all) if (!owners.has(m.owner)) owners.set(m.owner, (await store.getOwner(m.owner))?.bag ?? 0);
   const items: SkyItem[] = all
-    .map((m) => ({ id: m.id, name: m.name, status: m.status, objective: isPrivateSpec(m.spec) ? PRIVATE_OBJECTIVE : m.spec.objective, template: m.spec.template, cadence: m.cadence, owner: m.owner, bag: owners.get(m.owner) ?? 0, avatar: m.avatar, earn: m.earnPerDayUsd, burn: m.burnPerDayUsd, runs: m.runsTotal, lastRunAt: m.lastRunAt }))
+    .map((m) => ({ id: m.id, name: m.name, status: m.status, objective: isPrivateSpec(m.spec) ? PRIVATE_OBJECTIVE : m.spec.objective, private: isPrivateSpec(m.spec), template: m.spec.template, cadence: m.cadence, owner: m.owner, bag: owners.get(m.owner) ?? 0, avatar: m.avatar, earn: m.earnPerDayUsd, burn: m.burnPerDayUsd, runs: m.runsTotal, lastRunAt: m.lastRunAt }))
     .filter((m) => !needle || m.name.toLowerCase().includes(needle) || m.id.toLowerCase().includes(needle) || m.id.toLowerCase().replace(/^m_/, "").includes(needle.replace(/^m_/, "")))
     .sort((a, b) => Number(b.status === "running") - Number(a.status === "running") || (b.lastRunAt ?? 0) - (a.lastRunAt ?? 0));
 

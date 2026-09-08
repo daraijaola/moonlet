@@ -22,10 +22,12 @@ function NewInner() {
   const router = useRouter();
   const params = useSearchParams();
   const editId = params.get("edit");
+  const forkId = params.get("fork");
 
   const [step, setStep] = useState(0);
   const [template, setTemplate] = useState<TemplateId>("market-watch");
   const [sentence, setSentence] = useState(() => params.get("job") ?? "");
+  const [forkedFrom, setForkedFrom] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [spec, setSpec] = useState<JobSpec | null>(null);
   const [compiled, setCompiled] = useState<boolean | null>(null);
@@ -43,17 +45,21 @@ function NewInner() {
   }, [address]);
 
   useEffect(() => {
-    if (!editId) return;
-    api.getMoonlet(editId).then(({ moonlet }) => {
+    const src = editId ?? forkId;
+    if (!src) return;
+    api.getMoonlet(src).then(({ moonlet }) => {
+      // A private (inbox) moonlet shows strangers only its receipt, so there is no job to copy.
+      if (forkId && moonlet.spec.tools.some((t) => t.startsWith("gmail_"))) { setErr("That moonlet works inside its owner's inbox; its job is private and can't be copied."); return; }
       setSpec(moonlet.spec);
       setTemplate(moonlet.spec.template);
       setSentence(moonlet.spec.objective);
       setName(moonlet.name);
-      setAutopilot(!!moonlet.autopilot);
+      setAutopilot(editId ? !!moonlet.autopilot : false);
+      setForkedFrom(forkId ? moonlet.name : null);
       setCompiled(true);
       setStep(1);
     }).catch(() => setErr("Couldn't load that moonlet."));
-  }, [editId]);
+  }, [editId, forkId]);
 
   const bag = status?.bag ?? 0;
   const p = useMemo(() => (spec ? plan(spec, bag) : null), [spec, bag]);
@@ -101,7 +107,7 @@ function NewInner() {
     <div className="flex min-h-full flex-col">
       <div className="sticky top-0 z-20 border-b border-ink/10 bg-cream/95 backdrop-blur">
         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
-          <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{editId ? "Edit job" : "Launch a moonlet"}</h1>
+          <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{editId ? "Edit job" : forkedFrom ? `Your own ${forkedFrom}` : "Launch a moonlet"}</h1>
           <span className="text-[12px] text-ink-faint">Step {step + 1} of {STEPS.length}</span>
         </div>
       </div>
@@ -153,6 +159,9 @@ function NewInner() {
           </>
         )}
 
+        {step === 1 && spec && forkedFrom && (
+          <p className="mb-4 rounded-lg bg-ink/[0.04] px-3.5 py-2.5 text-[13px] leading-[1.5] text-ink">Copied from <span className="font-medium">{forkedFrom}</span>: same job, same checks, same tools. It runs on your bag and your key; change anything you like before launching.</p>
+        )}
         {step === 1 && spec && (
           <SpecEditor spec={spec} onChange={setSpec} compiled={compiled} />
         )}

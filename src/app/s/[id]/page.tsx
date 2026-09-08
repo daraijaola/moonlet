@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import { Copy } from "lucide-react";
 import { PublicHeader } from "@/components/public-header";
 import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
@@ -61,8 +63,16 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
                 {m.id} · {TEMPLATE_LABEL[m.spec.template]} · orbits {shortAddr(m.owner)} · {owner ? `${fmtBag(owner.bag)} $ORBIO` : ""}
               </p>
               <p className="mt-1 font-mono text-[12px] text-ink-faint">tools: {m.spec.tools.map((t) => TOOL_LABEL[t]).join(", ")}</p>
+              {!hidden && (
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <Link href={`/app/new?fork=${m.id}`} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[13px] font-medium text-midnight">
+                    <Copy size={14} strokeWidth={2} /> Use this job for my bag
+                  </Link>
+                  <span className="text-[12px] text-ink-faint">Same checks and tools, on your own key.</span>
+                </div>
+              )}
             </div>
-            <Image src={`/avatars/${m.avatar}.png`} alt="" width={256} height={256} className={`pointer-events-none mx-auto h-[168px] w-[168px] select-none rounded-full shadow-[0_18px_40px_-20px_rgba(21,22,29,0.45)] ${m.status === "running" ? "animate-drift" : ""}`} priority />
+            <Image src={`/avatars/${m.avatar}.png?v=2`} alt="" width={256} height={256} className={`pointer-events-none mx-auto h-[168px] w-[168px] select-none rounded-full shadow-[0_18px_40px_-20px_rgba(21,22,29,0.45)] ${m.status === "running" ? "animate-drift" : ""}`} priority />
           </div>
         </section>
 
