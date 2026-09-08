@@ -35,8 +35,8 @@ export type MoonletState = {
   runId?: string | null;
   /** Set when this moonlet was itself spawned; children do not spawn (no chain reactions). */
   parentId?: string | null;
-  /** Burn per day the wallet's other active moonlets already claim; planned against the remainder. */
-  committedPerDayUsd?: number;
+  /** The wallet's other moonlets sharing its income; this one plans against its even slice. */
+  siblings?: number;
   openCalls?: Array<{ claim: string; check: string; madeAt: number }>;
   record?: { hits: number; misses: number };
   /** Set when the free tripwire probe pulled this run forward: what moved. */
@@ -81,8 +81,10 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   // Set by the tools the moment they touch mail or a private repo; inbox jobs are private from the start.
   let isPrivate = m.spec.tools.some((t) => t.startsWith("gmail_"));
   const bag = deps.bagOf ? await deps.bagOf(m.owner) : m.bag;
-  const p = plan(m.spec, bag, undefined, m.committedPerDayUsd ?? 0);
-  const model = m.spec.model && m.spec.model !== "auto" ? m.spec.model : pickModel(p.earnPerDayUsd, m.spec.template === "repo-mechanic" ? "code" : "run");
+  const p = plan(m.spec, bag, undefined, m.siblings ?? 0);
+  const askedModel = m.spec.model && m.spec.model !== "auto" ? m.spec.model : pickModel(p.earnPerDayUsd, m.spec.template === "repo-mechanic" ? "code" : "run");
+  // The receipt names the model that answered, which after a fallback is not the one we asked for.
+  let model = askedModel;
 
   if (p.quiet) {
     keyEvents.push({ kind: "quiet", detail: p.reason ?? "cannot afford a run" });
@@ -114,8 +116,8 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
     });
     const r = await runLoop({
       key: k.key,
-      model,
-      models: fallbackModels(model),
+      model: askedModel,
+      models: fallbackModels(askedModel),
       instructions: buildInstructions(m.spec, { ownerShort: `${m.owner.slice(0, 6)}…${m.owner.slice(-4)}`, bag, runAt: now().toISOString(), githubLogin: m.connections?.github?.login, gmailAddress: m.connections?.gmail?.email, memory: m.memory ?? undefined, openCalls: m.openCalls, record: m.record, tripped: m.tripped }),
       input: "Run your job now. Finish with the structured output.",
       tools: built.tools,
@@ -126,7 +128,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       fetch: deps.fetch,
     });
     if (r.stoppedForBudget) keyEvents.push({ kind: "budget", detail: `stopped early: the $${p.perRunCapUsd.toFixed(3)} cap ran out before the job was finished. Raise the cap on the moonlet page or pick a cheaper model`, amountUsd: r.costUsd });
-    return { text: r.text, cost: r.costUsd, calls: r.modelCalls };
+    return { text: r.text, cost: r.costUsd, calls: r.modelCalls, model: r.model };
   };
 
   const attemptWithBackoff = async (k: NonNullable<KeyState>) => {
@@ -145,7 +147,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
 
   let text: string, cost: number, calls: number;
   try {
-    ({ text, cost, calls } = await attemptWithBackoff(key));
+    ({ text, cost, calls, model } = await attemptWithBackoff(key));
   } catch (e) {
     if (!isKeyExhausted(e)) return fail(e, "run", { t0, model, p, keyEvents, trace, key, isPrivate });
     try {
@@ -157,7 +159,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       const minted = await deps.orbio.createKey("moonlet");
       key = { key: minted.key, limitUsd: bal.availableUsd, spentUsd: 0 };
       keyEvents.push({ kind: "rotated", detail: "key rejected mid-run; re-minted the Orbio key and retried", amountUsd: bal.availableUsd });
-      ({ text, cost, calls } = await attemptWithBackoff(key));
+      ({ text, cost, calls, model } = await attemptWithBackoff(key));
     } catch (e2) {
       return fail(e2, "run-after-rotate", { t0, model, p, keyEvents, trace, key, isPrivate });
     }

@@ -43,7 +43,7 @@ type Completion = {
 export type RunLoopOptions = {
   key: string;
   model: string;
-  /** Fallbacks tried in order when the primary is rate-limited or down. */
+  /** Fallbacks tried in order when the primary is rate-limited or down. The gateway takes one model per request, so the switch happens here. */
   models?: string[];
   instructions: string;
   input: UserContent;
@@ -83,7 +83,7 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
   const messages: ChatMessage[] = [{ role: "system", content: o.instructions }, { role: "user", content: o.input }];
   const models = Array.from(new Set([o.model, ...(o.models ?? [])]));
 
-  let cost = 0, calls = 0, usedModel = o.model, lastCallCost = 0, stoppedForBudget = false;
+  let cost = 0, calls = 0, usedModel = o.model, lastCallCost = 0, stoppedForBudget = false, modelIdx = 0;
   let promptTokens = 0, perTokenUsd = 0;
   for (let step = 0; step < o.maxSteps; step++) {
     // Cost is only known after a call. Each call re-sends the whole conversation, so the next one costs at least as much as the
@@ -95,8 +95,7 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
     // structured answer is never clipped, since a truncated JSON is worth less than a small overshoot.
     const maxTokens = perTokenUsd > 0 && !lastStep ? Math.max(1024, Math.floor((o.maxCostUsd - cost) / perTokenUsd - promptTokens * 1.1)) : undefined;
     const body: Record<string, unknown> = {
-      model: models[0],
-      models: models.length > 1 ? models : undefined,
+      model: models[modelIdx],
       messages,
       ...(maxTokens ? { max_tokens: Math.min(maxTokens, 8192) } : {}),
       usage: { include: true },
@@ -104,7 +103,7 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
       ...(o.webSearch && !lastStep && step === 0 ? { plugins: [{ id: "web", max_results: 2 }] } : {}),
       ...(o.jsonSchema && (lastStep || !tools.length) ? { response_format: { type: "json_schema", json_schema: { name: o.jsonSchema.name, strict: true, schema: o.jsonSchema.schema } } } : {}),
     };
-    if (lastStep && tools.length) {
+    if (lastStep && tools.length && messages[messages.length - 1].role !== "user") {
       stoppedForBudget = step < o.maxSteps - 1;
       messages.push({ role: "user", content: stoppedForBudget ? "The budget for this run is nearly spent. Stop using tools. Answer now with the final structured output from what you have, and say plainly in the summary what you did not get to." : "Stop using tools. Answer now with the final structured output." });
     }
@@ -119,6 +118,12 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
     if (!res.ok || j.error) {
       const raw = j.error?.metadata?.raw ? ` (${j.error.metadata.provider_name ?? "provider"}: ${String(j.error.metadata.raw).slice(0, 300)})` : "";
       const msg = (j.error?.message ?? `HTTP ${res.status}`) + raw;
+      // A model that is down, rate-limited or unknown to the gateway is not this run's problem: retry the same step on the next fallback.
+      if (modelIdx < models.length - 1 && fallbackWorthy(res.status, msg)) {
+        modelIdx++;
+        step--;
+        continue;
+      }
       throw new ModelHttpError(res.status, msg);
     }
     calls++;
@@ -168,6 +173,11 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
     }
   }
   throw new ModelHttpError(500, "step limit reached without an answer");
+}
+
+/** Failures a different model would not share; key and request problems (401/402/403/400) are not among them. */
+function fallbackWorthy(status: number, msg: string) {
+  return status === 404 || status === 408 || status === 429 || status >= 500 || /rate limit|too many requests|overloaded|provider returned error|no endpoints found|not available|not found|unsupported model/i.test(msg);
 }
 
 function safeJson(s: string) {

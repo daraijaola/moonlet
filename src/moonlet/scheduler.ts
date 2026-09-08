@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 import { makeAnchorer, type Anchorer } from "./anchor";
-import { committedBurn, estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
+import { activeSiblings, estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
 import { makeOrbioClient, OrbioAuthError, refreshOrbioToken, type OrbioClient } from "./orbio";
 import { devOrbio } from "./orbio-dev";
 import { runMoonlet } from "./runner";
@@ -250,7 +250,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const result = await run(
     {
       id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
-      committedPerDayUsd: committedBurn(await store.listMoonlets(m.owner), m.id),
+      siblings: activeSiblings(await store.listMoonlets(m.owner), m.id),
       openCalls: m.openCalls, record: { hits: m.hits, misses: m.misses }, tripped: m.watch?.tripped,
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: gmConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
@@ -259,7 +259,8 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;
-  const nextRunAt = now() + (result.status === "failed" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : CADENCE_MS[cadence]);
+  // Failures retry within the hour; a moonlet quiet for money checks back daily (the bag grows, a sibling gets paused) rather than sleeping a week.
+  const nextRunAt = now() + (result.status === "failed" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : result.status === "quiet" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["24h"]) : CADENCE_MS[cadence]);
   const rotated = result.keyEvents.filter((e) => e.kind === "rotated").length;
   if (m.watch?.tripped) result.keyEvents.unshift({ kind: "tripwire", detail: `woke early: ${m.watch.tripped}` });
 
