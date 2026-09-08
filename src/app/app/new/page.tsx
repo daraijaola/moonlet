@@ -131,7 +131,7 @@ function NewInner() {
     <div className="relative flex min-h-full flex-col">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[20vh] min-h-[160px] overflow-hidden">
         <DitherField className="inset-0" from="top" />
-        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-b from-transparent to-cream" />
+        <div className="absolute inset-x-0 bottom-0 h-[60%] bg-gradient-to-b from-transparent to-cream" />
       </div>
       <div className="sticky top-0 z-20 border-b border-ink/10 bg-cream/80 backdrop-blur">
         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">

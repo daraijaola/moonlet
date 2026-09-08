@@ -14,7 +14,7 @@ import { MicButton, VoiceRecorder, useVoiceSupported } from "@/components/voice-
 import { TEMPLATE_LABEL } from "@/components/labels";
 import { DitherField } from "@/components/dither-field";
 import { Avatar, publicUrl } from "@/components/app-shell";
-import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp, Plus, Download, Ellipsis, Pencil, KeyRound, Share2 } from "lucide-react";
+import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp, ArrowDown, ChevronUp, Plus, Download, Ellipsis, Pencil, KeyRound, Share2 } from "lucide-react";
 import { JobInput } from "@/components/job-input";
 
 function DashboardInner() {
@@ -146,8 +146,15 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   // What was said in earlier sessions stays folded behind one link; the box opens with just the input.
   const [earlierCount, setEarlierCount] = useState(0);
   const visibleThread = showEarlier ? thread : thread.slice(earlierCount);
-  const threadRef = useRef<HTMLUListElement>(null);
-  useEffect(() => { threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight }); }, [thread, showEarlier]);
+  const threadEndRef = useRef<HTMLDivElement>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
+  const [moreBelow, setMoreBelow] = useState(false);
+  // Anything new in the conversation scrolls into view; restored history stays put.
+  const lastLen = useRef(0);
+  useEffect(() => {
+    if (thread.length > lastLen.current && lastLen.current > 0) threadEndRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    lastLen.current = thread.length;
+  }, [thread]);
   const [recording, setRecording] = useState(false);
   const [spokenBase, setSpokenBase] = useState("");
   const voiceOk = useVoiceSupported();
@@ -171,6 +178,16 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   // Overview panel: open by default on wide screens, remembered while you move between moonlets.
   const [panel, setPanel] = useState<boolean | null>(null);
   const panelOpen = panel ?? (typeof window !== "undefined" && window.innerWidth >= 1440);
+  useEffect(() => {
+    const el = paneRef.current;
+    if (!el) return;
+    const check = () => setMoreBelow(el.scrollHeight - el.scrollTop - el.clientHeight > 80);
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    const ro = new ResizeObserver(check);
+    ro.observe(el);
+    return () => { el.removeEventListener("scroll", check); ro.disconnect(); };
+  }, [runs, showAllRuns, thread.length, tab]);
   const togglePanel = () => setPanel(!panelOpen);
   const quiet = m.status === "quiet" || m.status === "paused";
 
@@ -252,21 +269,29 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         {compact && files.length > 5 && <li className="pt-2 text-[11.5px] text-ink-faint">+{files.length - 5} more on the run cards</li>}
       </ul>
     );
+  const conversation = thread.length > 0 && (
+    <section className="mt-8">
+      <h2 className="mb-3 text-[12px] font-medium text-ink-soft">Conversation</h2>
+      {earlierCount > 0 && !showEarlier && (
+        <button type="button" onClick={() => setShowEarlier(true)} className="mb-3 flex w-full items-center gap-2 text-[12px] text-ink-faint hover:text-ink">
+          <span className="h-px flex-1 bg-ink/[0.08]" />
+          <span className="inline-flex items-center gap-1"><ChevronUp size={12} strokeWidth={2} /> {earlierCount} earlier {earlierCount === 1 ? "message" : "messages"}</span>
+          <span className="h-px flex-1 bg-ink/[0.08]" />
+        </button>
+      )}
+      <ul className="space-y-3">
+        {visibleThread.map((t, i) => (
+          <li key={i} className="space-y-1.5">
+            <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] leading-[1.5] text-cream">{t.q}</p>
+            <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md border border-ink/[0.07] bg-white px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
+          </li>
+        ))}
+      </ul>
+      <div ref={threadEndRef} />
+    </section>
+  );
   const askBox = runs !== null && (
     <div>
-      {earlierCount > 0 && !showEarlier && (
-        <button type="button" onClick={() => setShowEarlier(true)} className="mb-2 text-[12px] text-ink-faint hover:text-ink">Show {earlierCount} earlier</button>
-      )}
-      {visibleThread.length > 0 && (
-        <ul ref={threadRef} className="mb-3 max-h-[32vh] space-y-3 overflow-y-auto pr-1">
-          {visibleThread.map((t, i) => (
-            <li key={i} className="space-y-1.5">
-              <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] leading-[1.5] text-cream">{t.q}</p>
-              <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md border border-ink/[0.07] bg-white px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
-            </li>
-          ))}
-        </ul>
-      )}
       <form
         className="flex items-center gap-1.5 rounded-xl border border-ink/12 bg-white p-1.5 pl-3.5 shadow-[0_1px_2px_rgba(21,22,29,0.04)] transition-[border-color,box-shadow] focus-within:border-ink/30 focus-within:shadow-[0_0_0_3px_rgba(233,182,76,0.22)]"
         onSubmit={async (e) => {
@@ -300,7 +325,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
             <input
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
-              placeholder={runs.length ? `Ask ${m.name} about its report, tell it to do something, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
+              placeholder={runs.length ? `Ask ${m.name} anything, or tell it what to do…` : `Ask ${m.name} anything about its job…`}
               className="min-w-0 flex-1 bg-transparent py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint"
             />
             {voiceOk && <MicButton disabled={asking} onClick={() => { setSpokenBase(question.trim()); setRecording(true); }} />}
@@ -395,24 +420,25 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
     <section className="flex h-full flex-col">
       {/* ── top bar: what it is, the one action, and the panel toggle ─────── */}
       <div className="z-20 shrink-0 border-b border-ink/[0.07] bg-cream">
-        <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
+        <div className="flex h-14 items-center gap-2.5 px-3 sm:gap-3 sm:px-6">
           <span className="relative shrink-0">
             <Avatar n={m.avatar} size={28} />
             <span className={`absolute -bottom-px -right-px h-2 w-2 rounded-full ring-2 ring-cream ${running ? "bg-gold" : quiet ? "bg-ink-faint" : "bg-moss"}`} />
           </span>
-          <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-ink">{m.name}</h1>
+          <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-[-0.01em] text-ink">{m.name}</h1>
           <span className="hidden text-[12.5px] text-ink-faint sm:inline">{TEMPLATE_LABEL[m.spec.template]}{autopilotOn ? " · autopilot" : ""}</span>
           <button type="button" onClick={() => { navigator.clipboard?.writeText(m.id).catch(() => undefined); flash("ID copied."); }} title="Copy ID" className="hidden rounded-md px-1.5 py-0.5 font-mono text-[11.5px] text-ink-faint hover:bg-ink/[0.05] hover:text-ink md:inline">{m.id}</button>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex shrink-0 items-center gap-1.5 sm:gap-2">
             <span className="hidden text-[12px] text-ink-faint md:inline"><span className="font-mono tabular-nums">{fmtUsd(m.spentTotalUsd, 3)}</span> spent</span>
             <button disabled={!!busy || running} onClick={() => go("run", () => api.runNow(owner, m.id), "Run finished.")} className="ui-btn ui-btn-gold">
-              <Play size={13} strokeWidth={2.2} fill="currentColor" /> {busy === "run" || running ? "Running…" : "Run now"}
+              <Play size={13} strokeWidth={2.2} fill="currentColor" /> <span>{busy === "run" || running ? "Running…" : "Run now"}</span>
             </button>
-            <button disabled={!!busy} onClick={() => go("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")} className="ui-btn">
+            <button disabled={!!busy} onClick={() => go("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")} className="ui-btn max-sm:!hidden">
               {m.status === "paused" ? <><Play size={13} strokeWidth={2} /> Resume</> : <><Pause size={13} strokeWidth={2} /> Pause</>}
             </button>
             <Menu
               items={[
+                { label: m.status === "paused" ? "Resume" : "Pause", icon: m.status === "paused" ? <Play size={14} strokeWidth={1.75} /> : <Pause size={14} strokeWidth={1.75} />, onClick: () => go("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded."), phoneOnly: true },
                 { label: "Share", icon: <Share2 size={14} strokeWidth={1.75} />, onClick: async () => { const url = publicUrl(m.id); if (navigator.share) { try { await navigator.share({ title: `${m.name} · moonlet`, url }); return; } catch {} } await navigator.clipboard?.writeText(url).catch(() => undefined); flash("Link copied."); } },
                 { label: "Edit job", icon: <Pencil size={14} strokeWidth={1.75} />, href: `/app/new?edit=${m.id}` },
                 { label: "Public page", icon: <ExternalLink size={14} strokeWidth={1.75} />, href: `/s/${m.id}` },
@@ -443,8 +469,8 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
 
       <div className="flex min-h-0 flex-1">
         {/* ── the report: what it did, talk to it ────────────────────────── */}
-        <div className={`flex min-w-0 flex-1 flex-col ${tab === "overview" ? "hidden lg:flex" : ""}`}>
-          <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+        <div className={`relative flex min-w-0 flex-1 flex-col ${tab === "overview" ? "hidden lg:flex" : ""}`}>
+          <div ref={paneRef} className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
           <div className="mx-auto max-w-[760px] px-4 pt-6 pb-4 sm:px-6">
             <header>
               <p className="text-[14.5px] leading-[1.55] text-ink [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
@@ -504,8 +530,19 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
               )}
             </div>
 
+            {conversation}
           </div>
           </div>
+          {moreBelow && (
+            <button
+              type="button"
+              onClick={() => paneRef.current?.scrollTo({ top: paneRef.current.scrollHeight, behavior: "smooth" })}
+              aria-label="Scroll to the end"
+              className="ui-in absolute bottom-[96px] left-1/2 z-10 -translate-x-1/2 rounded-full border border-ink/[0.1] bg-white p-2 text-ink-soft shadow-[0_6px_16px_-6px_rgba(21,22,29,0.3)] hover:text-ink lg:bottom-[92px]"
+            >
+              <ArrowDown size={16} strokeWidth={2} />
+            </button>
+          )}
           {/* talk to it: pinned under the scrolling report */}
           <div className="shrink-0 border-t border-ink/[0.06] bg-cream">
             <div className="mx-auto max-w-[760px] px-4 py-3 sm:px-6">{askBox}</div>
@@ -530,7 +567,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
 }
 
 /** Small anchored menu for the secondary actions of a page. Closes on outside click and Escape. */
-function Menu({ items }: { items: Array<{ label: string; icon: React.ReactNode; href?: string; onClick?: () => void; danger?: boolean }> }) {
+function Menu({ items }: { items: Array<{ label: string; icon: React.ReactNode; href?: string; onClick?: () => void; danger?: boolean; phoneOnly?: boolean }> }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -548,7 +585,7 @@ function Menu({ items }: { items: Array<{ label: string; icon: React.ReactNode; 
       {open && (
         <div role="menu" className="ui-in absolute right-0 top-[38px] z-40 min-w-[196px] rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]">
           {items.map((it) => {
-            const cls = `flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] ${it.danger ? "text-red-700 hover:bg-red-50" : "text-ink hover:bg-ink/[0.05]"}`;
+            const cls = `flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] ${it.phoneOnly ? "sm:hidden" : ""} ${it.danger ? "text-red-700 hover:bg-red-50" : "text-ink hover:bg-ink/[0.05]"}`;
             return it.href ? (
               <Link key={it.label} role="menuitem" href={it.href} onClick={() => setOpen(false)} className={cls}><span className={it.danger ? "" : "text-ink-soft"}>{it.icon}</span>{it.label}</Link>
             ) : (
@@ -623,7 +660,7 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
     <div className="relative -mx-4 min-h-full overflow-hidden sm:-mx-6">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[25vh] min-h-[200px] overflow-hidden">
         <DitherField className="inset-0" from="top" />
-        <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-b from-transparent to-cream" />
+        <div className="absolute inset-x-0 bottom-0 h-[55%] bg-gradient-to-b from-transparent to-cream" />
       </div>
       <div className="relative mx-auto max-w-[640px] px-4 pt-[14vh] sm:px-6">
         <div className="text-center">

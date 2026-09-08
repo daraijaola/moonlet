@@ -30,7 +30,7 @@ export default async function SkyPage() {
     <div className="relative min-h-screen bg-white text-ink">
       <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[34vh] min-h-[260px] overflow-hidden">
         <DitherField className="inset-0" from="top" />
-        <div className="absolute inset-x-0 bottom-0 h-24 bg-gradient-to-b from-transparent to-white" />
+        <div className="absolute inset-x-0 bottom-0 h-[55%] bg-gradient-to-b from-transparent to-white" />
       </div>
       <PublicHeader />
       <main className="relative mx-auto max-w-[1180px] px-4 pb-16 pt-10 sm:px-6 sm:pt-14">
@@ -95,7 +95,7 @@ function Orbits({ items }: { items: SkyItem[] }) {
     return { m, x: cx + Math.cos(angle) * RING_R[ring], y: cy + Math.sin(angle) * RING_R[ring] * 0.5, r: 4 + Math.min(8, Math.log10(m.bag + 1) * 1.3) };
   });
   return (
-    <section className="mt-4 overflow-hidden rounded-2xl border border-ink/[0.08] bg-[radial-gradient(120%_100%_at_50%_0%,#1c2133_0%,#10131f_60%,#0b0d16_100%)] shadow-[0_24px_60px_-30px_rgba(16,19,31,0.6)]">
+    <section className="mt-4 hidden overflow-hidden rounded-2xl border border-ink/[0.08] bg-[radial-gradient(120%_100%_at_50%_0%,#1c2133_0%,#10131f_60%,#0b0d16_100%)] shadow-[0_24px_60px_-30px_rgba(16,19,31,0.6)] sm:block">
       <svg viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full" role="img" aria-label="Orbital view of live moonlets">
         <defs>
           <radialGradient id="planet" cx="40%" cy="35%"><stop offset="0" stopColor="var(--moon)" /><stop offset="1" stopColor="var(--moon-deep)" /></radialGradient>
