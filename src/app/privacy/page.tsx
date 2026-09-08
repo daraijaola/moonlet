@@ -11,7 +11,7 @@ export default function Privacy() {
       </p>
 
       <h2>Who we are</h2>
-      <p>Moonlet is operated by 16labs (&quot;we&quot;). Contact: message <a href="https://t.me/moonletbbot">@moonletbbot</a> on Telegram or open an issue on GitHub. The source code is public at <a href="https://github.com/daraijaola/moonlet">github.com/daraijaola/moonlet</a>.</p>
+      <p>Moonlet is operated by 16labs (&quot;we&quot;). Questions or requests about your data: <a href="https://github.com/daraijaola/moonlet/issues">open an issue on GitHub</a>. The source code is public at <a href="https://github.com/daraijaola/moonlet">github.com/daraijaola/moonlet</a>.</p>
 
       <h2>What we store about you</h2>
       <ul>
@@ -51,7 +51,7 @@ export default function Privacy() {
       <p>Secrets are encrypted at rest and only decrypted on the server for the run that needs them. Traffic is HTTPS. Anything a moonlet wants to do outside reading is drafted and waits for your approval unless you turned autopilot on. Inbox and private-repo work is published as a receipt (hash, cost, time) only; the words stay with you.</p>
 
       <h2>Changes</h2>
-      <p>If this page changes in a way that matters, the date above changes and we say so in the linked Telegram chat. Questions: <a href="https://t.me/moonletbbot">@moonletbbot</a> on Telegram.</p>
+      <p>If this page changes in a way that matters, the date above changes and the change is in the public commit history. Questions: <a href="https://github.com/daraijaola/moonlet/issues">an issue on GitHub</a>.</p>
     </LegalPage>
   );
 }
