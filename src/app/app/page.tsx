@@ -13,7 +13,7 @@ import { RunCard } from "@/components/run-card";
 import { MicButton, VoiceRecorder, useVoiceSupported } from "@/components/voice-button";
 import { TEMPLATE_LABEL } from "@/components/labels";
 import { DitherField } from "@/components/dither-field";
-import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp } from "lucide-react";
+import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp, Plus, Download } from "lucide-react";
 import { JobInput } from "@/components/job-input";
 
 function DashboardInner() {
@@ -28,7 +28,7 @@ function DashboardInner() {
   }, [params, router]);
 
   if (!moonlets) {
-    return <p className="py-20 text-center font-mono text-[13px] text-ink-soft">Loading your orbit…</p>;
+    return <p className="py-20 text-center text-[13px] text-ink-soft">Loading your orbit…</p>;
   }
   if (moonlets.length === 0)
     return (
@@ -71,7 +71,7 @@ function MobileRail({ moonlets, selected }: { moonlets: ApiMoonlet[]; selected: 
           </li>
         );
       })}
-      <li className="shrink-0 snap-start"><Link href="/app/new" className="inline-flex items-center rounded-full border border-dashed border-ink/25 px-3 py-1.5 font-mono text-[12px] text-ink-soft">＋ Launch</Link></li>
+      <li className="shrink-0 snap-start"><Link href="/app/new" className="inline-flex items-center rounded-full border border-dashed border-ink/25 px-3 py-1.5 text-[12.5px] font-medium text-ink-soft"><Plus size={12} strokeWidth={2.2} className="mr-1" /> Launch</Link></li>
     </ul>
   );
 }
@@ -90,23 +90,23 @@ function Queue({ owner }: { owner: string }) {
       clearInterval(t);
     };
   }, [load]);
-  if (!items.length) return note ? <p className="mb-6 rounded-lg border border-moss/30 bg-moss/5 px-4 py-3 font-mono text-[12.5px] text-moss">{note}</p> : null;
+  if (!items.length) return note ? <p className="mb-6 rounded-lg border border-moss/30 bg-moss/5 px-4 py-3 text-[12.5px] text-moss">{note}</p> : null;
   const KIND = { tweet: "Post on X", pull_request: "Pull request", issue_comment: "Comment", spawn_moonlet: "New moonlet", email_send: "Email", email_organize: "Inbox tidy", email_forward: "Forward", issue_create: "New issue" } as const;
   return (
-    <section className="mb-6 rounded-lg border border-gold bg-gold/10 p-4">
-      <h2 className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink">Waiting for your OK · {items.length}</h2>
+    <section className="mb-6 rounded-xl border border-gold/70 bg-gold/[0.08] p-4">
+      <h2 className="text-[12.5px] font-semibold text-ink">Waiting for your OK <span className="ml-1 rounded-full bg-ink px-1.5 py-0.5 text-[10.5px] font-medium text-cream">{items.length}</span></h2>
       <ul className="mt-3 space-y-2">
         {items.map((p) => (
-          <li key={p.id} className="rounded-md border border-ink/10 bg-white p-3.5">
+          <li key={p.id} className="rounded-lg border border-ink/[0.08] bg-white p-3.5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="text-[13.5px] font-semibold text-ink">
-                  <span className="mr-2 rounded-full bg-ink/5 px-1.5 py-0.5 font-mono text-[10px] text-ink-soft">{KIND[p.kind]}</span>
+                  <span className="mr-2 rounded-full bg-ink/5 px-1.5 py-0.5 text-[10.5px] font-medium text-ink-soft">{KIND[p.kind]}</span>
                   {p.title}
                 </p>
                 <pre className="mt-1.5 whitespace-pre-wrap font-sans text-[13px] leading-[1.55] text-ink-soft">{p.body.slice(0, 800)}</pre>
               </div>
-              <time className="shrink-0 font-mono text-[11px] text-ink-faint">{timeAgo(p.createdAt)}</time>
+              <time className="shrink-0 text-[11.5px] text-ink-faint">{timeAgo(p.createdAt)}</time>
             </div>
             <div className="mt-3 flex gap-2">
               <button
@@ -240,34 +240,34 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       <ul className="divide-y divide-ink/[0.07]">
         {(compact ? files.slice(0, 5) : files).map((f) => (
           <li key={f.id} className="flex items-center gap-3 py-2">
-            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper font-mono text-[9.5px] uppercase text-ink-soft">{f.name.split(".").pop()}</span>
+            <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-[9.5px] font-semibold uppercase text-ink-soft">{f.name.split(".").pop()}</span>
             <div className="min-w-0 flex-1">
               <a href={f.url} download={f.name} className="block truncate text-[13px] font-medium text-ink hover:underline">{f.name}</a>
-              <p className="truncate font-mono text-[10.5px] text-ink-faint">{timeAgo(f.createdAt)} · {(f.size / 1024).toFixed(0)} KB{!compact && f.runTitle ? ` · from “${shortenHexes(f.runTitle)}”` : ""}</p>
+              <p className="truncate text-[11px] text-ink-faint">{timeAgo(f.createdAt)} · {(f.size / 1024).toFixed(0)} KB{!compact && f.runTitle ? ` · from “${shortenHexes(f.runTitle)}”` : ""}</p>
             </div>
-            <a href={f.url} download={f.name} className="shrink-0 rounded-md border border-ink/15 bg-white px-2 py-1 font-mono text-[11px] text-ink hover:border-ink/40" aria-label={`Download ${f.name}`}>↓</a>
+            <a href={f.url} download={f.name} className="ui-btn ui-btn-ghost ui-btn-sm ui-btn-icon w-7 shrink-0" aria-label={`Download ${f.name}`}><Download size={13} strokeWidth={1.75} /></a>
           </li>
         ))}
-        {compact && files.length > 5 && <li className="pt-2 font-mono text-[11px] text-ink-faint">+{files.length - 5} more on the run cards</li>}
+        {compact && files.length > 5 && <li className="pt-2 text-[11.5px] text-ink-faint">+{files.length - 5} more on the run cards</li>}
       </ul>
     );
   const askBox = runs !== null && (
-    <div className="rounded-lg border border-ink/10 bg-white p-3.5">
+    <div>
       {earlierCount > 0 && !showEarlier && (
-        <button type="button" onClick={() => setShowEarlier(true)} className="mb-2 font-mono text-[11.5px] text-ink-faint hover:text-ink">Show {earlierCount} earlier</button>
+        <button type="button" onClick={() => setShowEarlier(true)} className="mb-2 text-[12px] text-ink-faint hover:text-ink">Show {earlierCount} earlier</button>
       )}
       {visibleThread.length > 0 && (
         <ul ref={threadRef} className="mb-3 max-h-[32vh] space-y-3 overflow-y-auto pr-1">
           {visibleThread.map((t, i) => (
             <li key={i} className="space-y-1.5">
-              <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] text-cream">{t.q}</p>
-              <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md bg-paper px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
+              <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] leading-[1.5] text-cream">{t.q}</p>
+              <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md border border-ink/[0.07] bg-white px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
             </li>
           ))}
         </ul>
       )}
       <form
-        className="flex items-end gap-2"
+        className="flex items-center gap-1.5 rounded-xl border border-ink/12 bg-white p-1.5 pl-3.5 shadow-[0_1px_2px_rgba(21,22,29,0.04)] transition-[border-color,box-shadow] focus-within:border-ink/30 focus-within:shadow-[0_0_0_3px_rgba(233,182,76,0.22)]"
         onSubmit={async (e) => {
           e.preventDefault();
           const q = question.trim();
@@ -300,16 +300,16 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder={runs.length ? `Ask ${m.name} about its report, tell it to do something, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
-              className="min-w-0 flex-1 rounded-lg border border-ink/12 bg-paper px-3.5 py-2 text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] focus:border-ink/40 focus:shadow-[0_0_0_3px_rgba(233,182,76,0.25)]"
+              className="min-w-0 flex-1 bg-transparent py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint"
             />
             {voiceOk && <MicButton disabled={asking} onClick={() => { setSpokenBase(question.trim()); setRecording(true); }} />}
-            <button type="submit" disabled={asking || !question.trim()} className="ui-btn ui-btn-primary h-[38px] px-3.5" aria-label="Ask">
-              {asking ? "…" : <ArrowUp size={16} strokeWidth={2.2} />}
+            <button type="submit" disabled={asking || !question.trim()} className="ui-btn ui-btn-primary ui-btn-icon h-8 w-8 rounded-lg disabled:opacity-100 disabled:bg-ink/10 disabled:border-transparent disabled:text-ink-faint" aria-label="Ask">
+              {asking ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-cream border-t-transparent" /> : <ArrowUp size={15} strokeWidth={2.4} />}
             </button>
           </>
         )}
       </form>
-      <p className="mt-2 text-[11.5px] text-ink-faint">Same brain, same tools, billed to its key. {voiceOk ? "Tap the mic to speak; the words land here for you to check first. " : ""}{tg ? "You can also reply to its Telegram messages." : ""}</p>
+      <p className="mt-2 px-1 text-[11.5px] text-ink-faint">Billed to its key. {voiceOk ? "Tap the mic to speak. " : ""}{tg ? "You can also reply on Telegram." : ""}</p>
     </div>
   );
 
@@ -318,7 +318,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       <section>
         <h3 className="mb-2 text-[12px] font-medium text-ink-soft">Fuel</h3>
         <div className="rounded-lg border border-ink/10 bg-white p-4">
-          <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="md" />
+          <FuelGauge app earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="md" />
           <div className="mt-4 border-t border-ink/[0.07] pt-3">{vitals}</div>
         </div>
       </section>
@@ -396,7 +396,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
           <span className="hidden rounded-full border border-ink/12 bg-white px-2 py-0.5 text-[11.5px] font-medium text-ink-soft sm:inline">{TEMPLATE_LABEL[m.spec.template]}</span>
           {m.autopilot && <span className="hidden rounded-full bg-ink px-2 py-0.5 text-[11.5px] font-medium text-cream sm:inline" title="Acts without asking">autopilot</span>}
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden font-mono text-[12px] text-ink-faint md:inline">{fmtUsd(m.spentTotalUsd, 3)} spent</span>
+            <span className="hidden text-[12px] text-ink-faint md:inline"><span className="font-mono tabular-nums">{fmtUsd(m.spentTotalUsd, 3)}</span> spent</span>
             <button disabled={!!busy || running} onClick={() => act("run", () => api.runNow(owner, m.id), "Run finished.")} className="ui-btn ui-btn-gold">
               <Play size={13} strokeWidth={2.2} fill="currentColor" /> {busy === "run" || running ? "Running…" : "Run now"}
             </button>
@@ -408,7 +408,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
               onClick={() => setPanel((v) => !v)}
               aria-pressed={panelOpen}
               title={panelOpen ? "Hide overview" : "Show overview"}
-              className={`ui-btn ui-btn-icon hidden lg:inline-flex ${panelOpen ? "ui-btn-primary" : ""}`}
+              className={`ui-btn ui-btn-icon hidden lg:inline-flex ${panelOpen ? "bg-ink/[0.07] text-ink" : "text-ink-soft"}`}
             >
               <PanelRight size={15} strokeWidth={1.75} />
             </button>
@@ -432,13 +432,13 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
               <p className="text-[14.5px] leading-[1.55] text-ink [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
               <p className="mt-2 text-[13px] leading-[1.5] text-ink-soft">{statusLine}</p>
               {(parent || children.length > 0) && (
-                <p className="mt-1.5 font-mono text-[12px] text-ink-faint">
+                <p className="mt-1.5 text-[12px] text-ink-faint">
                   {parent && <>spawned by <Link href={`/app?m=${parent.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{parent.name}</Link></>}
                   {parent && children.length > 0 && " · "}
                   {children.length > 0 && <>spawned {children.map((c, i) => <span key={c.id}>{i > 0 && ", "}<Link href={`/app?m=${c.id}`} className="text-ink-soft underline decoration-ink/30 hover:text-ink">{c.name}</Link></span>)}</>}
                 </p>
               )}
-              {toast && <p className="mt-2 font-mono text-[12px] text-moss">{toast}</p>}
+              {toast && <p className="mt-2 text-[12.5px] text-moss">{toast}</p>}
             </header>
 
             <div className="mt-6"><Queue owner={owner} /></div>
@@ -446,10 +446,10 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
             <div className="flex-1">
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-[12px] font-medium text-ink-soft">Reports</h2>
-                <span className="font-mono text-[11px] text-ink-faint">{anchoring ? `${runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain` : "every run hashed"}</span>
+                <span className="text-[11.5px] text-ink-faint">{anchoring ? `${runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain` : "every run hashed"}</span>
               </div>
               {runs === null ? (
-                <p className="font-mono text-[13px] text-ink-soft">Loading…</p>
+                <p className="text-[13px] text-ink-soft">Loading…</p>
               ) : (
                 <ol className="relative space-y-3 border-l border-ink/10 pl-5">
                   {running && (
@@ -457,7 +457,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
                       <span className="absolute -left-[25px] top-4 h-2.5 w-2.5 rounded-full bg-gold ring-4 ring-cream"><span className="absolute inset-0 animate-ping rounded-full bg-gold/60" /></span>
                       <div className="rounded-lg border border-gold bg-gold/10 p-4">
                         <p className="text-[14px] font-semibold text-ink">{launched && m.runsTotal === 0 ? "Launched. First report on the way." : "Working now"}</p>
-                        <p className="font-mono text-[12px] text-ink-soft">Reading sources, calling tools, writing the report. It lands here{tg ? ` and in Telegram (${tg.label})` : ""} in under a minute.</p>
+                        <p className="mt-0.5 text-[12.5px] text-ink-soft">Reading sources, calling tools, writing the report. It lands here{tg ? ` and in Telegram (${tg.label})` : ""} in under a minute.</p>
                       </div>
                     </li>
                   )}
@@ -469,7 +469,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
                   ))}
                   {runs.length > 3 && (
                     <li className="relative">
-                      <button onClick={() => setShowAllRuns((v) => !v)} className="w-full rounded-lg border border-dashed border-ink/20 py-2 font-mono text-[12px] text-ink-soft hover:border-ink/40 hover:text-ink">
+                      <button onClick={() => setShowAllRuns((v) => !v)} className="ui-btn ui-btn-ghost w-full border border-dashed border-ink/20 text-[12.5px]">
                         {showAllRuns ? "Show fewer" : `Show all ${runs.length} runs`}
                       </button>
                     </li>
@@ -477,7 +477,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
                   {!runs.length && !running && (
                     <li className="relative">
                       <span className="absolute -left-[25px] top-6 h-2.5 w-2.5 rounded-full bg-ink/15 ring-4 ring-cream" />
-                      <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center font-mono text-[13px] text-ink-soft">
+                      <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center text-[13px] text-ink-soft">
                         No runs yet. The first one starts {timeUntil(m.nextRunAt)}, or press Run now.
                       </p>
                     </li>
@@ -487,7 +487,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
             </div>
 
             {/* talk to it: docked at the bottom of the column */}
-            <div className="sticky bottom-16 mt-6 -mx-1 bg-cream px-1 pb-3 pt-3 shadow-[0_-16px_16px_-8px_var(--cream)] lg:bottom-0">
+            <div className="sticky bottom-16 mt-6 -mx-1 bg-cream px-1 pb-4 pt-3 shadow-[0_-20px_20px_-8px_var(--cream)] lg:bottom-0">
               {askBox}
             </div>
           </div>
@@ -521,7 +521,7 @@ function OrbioApprove() {
   const { approveOrbio } = useAuth();
   const [busy, setBusy] = useState(false);
   return (
-    <button disabled={busy} onClick={async () => { setBusy(true); await approveOrbio("/app").catch(() => setBusy(false)); }} className="font-mono text-[12px] text-ink underline decoration-ink/30 disabled:opacity-50">
+    <button disabled={busy} onClick={async () => { setBusy(true); await approveOrbio("/app").catch(() => setBusy(false)); }} className="text-[12.5px] font-medium text-ink underline decoration-ink/30 disabled:opacity-50">
       Approve on Orbio
     </button>
   );
@@ -567,7 +567,7 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
                 <OrbioMark size={13} /> Approve
               </button>
             )}
-            {!orbioOk && handoff && <span className="font-mono text-[11.5px] text-ink-soft">Finish in MetaMask, then come back. <button onClick={() => setHandoff(false)} className="underline">didn’t open?</button></span>}
+            {!orbioOk && handoff && <span className="text-[12px] text-ink-soft">Finish in MetaMask, then come back. <button onClick={() => setHandoff(false)} className="underline">didn’t open?</button></span>}
           </SetupStep>
           <SetupStep n={2} done={telegramOk} title={telegramOk ? "Telegram linked" : "Link Telegram"} hint={telegramOk ? "Results and approvals reach your phone." : telegramAvailable ? "Where results and approvals reach you. Open the bot, press Start." : "Not switched on here yet; results stay on this dashboard."}>
             {!telegramOk && telegramAvailable && (
@@ -592,11 +592,11 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
 function SetupStep({ n, done, optional, title, hint, children }: { n: number; done: boolean; optional?: boolean; title: string; hint: string; children?: React.ReactNode }) {
   return (
     <div className="flex items-center gap-3 px-4 py-3">
-      <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full font-mono text-[11.5px] ${done ? "bg-moss text-white" : optional ? "bg-ink/10 text-ink-soft" : "bg-ink text-cream"}`}>{done ? "✓" : n}</span>
+      <span className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[11.5px] font-medium ${done ? "bg-moss text-white" : optional ? "bg-ink/10 text-ink-soft" : "bg-ink text-cream"}`}>{done ? <Check size={12} strokeWidth={2.5} /> : n}</span>
       <div className="min-w-0 flex-1">
         <p className="text-[13.5px] font-medium tracking-[-0.01em] text-ink">
           {title}
-          {optional && !done && <span className="ml-2 rounded-full bg-ink/5 px-1.5 py-0.5 font-mono text-[10px] font-normal text-ink-soft">optional</span>}
+          {optional && !done && <span className="ml-2 rounded-full bg-ink/5 px-1.5 py-0.5 text-[10.5px] font-medium text-ink-soft">optional</span>}
         </p>
         <p className="truncate text-[12px] leading-[1.5] text-ink-soft">{hint}</p>
       </div>

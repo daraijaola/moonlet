@@ -131,11 +131,14 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
 
       <div className="border-t border-ink/10 px-3 py-3">
         <div className="flex items-center gap-2.5 rounded-md px-1.5 py-1">
-          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(from_200deg,var(--gold),var(--moss),var(--ink))] ring-2 ring-white" />
+          <span className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-cream">
+            <span className="font-mono text-[10px]">{address.slice(2, 4)}</span>
+            <span className={`absolute -bottom-px -right-px h-2.5 w-2.5 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
+          </span>
           <span className="min-w-0 flex-1">
             <span className="block truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</span>
-            <span className="block truncate font-mono text-[11px] text-ink-faint">
-              {status ? `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio ✓" : "Orbio ✗"}` : "…"}
+            <span className="block truncate text-[11.5px] text-ink-faint">
+              {status ? `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}` : "…"}
             </span>
           </span>
           <button onClick={onDisconnect} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-ink/[0.05] hover:text-ink" title="Disconnect wallet"><LogOut size={14} strokeWidth={1.75} /></button>

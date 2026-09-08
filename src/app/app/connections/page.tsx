@@ -43,14 +43,14 @@ function ConnectionsInner() {
       <div className="sticky top-14 z-20 border-b border-ink/10 bg-cream/90 backdrop-blur lg:top-0">
         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
           <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Connections</h1>
-          <span className="font-mono text-[12px] text-ink-faint">{data.connections.length + (orbio?.approved ? 1 : 0)} connected</span>
+          <span className="text-[12px] text-ink-faint">{data.connections.length + (orbio?.approved ? 1 : 0)} connected</span>
         </div>
       </div>
       <div className="mx-auto w-full max-w-[760px] px-4 py-6 sm:px-6">
         <p className="text-[13.5px] leading-[1.6] text-ink-soft">
           Each connection unlocks a tool. Anything a moonlet wants to <em>do</em> on your behalf is drafted first and waits for your OK; one approval puts that moonlet on autopilot, and you can switch it back on its page.
         </p>
-        {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{err}</p>}
+        {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">{err}</p>}
 
         <div className="mt-5 divide-y divide-ink/[0.07] rounded-lg border border-ink/10 bg-white">
           {[

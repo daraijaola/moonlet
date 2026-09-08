@@ -27,7 +27,7 @@ export function useVoiceSupported() {
 
 export function MicButton({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
   return (
-    <button type="button" disabled={disabled} onClick={onClick} aria-label="Speak instead of typing" title="Speak" className="ui-btn ui-btn-icon h-[38px] w-[38px] shrink-0 rounded-lg text-ink-soft">
+    <button type="button" disabled={disabled} onClick={onClick} aria-label="Speak instead of typing" title="Speak" className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 shrink-0 rounded-lg text-ink-soft">
       <Mic size={16} strokeWidth={1.75} />
     </button>
   );
@@ -157,7 +157,7 @@ export function VoiceRecorder({ transcribe, onLive, onDone, onCancel }: { transc
           </>
         )}
       </div>
-      <button type="button" onClick={() => finish("keep")} disabled={phase !== "recording"} aria-label="Keep recording" className="ui-btn ui-btn-primary ui-btn-icon h-[38px] w-[38px] shrink-0 rounded-lg"><Check size={16} strokeWidth={2.2} /></button>
+      <button type="button" onClick={() => finish("keep")} disabled={phase !== "recording"} aria-label="Keep recording" className="ui-btn ui-btn-primary ui-btn-icon h-8 w-8 shrink-0 rounded-lg"><Check size={16} strokeWidth={2.2} /></button>
     </div>
   );
 }
