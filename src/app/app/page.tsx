@@ -133,12 +133,6 @@ function Queue({ owner }: { owner: string }) {
   );
 }
 
-const Row = ({ k, v }: { k: string; v: string }) => (
-  <div className="flex justify-between">
-    <dt className="text-ink-soft">{k}</dt>
-    <dd className="font-mono text-[12px] tabular-nums text-ink">{v}</dd>
-  </div>
-);
 
 function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMoonlet; all: ApiMoonlet[]; owner: string; onChange: () => Promise<void>; conns: Connections | null; launched?: boolean; status: OrbioStatus | null }) {
   const router = useRouter();
@@ -168,12 +162,15 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   const [anchoring, setAnchoring] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [autopilotOn, setAutopilotOn] = useState(m.autopilot);
+  useEffect(() => setAutopilotOn(m.autopilot), [m.autopilot]);
   const [showAllRuns, setShowAllRuns] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [tab, setTab] = useState<"report" | "overview">("report");
   // Overview panel: open by default on wide screens, remembered while you move between moonlets.
   const [panel, setPanel] = useState<boolean | null>(null);
   const panelOpen = panel ?? (typeof window !== "undefined" && window.innerWidth >= 1440);
+  const togglePanel = () => setPanel(!panelOpen);
   const quiet = m.status === "quiet" || m.status === "paused";
 
   const loadRuns = useCallback(async () => {
@@ -208,10 +205,13 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       flash(r?.status === "failed" ? `Run failed: ${r.error ?? "see the run below"}` : r?.status === "quiet" ? "Run went quiet: not enough fuel this time." : done);
     } catch (e) {
       flash(`Failed: ${(e as Error).message}`);
+      setBusy(null);
+      throw e;
     }
     setBusy(null);
   };
 
+  const go = (...args: Parameters<typeof act>) => act(...args).catch(() => undefined);
   const running = m.status === "running";
   const statusLine = running
     ? <>Working on {m.runsTotal === 0 ? "its first report" : "a report"} now — about a minute.</>
@@ -313,72 +313,101 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
     </div>
   );
 
+  const burnAll = all.reduce((sum, x) => sum + (x.status === "paused" || x.status === "quiet" ? 0 : x.burnPerDayUsd), 0);
+  const earnAll = status?.earnPerDayUsd ?? m.earnPerDayUsd;
+  const share = earnAll > 0 ? Math.min(1, burnAll / earnAll) : 0;
   const overview = (
-    <div className="space-y-6">
-      <section>
-        <h3 className="mb-2 text-[12px] font-medium text-ink-soft">Fuel</h3>
-        <div className="rounded-lg border border-ink/10 bg-white p-4">
+    <div className="space-y-5">
+      <section className="ui-card p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[12.5px] font-semibold text-ink">Fuel</h3>
+          <span className="text-[11.5px] text-ink-faint">{m.cadence} cadence</span>
+        </div>
+        <div className="mt-3">
           <FuelGauge app earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="md" />
-          <div className="mt-4 border-t border-ink/[0.07] pt-3">{vitals}</div>
         </div>
+        <div className="mt-4 border-t border-ink/[0.06] pt-3">{vitals}</div>
       </section>
-      <section>
-        <h3 className="mb-2 text-[12px] font-medium text-ink-soft">Settings</h3>
-        <div className="divide-y divide-ink/[0.07] rounded-lg border border-ink/10 bg-white">
-          <SettingRow label="Delivery" hint={tg ? `Telegram ${tg.label} and this page` : "This page only"}>
-            {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 text-[11.5px] font-medium text-moss"><TelegramMark size={11} /> linked</span> : <Link href="/app/connections" className="ui-btn ui-btn-sm">Link Telegram</Link>}
-          </SettingRow>
-          <SettingRow label="Autopilot" hint={m.autopilot ? "Acts without asking." : "Drafts wait for your OK."}>
-            <button disabled={!!busy} onClick={() => act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: !m.autopilot }), m.autopilot ? "Autopilot off. Drafts wait for your OK." : "Autopilot on. It acts without asking.")} role="switch" aria-checked={m.autopilot} className={`relative h-5 w-9 rounded-full transition-colors disabled:opacity-50 ${m.autopilot ? "bg-ink" : "bg-ink/15"}`}>
-              <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${m.autopilot ? "left-[18px]" : "left-0.5"}`} />
-            </button>
-          </SettingRow>
-          <SettingRow label="Job" hint={`${TEMPLATE_LABEL[m.spec.template]} · every ${m.cadence} · cap ${fmtUsd(m.perRunCapUsd, 3)}/run`}>
-            <Link href={`/app/new?edit=${m.id}`} className="ui-btn ui-btn-sm">Edit</Link>
-          </SettingRow>
-          <SettingRow label="Key" hint={`${m.keysRotated} rotation${m.keysRotated === 1 ? "" : "s"} · ${m.keyLimitUsd ? "on its own key" : "mints on first run"}`}>
-            <button disabled={!!busy} onClick={() => act("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")} className="ui-btn ui-btn-sm">Rotate</button>
-          </SettingRow>
-          <SettingRow label="Public page" hint={`/s/${m.id}`}>
-            <Link href={`/s/${m.id}`} className="ui-btn ui-btn-sm">Open <ExternalLink size={12} strokeWidth={2} /></Link>
-          </SettingRow>
-        </div>
+
+      <section className="ui-card divide-y divide-ink/[0.06]">
+        <SettingRow label="Delivery" hint={tg ? `Telegram ${tg.label} and this page` : "This page only"}>
+          {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 text-[11.5px] font-medium text-moss"><TelegramMark size={11} /> linked</span> : <Link href="/app/connections" className="ui-btn ui-btn-sm">Link Telegram</Link>}
+        </SettingRow>
+        <SettingRow label="Autopilot" hint={autopilotOn ? "Acts without asking." : "Drafts wait for your OK."}>
+          <button
+            disabled={!!busy}
+            onClick={() => {
+              const next = !autopilotOn;
+              setAutopilotOn(next);
+              act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: next }), next ? "Autopilot on. It acts without asking." : "Autopilot off. Drafts wait for your OK.").catch(() => setAutopilotOn(!next));
+            }}
+            role="switch"
+            aria-checked={autopilotOn}
+            className="ui-switch"
+          >
+            <span />
+          </button>
+        </SettingRow>
+        <SettingRow label="Job" hint={`${TEMPLATE_LABEL[m.spec.template]} · every ${m.cadence} · cap ${fmtUsd(m.perRunCapUsd, 3)}/run`}>
+          <Link href={`/app/new?edit=${m.id}`} className="ui-btn ui-btn-sm">Edit</Link>
+        </SettingRow>
+        <SettingRow label="Key" hint={`${m.keysRotated} rotation${m.keysRotated === 1 ? "" : "s"} · ${m.keyLimitUsd ? "on its own key" : "mints on first run"}`}>
+          <button disabled={!!busy} onClick={() => go("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")} className="ui-btn ui-btn-sm">Rotate</button>
+        </SettingRow>
+        <SettingRow label="Public page" hint={`/s/${m.id}`}>
+          <Link href={`/s/${m.id}`} className="ui-btn ui-btn-sm">Open <ExternalLink size={12} strokeWidth={2} /></Link>
+        </SettingRow>
       </section>
+
       {files.length > 0 && (
-        <section>
-          <h3 className="mb-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-soft"><Paperclip size={12} strokeWidth={2} /> Artifacts · {files.length}</h3>
-          <div className="rounded-lg border border-ink/10 bg-white px-4 py-1">{artifactList(false)}</div>
+        <section className="ui-card px-4 py-3">
+          <h3 className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ink"><Paperclip size={12} strokeWidth={2} /> Artifacts <span className="font-normal text-ink-faint">{files.length}</span></h3>
+          <div className="mt-1">{artifactList(false)}</div>
         </section>
       )}
-      <section>
-        <h3 className="mb-2 text-[12px] font-medium text-ink-soft">Your credits</h3>
-        <div className="rounded-lg border border-ink/10 bg-white p-4">
-          <dl className="space-y-2 text-[12.5px]">
-            <Row k="bag" v={status ? `${fmtBag(status.bag)} $ORBIO` : "…"} />
-            <Row k="earning" v={`~${fmtUsd(status?.earnPerDayUsd ?? m.earnPerDayUsd)} / day`} />
-            <Row k="put to work" v={`~${fmtUsd(all.reduce((sum, x) => sum + (x.status === "paused" || x.status === "quiet" ? 0 : x.burnPerDayUsd), 0))} / day`} />
-            <div className="flex justify-between border-t border-ink/10 pt-2">
-              <dt className="text-ink-soft" title="Inference you already own and aren't using. Launch another moonlet to put it to work.">sitting idle</dt>
-              <dd className={status?.idleCreditsUsd && status.idleCreditsUsd > 1 ? "text-gold" : "text-ink"}>{status?.idleCreditsUsd == null ? "—" : fmtUsd(status.idleCreditsUsd)}</dd>
-            </div>
-          </dl>
-          {status && !status.approved && (
-            <p className="mt-3 text-[12px] leading-[1.5] text-ink-soft">This wallet hasn&apos;t approved Moonlet on orbio.so yet, so nothing can claim a key. <OrbioApprove /></p>
-          )}
+
+      <section className="ui-card p-4">
+        <div className="flex items-center justify-between">
+          <h3 className="text-[12.5px] font-semibold text-ink">Your credits</h3>
+          <span className="text-[11.5px] text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO` : "…"}</span>
         </div>
-      </section>
-      <section>
-        <div className="flex items-center justify-between rounded-lg border border-ink/10 bg-white px-4 py-3">
+        <div className="mt-3 flex items-end justify-between">
           <div>
-            <p className="text-[13px] font-medium text-ink">Delete this moonlet</p>
-            <p className="text-[12px] text-ink-soft">Credits stay in your Orbio balance; only the moonlet goes.</p>
+            <p className="text-[11.5px] text-ink-faint">Earning</p>
+            <p className="mt-0.5 font-mono text-[17px] font-semibold tabular-nums tracking-[-0.01em] text-ink">{fmtUsd(earnAll)}<span className="ml-1 text-[11.5px] font-normal text-ink-faint">/ day</span></p>
+          </div>
+          <div className="text-right">
+            <p className="text-[11.5px] text-ink-faint">Put to work</p>
+            <p className="mt-0.5 font-mono text-[17px] font-semibold tabular-nums tracking-[-0.01em] text-ink">{fmtUsd(burnAll)}<span className="ml-1 text-[11.5px] font-normal text-ink-faint">/ day</span></p>
+          </div>
+        </div>
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/[0.07]">
+          <div className="h-full rounded-full bg-moss transition-[width] duration-500" style={{ width: `${Math.round(share * 100)}%` }} />
+        </div>
+        <p className="mt-2 text-[12px] text-ink-soft">
+          {status?.idleCreditsUsd == null
+            ? "Credits update after the first run."
+            : status.idleCreditsUsd > 1
+              ? <><span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> of inference sitting idle. <Link href="/app/new" className="font-medium text-ink underline decoration-ink/30 underline-offset-2">Put it to work</Link>.</>
+              : "Nearly all of what your bag earns is at work."}
+        </p>
+        {status && !status.approved && (
+          <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-[12px] leading-[1.5] text-ink">Approve Moonlet on orbio.so so it can mint a key. <OrbioApprove /></p>
+        )}
+      </section>
+
+      <section className="ui-well px-4 py-3">
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0">
+            <p className="text-[13px] font-medium text-ink">{confirmDelete ? "Delete this moonlet?" : "Delete moonlet"}</p>
+            <p className="truncate text-[12px] text-ink-faint">{confirmDelete ? "Its reports stay public; credits stay yours." : "Credits stay in your Orbio balance."}</p>
           </div>
           {!confirmDelete ? (
-            <button onClick={() => setConfirmDelete(true)} className="ui-btn ui-btn-sm ui-danger"><Trash2 size={13} strokeWidth={1.75} /> Delete</button>
+            <button onClick={() => setConfirmDelete(true)} className="ui-btn ui-btn-sm ui-btn-ghost ui-danger"><Trash2 size={13} strokeWidth={1.75} /> Delete</button>
           ) : (
-            <span className="inline-flex items-center gap-2">
-              <button onClick={async () => { await act("delete", () => api.remove(owner, m.id), "Deleted."); router.replace("/app"); }} className="ui-btn ui-btn-sm ui-btn-primary">Confirm</button>
+            <span className="ui-in inline-flex items-center gap-1.5">
               <button onClick={() => setConfirmDelete(false)} className="ui-btn ui-btn-sm ui-btn-ghost">Cancel</button>
+              <button onClick={async () => { await act("delete", () => api.remove(owner, m.id), "Deleted.").then(() => router.replace("/app")).catch(() => undefined); }} className="ui-btn ui-btn-sm ui-btn-danger">Delete</button>
             </span>
           )}
         </div>
@@ -397,15 +426,15 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
           {m.autopilot && <span className="hidden rounded-full bg-ink px-2 py-0.5 text-[11.5px] font-medium text-cream sm:inline" title="Acts without asking">autopilot</span>}
           <div className="ml-auto flex items-center gap-2">
             <span className="hidden text-[12px] text-ink-faint md:inline"><span className="font-mono tabular-nums">{fmtUsd(m.spentTotalUsd, 3)}</span> spent</span>
-            <button disabled={!!busy || running} onClick={() => act("run", () => api.runNow(owner, m.id), "Run finished.")} className="ui-btn ui-btn-gold">
+            <button disabled={!!busy || running} onClick={() => go("run", () => api.runNow(owner, m.id), "Run finished.")} className="ui-btn ui-btn-gold">
               <Play size={13} strokeWidth={2.2} fill="currentColor" /> {busy === "run" || running ? "Running…" : "Run now"}
             </button>
-            <button disabled={!!busy} onClick={() => act("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")} className="ui-btn">
+            <button disabled={!!busy} onClick={() => go("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")} className="ui-btn">
               {m.status === "paused" ? <><Play size={13} strokeWidth={2} /> Resume</> : <><Pause size={13} strokeWidth={2} /> Pause</>}
             </button>
             <button
               type="button"
-              onClick={() => setPanel((v) => !v)}
+              onClick={togglePanel}
               aria-pressed={panelOpen}
               title={panelOpen ? "Hide overview" : "Show overview"}
               className={`ui-btn ui-btn-icon hidden lg:inline-flex ${panelOpen ? "bg-ink/[0.07] text-ink" : "text-ink-soft"}`}
@@ -494,11 +523,9 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         </div>
 
         {/* ── overview: the occasional stuff, in a panel ──────────────────── */}
-        {panelOpen && (
-          <aside className="hidden w-[320px] shrink-0 border-l border-ink/10 bg-paper lg:block xl:w-[340px]">
-            <div className="sticky top-14 max-h-[calc(100vh-56px)] overflow-y-auto p-4 [scrollbar-width:thin]">{overview}</div>
-          </aside>
-        )}
+        <aside data-open={panelOpen} className="ui-panel hidden w-[320px] shrink-0 border-l border-ink/[0.07] bg-paper lg:block xl:w-[340px]">
+          <div className="ui-panel-inner sticky top-14 max-h-[calc(100vh-56px)] overflow-y-auto p-4 [scrollbar-width:thin] lg:top-0 lg:max-h-screen">{overview}</div>
+        </aside>
         {tab === "overview" && <div className="w-full px-4 py-5 lg:hidden">{overview}</div>}
       </div>
     </section>
@@ -507,7 +534,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
 
 function SettingRow({ label, hint, children }: { label: string; hint: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+    <div className="flex items-center justify-between gap-3 px-4 py-3">
       <div className="min-w-0">
         <p className="text-[13px] font-medium text-ink">{label}</p>
         <p className="truncate text-[12px] text-ink-faint">{hint}</p>

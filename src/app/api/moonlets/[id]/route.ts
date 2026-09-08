@@ -47,19 +47,23 @@ export async function PATCH(req: Request, { params }: Ctx) {
     }
   }
   if (body.data.action === "edit") {
-    const spec = body.data.spec ?? m.spec;
-    const p = plan(spec, await bagOf(owner));
-    await store.updateMoonlet(id, {
-      spec,
-      name: spec.name,
-      delivery: body.data.delivery ?? m.delivery,
-      autopilot: body.data.autopilot ?? m.autopilot,
-      cadence: p.cadence,
-      perRunCapUsd: p.perRunCapUsd,
-      earnPerDayUsd: p.earnPerDayUsd,
-      burnPerDayUsd: p.burnPerDayUsd,
-      status: p.quiet ? "quiet" : m.status === "paused" ? "paused" : "idle",
-    });
+    // Only a changed job re-plans cadence and cap; flipping autopilot or delivery must not touch the schedule or wake a paused moonlet.
+    if (body.data.spec) {
+      const spec = body.data.spec;
+      const p = plan(spec, await bagOf(owner));
+      await store.updateMoonlet(id, {
+        spec,
+        name: spec.name,
+        cadence: p.cadence,
+        perRunCapUsd: p.perRunCapUsd,
+        earnPerDayUsd: p.earnPerDayUsd,
+        burnPerDayUsd: p.burnPerDayUsd,
+        status: p.quiet ? "quiet" : m.status === "paused" ? "paused" : m.status === "running" ? "running" : "idle",
+      });
+    }
+    if (body.data.delivery !== undefined || body.data.autopilot !== undefined) {
+      await store.updateMoonlet(id, { delivery: body.data.delivery ?? m.delivery, autopilot: body.data.autopilot ?? m.autopilot });
+    }
   }
   const after = await store.getMoonlet(id);
   return NextResponse.json({ moonlet: after && publicMoonlet(after) });

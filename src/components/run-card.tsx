@@ -10,7 +10,7 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
   const tone = run.status === "failed" ? "border-red-700/30" : run.status === "quiet" ? "border-ink/10 opacity-80" : "border-ink/10";
   const hasBody = run.body.trim().length > 0;
   return (
-    <article className={`rounded-lg border bg-white p-4 transition-colors hover:border-ink/25 ${tone}`}>
+    <article className={`rounded-xl border bg-white p-4 shadow-[0_1px_2px_rgba(21,22,29,0.04)] transition-colors hover:border-ink/20 ${tone}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">

@@ -49,7 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AppDataProvider owner={address!}>
-      <div className="min-h-screen bg-cream text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="app-root min-h-screen bg-cream text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
         <Suspense fallback={<aside className="hidden lg:block" />}>
           <Sidebar pathname={pathname} address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} />
         </Suspense>
@@ -84,7 +84,7 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
   const selected = pathname === "/app" ? (params.get("m") ?? moonlets?.[0]?.id ?? null) : null;
   const groups = groupMoonlets(moonlets ?? []);
   return (
-    <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-r lg:border-ink/10 lg:bg-paper">
+    <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-r lg:border-ink/[0.07] lg:bg-paper">
       <div className="flex h-14 items-center px-4">
         <Link href="/app" className="inline-flex items-center gap-2">
           <MoonletMark size={26} face="var(--cream)" />
@@ -115,7 +115,7 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
             <ul className="space-y-0.5">
               {items.map((m) => (
                 <li key={m.id}>
-                  <Link href={`/app?m=${m.id}`} className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 ${m.id === selected ? "bg-white shadow-[0_0_0_1px_rgba(21,22,29,0.08)]" : "hover:bg-ink/[0.04]"}`}>
+                  <Link href={`/app?m=${m.id}`} className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 ${m.id === selected ? "bg-ink/[0.06]" : "hover:bg-ink/[0.04]"}`}>
                     <StatusDot tone={m.status === "running" || m.status === "idle" ? "green" : "grey"} pulse={m.status === "running"} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13.5px] font-medium text-ink">{m.name}</span>
