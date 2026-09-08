@@ -187,7 +187,7 @@ export function PublicMobileTabs() {
 
 export function Avatar({ n, size = 28, className = "" }: { n: number | undefined; size?: number; className?: string }) {
   return n ? (
-    <Image src={`/avatars/${n}.png?v=2`} alt="" width={size} height={size} className={`shrink-0 rounded-full ${className}`} />
+    <Image src={`/avatars/v2/${n}.png`} alt="" width={size} height={size} className={`shrink-0 rounded-full ${className}`} />
   ) : (
     <span className={`inline-block shrink-0 rounded-full bg-ink/[0.08] ${className}`} style={{ width: size, height: size }} />
   );

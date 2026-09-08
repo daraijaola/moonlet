@@ -72,7 +72,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
                 </div>
               )}
             </div>
-            <Image src={`/avatars/${m.avatar}.png?v=2`} alt="" width={256} height={256} className={`pointer-events-none mx-auto h-[168px] w-[168px] select-none rounded-full shadow-[0_18px_40px_-20px_rgba(21,22,29,0.45)] ${m.status === "running" ? "animate-drift" : ""}`} priority />
+            <Image src={`/avatars/v2/${m.avatar}.png`} alt="" width={256} height={256} className={`pointer-events-none mx-auto h-[168px] w-[168px] select-none rounded-full shadow-[0_18px_40px_-20px_rgba(21,22,29,0.45)] ${m.status === "running" ? "animate-drift" : ""}`} priority />
           </div>
         </section>
 

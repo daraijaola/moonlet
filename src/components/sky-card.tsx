@@ -15,7 +15,7 @@ export function SkyCard({ m }: { m: SkyItem }) {
     <div className="group relative h-full rounded-2xl border border-ink/[0.08] bg-white p-5 shadow-[0_1px_2px_rgba(21,22,29,0.04)] transition-[border-color,box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:border-ink/20 hover:shadow-[0_12px_28px_-16px_rgba(21,22,29,0.25)]">
       <div className="flex items-start justify-between gap-3">
         <div className="flex min-w-0 items-center gap-2.5">
-          <span className="relative shrink-0"><Image src={`/avatars/${m.avatar}.png?v=2`} alt="" width={34} height={34} className="rounded-full" /><span className="absolute -bottom-px -right-px"><StatusDot tone={tone} pulse={m.status === "running"} /></span></span>
+          <span className="relative shrink-0"><Image src={`/avatars/v2/${m.avatar}.png`} alt="" width={34} height={34} className="rounded-full" /><span className="absolute -bottom-px -right-px"><StatusDot tone={tone} pulse={m.status === "running"} /></span></span>
           <span className="min-w-0">
             <Link href={`/s/${m.id}`} className="block truncate text-[16px] font-semibold tracking-[-0.01em] text-ink after:absolute after:inset-0 after:content-['']">{m.name}</Link>
             <span className="block font-mono text-[10.5px] text-ink-faint">{m.id}</span>
