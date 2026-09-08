@@ -146,6 +146,7 @@ export function migrate() {
       "write",
     );
     await c.execute(`ALTER TABLE moonlets ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
+    await c.execute(`ALTER TABLE owners ADD COLUMN avatar INTEGER`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN memory TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
@@ -172,6 +173,19 @@ export const newId = (prefix: string) => `${prefix}_${randomBytes(6).toString("b
 export async function upsertOwner(address: string) {
   await migrate();
   await db().execute({ sql: `INSERT INTO owners(address) VALUES(?) ON CONFLICT(address) DO NOTHING`, args: [address.toLowerCase()] });
+}
+
+/** There are ten profile pictures. A wallet draws one the first time it is seen and keeps it. */
+export const AVATAR_COUNT = 10;
+export async function avatarOf(address: string): Promise<number> {
+  await upsertOwner(address);
+  const r = await db().execute({ sql: `SELECT avatar FROM owners WHERE address=?`, args: [address.toLowerCase()] });
+  const have = r.rows[0]?.avatar;
+  if (have != null) return Number(have);
+  const pick = 1 + Math.floor(Math.random() * AVATAR_COUNT);
+  await db().execute({ sql: `UPDATE owners SET avatar=? WHERE address=? AND avatar IS NULL`, args: [pick, address.toLowerCase()] });
+  const again = await db().execute({ sql: `SELECT avatar FROM owners WHERE address=?`, args: [address.toLowerCase()] });
+  return Number(again.rows[0]?.avatar ?? pick);
 }
 
 export async function getOwner(address: string): Promise<OwnerRow | null> {

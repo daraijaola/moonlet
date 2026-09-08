@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Suspense, useEffect } from "react";
+import { Suspense } from "react";
 import { useAuth } from "@/lib/auth";
 import { fmtBag, shortAddr, timeUntil, type ApiMoonlet } from "@/lib/api";
 import { AppDataProvider, useAppData } from "@/lib/app-data";
@@ -10,7 +10,10 @@ import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
 import { StatusDot } from "./fuel-gauge";
 import { TEMPLATE_LABEL } from "./labels";
-import { Orbit, Rocket, Cable, Telescope, Plus, LogOut, type LucideIcon } from "lucide-react";
+import { Orbit, Rocket, Cable, Telescope, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, type LucideIcon } from "lucide-react";
+import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
+import type { OrbioStatus } from "@/lib/api";
 
 const NAV: Array<{ href: string; label: string; icon: LucideIcon; match: (p: string) => boolean }> = [
   { href: "/app", label: "Moonlets", icon: Orbit, match: (p) => p === "/app" },
@@ -60,14 +63,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <MoonletMark size={28} face="var(--cream)" />
               <Wordmark className="text-[1.2rem] text-ink" />
             </Link>
-            <button
-              onClick={() => { disconnect(); router.push("/"); }}
-              className="inline-flex items-center gap-2 rounded-md border border-ink/15 bg-white px-2.5 py-1.5 font-mono text-[12px] text-ink-soft"
-              title="Disconnect"
-            >
-              <span className="h-2 w-2 rounded-full bg-moss" />
-              {shortAddr(address!)}
-            </button>
+            <Suspense><PhoneAccount address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} /></Suspense>
           </header>
           <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-16 lg:pb-0 [scrollbar-width:thin]">{children}</main>
           <MobileTabs pathname={pathname} />
@@ -128,20 +124,8 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
         ))}
       </div>
 
-      <div className="border-t border-ink/10 px-3 py-3">
-        <div className="flex items-center gap-2.5 rounded-md px-1.5 py-1">
-          <span className="relative inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-cream">
-            <span className="font-mono text-[10px]">{address.slice(2, 4)}</span>
-            <span className={`absolute -bottom-px -right-px h-2.5 w-2.5 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</span>
-            <span className="block truncate text-[11.5px] text-ink-faint">
-              {status ? `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}` : "…"}
-            </span>
-          </span>
-          <button onClick={onDisconnect} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-ink/[0.05] hover:text-ink" title="Disconnect wallet"><LogOut size={14} strokeWidth={1.75} /></button>
-        </div>
+      <div className="border-t border-ink/[0.07] p-2">
+        <AccountMenu address={address} status={status} onDisconnect={onDisconnect} />
       </div>
     </aside>
   );
@@ -205,5 +189,93 @@ export function PublicMobileTabs() {
       <div className="h-16 sm:hidden" />
       <MobileTabs pathname={pathname} />
     </>
+  );
+}
+
+export function Avatar({ n, size = 28, className = "" }: { n: number | undefined; size?: number; className?: string }) {
+  return n ? (
+    <Image src={`/avatars/${n}.png`} alt="" width={size} height={size} className={`shrink-0 rounded-full ${className}`} />
+  ) : (
+    <span className={`inline-block shrink-0 rounded-full bg-ink/[0.08] ${className}`} style={{ width: size, height: size }} />
+  );
+}
+
+/** The account block at the bottom of the sidebar: press it for a small menu (copy address, the sky, disconnect). */
+function AccountMenu({ address, status, onDisconnect }: { address: string; status: OrbioStatus | null; onDisconnect: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc); document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  const copy = async () => { try { await navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 1400); } catch {} };
+  return (
+    <div ref={ref} className="relative">
+      {open && (
+        <div role="menu" className="ui-in absolute bottom-[calc(100%+6px)] left-0 right-0 z-40 rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]">
+          <div className="flex items-center gap-2.5 px-2.5 py-2">
+            <Avatar n={status?.avatar} size={32} />
+            <div className="min-w-0">
+              <p className="truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</p>
+              <p className="truncate text-[11.5px] text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}` : "…"}</p>
+            </div>
+          </div>
+          <div className="my-1 h-px bg-ink/[0.06]" />
+          <button role="menuitem" type="button" onClick={copy} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">
+            <span className="text-ink-soft">{copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.75} />}</span>{copied ? "Copied" : "Copy address"}
+          </button>
+          <Link role="menuitem" href="/sky" onClick={() => setOpen(false)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">
+            <span className="text-ink-soft"><Globe size={14} strokeWidth={1.75} /></span>The sky
+          </Link>
+          <div className="my-1 h-px bg-ink/[0.06]" />
+          <button role="menuitem" type="button" onClick={onDisconnect} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">
+            <span className="text-ink-soft"><LogOut size={14} strokeWidth={1.75} /></span>Disconnect wallet
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${open ? "bg-ink/[0.06]" : "hover:bg-ink/[0.05]"}`}
+      >
+        <span className="relative shrink-0">
+          <Avatar n={status?.avatar} size={30} />
+          <span className={`absolute -bottom-px -right-px h-2.5 w-2.5 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</span>
+          <span className="block truncate text-[11.5px] text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO` : "…"}</span>
+        </span>
+        <ChevronsUpDown size={14} strokeWidth={1.75} className="shrink-0 text-ink-faint" />
+      </button>
+    </div>
+  );
+}
+
+function PhoneAccount({ address, onDisconnect }: { address: string; onDisconnect: () => void }) {
+  const { status } = useAppData();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} className="inline-flex items-center gap-2 rounded-full border border-ink/[0.1] bg-white py-1 pl-1 pr-2.5">
+        <Avatar n={status?.avatar} size={24} />
+        <span className="font-mono text-[12px] text-ink">{shortAddr(address)}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div role="menu" className="ui-in absolute right-0 top-[calc(100%+6px)] z-40 min-w-[200px] rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18)]">
+            <button role="menuitem" type="button" onClick={() => { navigator.clipboard?.writeText(address).catch(() => undefined); setOpen(false); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><Copy size={14} strokeWidth={1.75} className="text-ink-soft" /> Copy address</button>
+            <button role="menuitem" type="button" onClick={onDisconnect} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><LogOut size={14} strokeWidth={1.75} className="text-ink-soft" /> Disconnect wallet</button>
+          </div>
+        </>
+      )}
+    </div>
   );
 }
