@@ -1,7 +1,7 @@
 import { Nav } from "@/components/nav";
 import { Hero } from "@/components/hero";
 import { How } from "@/components/how";
-import { Session } from "@/components/session";
+import { UseCases } from "@/components/usecases";
 import { Rails } from "@/components/rails";
 import { SiteFooter } from "@/components/site-footer";
 
@@ -12,7 +12,7 @@ export default function Home() {
       <main className="flex-1">
         <Hero />
         <How />
-        <Session />
+        <UseCases />
         <Rails />
       </main>
       <SiteFooter />
