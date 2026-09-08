@@ -286,3 +286,19 @@ body {
 @media (prefers-reduced-motion: reduce) { .app-root *, .ui-panel, .ui-switch > span { transition-duration: 0ms !important; animation: none !important; } }
 .app-root button:not(:disabled), .app-root a, .app-root label:has(input[type="checkbox"]), .app-root select, .app-root [role="switch"]:not(:disabled), .app-root summary { cursor: pointer; }
 .app-root button:disabled { cursor: not-allowed; }
+
+/* Tool pile stage: a faint dot grid and a hard ground line, so the tiles land on something. */
+.tool-stage {
+  background-image: radial-gradient(rgba(21, 22, 29, 0.10) 0.9px, transparent 1.2px);
+  background-size: 18px 18px;
+}
+.tool-stage::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  bottom: 13px;
+  height: 2px;
+  background: var(--ink);
+  pointer-events: none;
+}

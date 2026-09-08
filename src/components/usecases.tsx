@@ -2,9 +2,9 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react";
-import { Check, GitPullRequest, Mail, Send } from "lucide-react";
+import { ArrowRight, Check, GitPullRequest, Mail, Send } from "lucide-react";
 import { GitHubMark, GmailMark, TelegramMark } from "./marks";
 import { StatusDot } from "./fuel-gauge";
 
@@ -27,8 +27,22 @@ function useScript(on: boolean, marks: number[], reduced: boolean | null) {
   return step;
 }
 
-/** The capy-style cursor: a small arrow that glides to a target and taps. */
-function Cursor({ x, y, show, press }: { x: number; y: number; show: boolean; press?: boolean }) {
+/** The capy-style cursor: a small arrow that glides to a target element and taps it. Positions come from the DOM, so it lands on the button at any width. */
+function Cursor({ stage, target, show, press, restAt }: { stage: RefObject<HTMLDivElement | null>; target: RefObject<HTMLElement | null>; show: boolean; press?: boolean; restAt: { x: number; y: number } }) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    const measure = () => {
+      const s = stage.current?.getBoundingClientRect();
+      const t = target.current?.getBoundingClientRect();
+      if (!s) return;
+      if (!t) return setPos({ x: s.width * restAt.x, y: s.height * restAt.y });
+      // The arrow's tip sits at (3.7, 1.75) inside the 22×28 svg; park it a touch inside the button's centre.
+      setPos({ x: t.left - s.left + t.width * 0.55 - 3.7, y: t.top - s.top + t.height * 0.6 - 1.75 });
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  }, [stage, target, show, restAt.x, restAt.y]);
   return (
     <motion.svg
       aria-hidden
@@ -37,7 +51,7 @@ function Cursor({ x, y, show, press }: { x: number; y: number; show: boolean; pr
       viewBox="0 0 24 32"
       className="pointer-events-none absolute left-0 top-0 z-20 drop-shadow-[0_2px_3px_rgba(0,0,0,0.25)]"
       initial={false}
-      animate={{ x, y, opacity: show ? 1 : 0, scale: press ? 0.88 : 1 }}
+      animate={{ x: pos?.x ?? 0, y: pos?.y ?? 0, opacity: show && pos ? 1 : 0, scale: press ? 0.88 : 1 }}
       transition={{ x: { duration: 0.9, ease: EASE }, y: { duration: 0.9, ease: EASE }, opacity: { duration: 0.25 }, scale: { duration: 0.12 } }}
     >
       <path d="M4 2 L4 26 L10 20 L14.5 30 L18.5 28.2 L14 18.5 L22 18.5 Z" fill="#e9b64c" stroke="#15161d" strokeWidth="1.6" strokeLinejoin="round" />
@@ -124,15 +138,22 @@ function WatchScene({ on }: { on: boolean }) {
 
 /* ── 2. Inbox: mail becomes a reply waiting for one tap ───────────────────── */
 const INBOX_MARKS = [600, 1700, 2900, 4300, 5300, 6200];
+const CURSOR_REST = { x: 0.72, y: 0.9 };
+const REST_REF = { current: null } as RefObject<HTMLElement | null>;
 function InboxScene({ on }: { on: boolean }) {
   const reduced = useReducedMotion();
   const step = useScript(on, INBOX_MARKS, reduced);
   const approved = step >= 6;
+  const stage = useRef<HTMLDivElement>(null);
+  const approve = useRef<HTMLSpanElement>(null);
   return (
-    <div className="relative h-full min-h-[380px] select-none bg-cream p-4 sm:p-5">
-      <Cursor x={step >= 5 ? 232 : 300} y={step >= 5 ? 252 : 330} show={step >= 4 && step < 6} press={step === 5} />
+    <div ref={stage} className="relative h-full min-h-[380px] select-none bg-cream p-4 sm:p-5">
+      <Cursor stage={stage} target={step >= 4 ? approve : REST_REF} show={step >= 4 && step < 6} press={step === 5} restAt={CURSOR_REST} />
       <div className="flex items-center gap-2.5">
-        <span className="inline-flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-full bg-white ring-1 ring-ink/[0.08]"><GmailMark size={17} /></span>
+        <span className="relative shrink-0">
+          <Image src="/avatars/v2/8.png" alt="" width={34} height={34} className="rounded-full" />
+          <span className="absolute -bottom-0.5 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white ring-1 ring-ink/[0.08]"><GmailMark size={9} /></span>
+        </span>
         <div className="min-w-0">
           <p className="text-[14px] font-semibold tracking-[-0.01em] text-ink">Postie <span className="ml-1 text-[11.5px] font-normal text-ink-faint">Inbox · every morning</span></p>
           <p className="truncate text-[12px] text-ink-soft">“Tell me what came in that needs an answer, tidy the junk, draft replies.”</p>
@@ -166,7 +187,7 @@ function InboxScene({ on }: { on: boolean }) {
                     <motion.span key="sent" initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} className="inline-flex items-center gap-1.5 rounded-md bg-moss px-2.5 py-1 text-[12px] font-medium text-white"><Check size={12} strokeWidth={2.5} /> Sent from your Gmail</motion.span>
                   ) : (
                     <motion.span key="btns" exit={{ opacity: 0 }} className="inline-flex items-center gap-2">
-                      <span className={`inline-flex items-center gap-1.5 rounded-md border border-ink px-2.5 py-1 text-[12px] font-medium transition-colors ${step === 5 ? "bg-ink text-cream" : "bg-gold text-ink"}`}><Send size={12} strokeWidth={2} /> Approve</span>
+                      <span ref={approve} className={`inline-flex items-center gap-1.5 rounded-md border border-ink px-2.5 py-1 text-[12px] font-medium transition-colors ${step === 5 ? "bg-ink text-cream" : "bg-gold text-ink"}`}><Send size={12} strokeWidth={2} /> Approve</span>
                       <span className="rounded-md px-2 py-1 text-[12px] text-ink-soft">Reject</span>
                     </motion.span>
                   )}
@@ -243,10 +264,22 @@ function RepoScene({ on }: { on: boolean }) {
 }
 
 /* ── the section ─────────────────────────────────────────────────────────── */
-const PANELS = [
-  { key: "watch", eyebrow: "Watch", title: "Keep watch without living in the charts.", body: "Price, liquidity, whales, a wallet you care about. It checks on a schedule, tells you only what moved, and grades its own calls next run.", Scene: WatchScene },
+const PANELS: { key: string; eyebrow: string; title: string; body: string; facts?: { label: string; value: string }[]; link?: { href: string; label: string }; Scene: (p: { on: boolean }) => ReactNode }[] = [
+  {
+    key: "watch",
+    eyebrow: "Watch",
+    title: "Keep watch without living in the charts.",
+    body: "Price, liquidity, big transfers, a wallet you care about. It checks on a schedule, tells you only what moved, and grades its own calls next run.",
+    facts: [
+      { label: "runs", value: "every 12h" },
+      { label: "cost", value: "2¢ a run" },
+      { label: "last call", value: "hit" },
+    ],
+    link: { href: "/s/m_bTOzzzOR", label: "Open Sentry's page" },
+    Scene: WatchScene,
+  },
   { key: "inbox", eyebrow: "Inbox", title: "Turn your inbox into things you can act on.", body: "What came in, what needs an answer, the junk gone. Replies arrive as drafts; one tap sends them from your own Gmail.", Scene: InboxScene },
-  { key: "repo", eyebrow: "Repo", title: "Keep the changelog up to date.", body: "It reads the day's commits and opens the pull request itself. You approve; it acts on its own from the next one if you let it.", Scene: RepoScene },
+  { key: "repo", eyebrow: "Repo", title: "Keep the changelog up to date.", body: "It reads the day's commits and opens the pull request itself. You approve the first one; after that it can go on its own if you let it.", Scene: RepoScene },
 ];
 
 function Panel({ p, i }: { p: (typeof PANELS)[number]; i: number }) {
@@ -263,10 +296,21 @@ function Panel({ p, i }: { p: (typeof PANELS)[number]; i: number }) {
       transition={{ duration: 0.6, ease: EASE, delay: i * 0.08 }}
       className={`relative flex flex-col overflow-hidden rounded-2xl border-2 border-ink bg-white shadow-[6px_6px_0_var(--ink)] ${i === 0 ? "lg:col-span-2 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(0,1.15fr)]" : ""}`}
     >
-      <div className={`order-2 border-t-2 border-ink p-6 sm:p-7 ${i === 0 ? "lg:order-1 lg:border-r-2 lg:border-t-0" : ""}`}>
+      <div className={`order-2 flex flex-col border-t-2 border-ink p-6 sm:p-7 ${i === 0 ? "lg:order-1 lg:border-r-2 lg:border-t-0" : ""}`}>
         <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">{String(i + 1).padStart(2, "0")} · {p.eyebrow}</p>
         <h3 className="mt-2 text-[1.45rem] font-medium leading-[1.15] tracking-[-0.02em] text-ink sm:text-[1.7rem]">{p.title}</h3>
         <p className="mt-3 max-w-[30rem] text-[14.5px] leading-[1.55] text-ink-soft">{p.body}</p>
+        {p.link && <Link href={p.link.href} className="mt-4 inline-flex w-fit items-center gap-1 text-[13.5px] font-medium text-ink underline decoration-ink/25 underline-offset-[3px] hover:decoration-ink">{p.link.label} <ArrowRight size={13} strokeWidth={2} /></Link>}
+        {p.facts && (
+          <dl className="mt-auto grid grid-cols-3 gap-3 border-t border-ink/[0.08] pt-5 lg:pt-6 max-lg:mt-6">
+            {p.facts.map((f) => (
+              <div key={f.label} className="min-w-0">
+                <dt className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">{f.label}</dt>
+                <dd className="mt-1 text-[15px] font-medium tracking-[-0.01em] text-ink sm:text-[17px]">{f.value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
       </div>
       <div className={`order-1 min-h-0 ${i === 0 ? "lg:order-2" : ""}`}>
         <p.Scene on={on} />

@@ -3,10 +3,8 @@
 import { useEffect, useRef } from "react";
 import { Bodies, Body, Composite, Engine, Events, Mouse, MouseConstraint, Render, Runner } from "matter-js";
 
-/* Sprites are 340px renders of a 170px tile; scaled to a 96px body. */
-const TILE = 96;
-const SPRITE_SCALE = TILE / 340;
-const SPRITES = ["moonlet", "gmail", "github", "telegram", "discord", "orbio", "openrouter", "robinhood"] as const;
+/* Sprites are 340px renders of a 170px tile; scaled to a 96px body (smaller on phones so nine tiles still pile). */
+const SPRITES = ["moonlet", "gmail", "github", "telegram", "discord", "x", "orbio", "openrouter", "robinhood"] as const;
 
 export function ToolPhysics({ className }: { className?: string }) {
   const host = useRef<HTMLDivElement>(null);
@@ -25,6 +23,8 @@ export function ToolPhysics({ className }: { className?: string }) {
       const W = el.offsetWidth;
       const H = el.offsetHeight;
       if (W === 0 || H === 0) return;
+      const TILE = W < 560 ? 68 : 96;
+      const SPRITE_SCALE = TILE / 340;
 
       const engine = Engine.create({ gravity: { x: 0, y: 1 }, enableSleeping: true });
       const render = Render.create({
@@ -52,8 +52,9 @@ export function ToolPhysics({ className }: { className?: string }) {
 
       const tiles = SPRITES.map((name, i) => {
         // Spread across the panel and drop in two waves so eight tiles land as a pile, not a tower.
-        const x = W * 0.16 + (W * 0.68 * (i % 4)) / 3 + (Math.random() - 0.5) * 30;
-        const y = reduced ? H - PAD - TILE / 2 - 1 - (i >= 4 ? TILE : 0) : -TILE - 60 - Math.floor(i / 4) * 260 - (i % 4) * 70 - Math.random() * 40;
+        const perRow = 5;
+        const x = W * 0.12 + (W * 0.76 * (i % perRow)) / (perRow - 1) + (Math.random() - 0.5) * 24;
+        const y = reduced ? H - PAD - TILE / 2 - 1 - (i >= perRow ? TILE : 0) : -TILE - 60 - Math.floor(i / perRow) * 280 - (i % perRow) * 60 - Math.random() * 40;
         const body = Bodies.rectangle(x, y, TILE, TILE, {
           chamfer: { radius: 22 },
           restitution: 0.15,
