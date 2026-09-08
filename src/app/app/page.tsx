@@ -621,8 +621,11 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
   const telegramAvailable = conns?.available.telegram ?? false;
   return (
     <div className="relative -mx-4 min-h-full overflow-hidden sm:-mx-6">
-      <DitherField className="inset-x-0 top-0 h-[46vh]" from="top" />
-      <div className="relative mx-auto max-w-[640px] px-4 pt-[18vh] sm:px-6">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[25vh] min-h-[200px] overflow-hidden">
+        <DitherField className="inset-0" from="top" />
+        <div className="absolute inset-x-0 bottom-0 h-20 bg-gradient-to-b from-transparent to-cream" />
+      </div>
+      <div className="relative mx-auto max-w-[640px] px-4 pt-[14vh] sm:px-6">
         <div className="text-center">
           <Image src="/mascot/moonlet-doze.png" alt="" width={520} height={357} className="mx-auto w-[150px] sm:w-[170px]" />
           <h1 className="mt-1 font-display text-[2.3rem] leading-[0.95] text-ink sm:text-[2.8rem]">What should it do?</h1>

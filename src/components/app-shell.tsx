@@ -185,6 +185,15 @@ export function PublicMobileTabs() {
   );
 }
 
+/** The wallet's profile picture: one of ten gradients, drawn once per wallet. */
+export function Profile({ n, size = 28 }: { n: number | undefined; size?: number }) {
+  return n ? (
+    <Image src={`/profiles/${n}.png`} alt="" width={size} height={size} className="shrink-0 rounded-full ring-1 ring-ink/[0.08]" />
+  ) : (
+    <span className="inline-block shrink-0 rounded-full bg-ink/[0.08]" style={{ width: size, height: size }} />
+  );
+}
+
 export function Avatar({ n, size = 28, className = "" }: { n: number | undefined; size?: number; className?: string }) {
   return n ? (
     <Image src={`/avatars/v2/${n}.png`} alt="" width={size} height={size} className={`shrink-0 rounded-full ${className}`} />
@@ -211,7 +220,7 @@ function AccountMenu({ address, status, onDisconnect }: { address: string; statu
       {open && (
         <div role="menu" className="ui-in absolute bottom-[calc(100%+6px)] left-0 right-0 z-40 rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]">
           <div className="flex items-center gap-2.5 px-2.5 py-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-ink font-mono text-[11px] text-cream">{address.slice(2, 4)}</span>
+            <Profile n={status?.avatar} size={32} />
             <div className="min-w-0">
               <p className="truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</p>
               <p className="truncate text-[11.5px] text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}` : "…"}</p>
@@ -238,7 +247,7 @@ function AccountMenu({ address, status, onDisconnect }: { address: string; statu
         className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${open ? "bg-ink/[0.06]" : "hover:bg-ink/[0.05]"}`}
       >
         <span className="relative shrink-0">
-          <span className="inline-flex h-[30px] w-[30px] items-center justify-center rounded-full bg-ink font-mono text-[10.5px] text-cream">{address.slice(2, 4)}</span>
+          <Profile n={status?.avatar} size={30} />
           <span className={`absolute -bottom-px -right-px h-2.5 w-2.5 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
         </span>
         <span className="min-w-0 flex-1">
@@ -252,11 +261,12 @@ function AccountMenu({ address, status, onDisconnect }: { address: string; statu
 }
 
 function PhoneAccount({ address, onDisconnect }: { address: string; onDisconnect: () => void }) {
+  const { status } = useAppData();
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
       <button type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} className="inline-flex items-center gap-2 rounded-full border border-ink/[0.1] bg-white py-1 pl-1 pr-2.5">
-        <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-ink font-mono text-[9.5px] text-cream">{address.slice(2, 4)}</span>
+        <Profile n={status?.avatar} size={24} />
         <span className="font-mono text-[12px] text-ink">{shortAddr(address)}</span>
       </button>
       {open && (

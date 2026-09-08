@@ -5,7 +5,8 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, timeAgo, type ConnectionKind, type Connections, type OrbioStatus } from "@/lib/api";
 import { DiscordMark, GitHubMark, GmailMark, OrbioMark, TelegramMark, XMark } from "@/components/marks";
-import { ChevronUp, Ellipsis } from "lucide-react";
+import { ArrowRight, ChevronUp, Ellipsis } from "lucide-react";
+import Link from "next/link";
 
 function ConnectionsInner() {
   const { address, approveOrbio } = useAuth();
@@ -35,7 +36,8 @@ function ConnectionsInner() {
     return () => clearTimeout(t);
   }, [load]);
 
-  if (!address || !data) return <p className="py-20 text-center font-mono text-[13px] text-ink-soft">Loading…</p>;
+  if (!address || !data) return <p className="py-20 text-center text-[13px] text-ink-soft">Loading…</p>;
+  const back = params.get("back");
   const has = (k: ConnectionKind) => data.connections.find((c) => c.kind === k);
 
   return (
@@ -44,6 +46,7 @@ function ConnectionsInner() {
         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
           <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Connections</h1>
           <span className="text-[12px] text-ink-faint">{data.connections.length + (orbio?.approved ? 1 : 0)} connected</span>
+          {back && <Link href={back} className="ui-btn ui-btn-sm ml-auto">Back to your draft <ArrowRight size={13} strokeWidth={2} /></Link>}
         </div>
       </div>
       <div className="mx-auto w-full max-w-[760px] px-4 py-6 sm:px-6">

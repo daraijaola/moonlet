@@ -12,8 +12,8 @@ type MarkProps = {
 };
 
 /**
- * The moonlet mark: one solid silhouette (moon + antenna) with the closed eyes,
- * smile and craters cut out. Two colours, reads at 16px, inverts cleanly.
+ * The moonlet mark: a full moon with a soft crescent shadow and one small gold
+ * satellite in orbit. Two colours, no face, reads at 16px, inverts cleanly.
  */
 export function MoonletMark({
   size = 32,
@@ -24,16 +24,10 @@ export function MoonletMark({
   title = "moonlet",
 }: MarkProps) {
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title} className={className} style={{ overflow: "visible" }}>
-      <path d="M45.5 18.5 L52.5 9.5" stroke={ink} strokeWidth="4.2" strokeLinecap="round" />
-      <circle cx="53.5" cy="8" r="4.6" fill={tip} />
-      <circle cx="30" cy="37" r="24.5" fill={ink} />
-      <circle cx="19.5" cy="28" r="2.7" fill={face} />
-      <circle cx="41" cy="51" r="2.1" fill={face} />
-      <circle cx="16" cy="45.5" r="1.7" fill={face} />
-      <path d="M19.5 38.5 q5 4.4 10 0" stroke={face} strokeWidth="3.2" strokeLinecap="round" fill="none" />
-      <path d="M33 38.5 q5 4.4 10 0" stroke={face} strokeWidth="3.2" strokeLinecap="round" fill="none" />
-      <path d="M27.5 48 q3.8 3 7.6 0" stroke={face} strokeWidth="2.6" strokeLinecap="round" fill="none" />
+    <svg width={size} height={size} viewBox="0 0 64 64" role="img" aria-label={title} className={className}>
+      <circle cx="30" cy="34" r="24" fill={ink} />
+      <path d="M38 12.2a24 24 0 0 1 0 43.6 19 19 0 0 0 0-43.6z" fill={face} fillOpacity="0.22" />
+      <circle cx="53" cy="13" r="5" fill={tip} />
     </svg>
   );
 }

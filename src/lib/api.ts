@@ -115,7 +115,7 @@ export const api = {
   disconnect: (owner: string, kind: ConnectionKind) => req<{ ok: boolean }>(owner, "/api/connections", { method: "DELETE", body: JSON.stringify({ kind }) }),
   telegramLink: (owner: string) => req<{ code: string; url: string | null }>(owner, "/api/connections/telegram", { method: "POST" }),
   telegramPoll: (owner: string) => req<{ linked: boolean; label: string | null }>(owner, "/api/connections/telegram"),
-  githubStart: (owner: string) => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
+  githubStart: (owner: string, redirectTo = "/app/connections") => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo }) }),
   githubConnect: (owner: string, token: string) => req<{ ok: boolean; login: string }>(owner, "/api/connections/github", { method: "POST", body: JSON.stringify({ token }) }),
   gmailStart: (owner: string, redirectTo?: string) => req<{ url: string }>(owner, "/api/connections/gmail/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo }) }),
   discordConnect: (owner: string, webhookUrl: string) => req<{ ok: boolean; label: string }>(owner, "/api/connections/discord", { method: "POST", body: JSON.stringify({ webhookUrl }) }),

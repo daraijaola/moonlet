@@ -8,8 +8,9 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, fmtBag, fmtUsd, type Connections, type OrbioStatus } from "@/lib/api";
 import { plan, HOLDER_FLOOR } from "@/moonlet/budget";
-import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, recommendedCapUsd, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
+import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, recommendedCapUsd, TOOL_REQUIRES, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
 import { FuelGauge } from "@/components/fuel-gauge";
+import { DitherField } from "@/components/dither-field";
 import { CADENCE_LABEL, MODEL_LABEL, TEMPLATE_BLURB, TEMPLATE_EXAMPLE, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
 import { GitHubMark, OpenRouterMark, TelegramMark, VENDOR_MARK, XMark, DiscordMark, GmailMark } from "@/components/marks";
 
@@ -64,6 +65,29 @@ function NewInner() {
   const bag = status?.bag ?? 0;
   const p = useMemo(() => (spec ? plan(spec, bag) : null), [spec, bag]);
   const linked = (k: "telegram" | "x" | "github" | "discord" | "gmail") => conns?.connections.find((c) => c.kind === k) ?? null;
+  const resume = params.get("resume") === "1";
+  // Connecting a service sends you off-site; the draft waits in this tab and the wizard picks up at the same step on return.
+  useEffect(() => {
+    if (!resume) return;
+    const raw = sessionStorage.getItem("moonlet.draft");
+    if (!raw) return;
+    // Restore after paint, the same way the edit/fork loaders arrive from the network.
+    const t = setTimeout(() => {
+      try {
+        const d = JSON.parse(raw) as { spec: JobSpec; step: number; name: string; autopilot: boolean; forkedFrom: string | null; sentence: string; template: TemplateId };
+        setSpec(d.spec); setStep(d.step); setName(d.name); setAutopilot(d.autopilot); setForkedFrom(d.forkedFrom); setSentence(d.sentence); setTemplate(d.template); setCompiled(true);
+      } catch {}
+    }, 0);
+    return () => clearTimeout(t);
+  }, [resume]);
+  const connectFromHere = async (kind: "github" | "gmail" | "telegram" | "discord" | "x") => {
+    try { sessionStorage.setItem("moonlet.draft", JSON.stringify({ spec, step, name, autopilot, forkedFrom, sentence, template })); } catch {}
+    if (!address) return;
+    if (kind === "github") { const { url } = await api.githubStart(address, "/app/new?resume=1"); window.location.assign(url); return; }
+    if (kind === "gmail") { const { url } = await api.gmailStart(address, "/app/new?resume=1"); window.location.assign(url); return; }
+    router.push("/app/connections?back=/app/new?resume=1");
+  };
+  const missing = (spec?.tools ?? []).map((t) => TOOL_REQUIRES[t]).filter((k): k is NonNullable<typeof k> => !!k && !linked(k)).filter((k, i, a) => a.indexOf(k) === i);
 
   const compile = async () => {
     if (!address) return;
@@ -104,14 +128,18 @@ function NewInner() {
   const canNext = step === 0 ? sentence.trim().length > 8 : step === 1 ? !!spec && spec.objective.length > 8 : true;
 
   return (
-    <div className="flex min-h-full flex-col">
-      <div className="sticky top-0 z-20 border-b border-ink/10 bg-cream/95 backdrop-blur">
+    <div className="relative flex min-h-full flex-col">
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 top-0 h-[20vh] min-h-[160px] overflow-hidden">
+        <DitherField className="inset-0" from="top" />
+        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-b from-transparent to-cream" />
+      </div>
+      <div className="sticky top-0 z-20 border-b border-ink/10 bg-cream/80 backdrop-blur">
         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
           <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{editId ? "Edit job" : forkedFrom ? `Your own ${forkedFrom}` : "Launch a moonlet"}</h1>
           <span className="text-[12px] text-ink-faint">Step {step + 1} of {STEPS.length}</span>
         </div>
       </div>
-    <div className="mx-auto w-full max-w-[760px] px-4 py-6 sm:px-6">
+    <div className="relative mx-auto w-full max-w-[760px] px-4 py-6 sm:px-6">
       <ol className="grid grid-cols-4 gap-2">
         {STEPS.map((l, i) => {
           const state = i < step ? "done" : i === step ? "active" : "todo";
@@ -170,6 +198,25 @@ function NewInner() {
           <>
             <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">Where results go</h1>
             <p className="mt-1 text-[13.5px] text-ink-soft">Every run lands on the public page. Anything else follows what you’ve connected.</p>
+            {missing.length > 0 && (
+              <div className="mt-4 rounded-xl border border-gold/70 bg-gold/[0.08] p-4">
+                <p className="text-[13.5px] font-semibold text-ink">This job needs {missing.length === 1 ? "a connection" : "connections"} you haven&apos;t made yet</p>
+                <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft">You can launch now; it waits quietly and starts the moment {missing.length === 1 ? "it’s" : "they’re"} connected. Or connect here and come straight back.</p>
+                <ul className="mt-3 space-y-2">
+                  {missing.map((k) => (
+                    <li key={k} className="flex items-center justify-between gap-3 rounded-lg border border-ink/[0.08] bg-white px-3 py-2.5">
+                      <span className="flex items-center gap-2.5 text-[13.5px] font-medium text-ink">
+                        {k === "github" ? <GitHubMark size={16} /> : k === "gmail" ? <GmailMark size={16} /> : k === "x" ? <XMark size={14} /> : <TelegramMark size={16} />}
+                        {k === "github" ? "GitHub" : k === "gmail" ? "Gmail" : k === "x" ? "X" : "Telegram"}
+                        <span className="text-[12px] font-normal text-ink-faint">for {spec!.tools.filter((t) => TOOL_REQUIRES[t] === k).map((t) => TOOL_LABEL[t]).join(", ")}</span>
+                      </span>
+                      <button type="button" onClick={() => void connectFromHere(k)} className="ui-btn ui-btn-sm ui-btn-primary">Connect</button>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
             <ul className="mt-5 space-y-2.5">
               <li className="flex items-center justify-between gap-3 rounded-lg border border-ink/10 bg-paper p-3.5">
                 <div className="min-w-0">
@@ -279,6 +326,7 @@ function NewInner() {
               <p className="mt-1.5 text-[14px] text-ink">“{spec.objective}”</p>
               <p className="mt-2 text-[12.5px] text-ink-soft">model: {MODEL_LABEL[spec.model ?? "auto"].name} · tools: {spec.tools.map((t) => TOOL_LABEL[t]).join(", ")}</p>
               <p className="mt-1 text-[12.5px] text-ink-soft">→ public page{linked("telegram") && ` · Telegram ${linked("telegram")!.label}`}{linked("x") && " · may draft posts on X"}{linked("github") && " · may draft pull requests"}</p>
+              {missing.length > 0 && <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-[12.5px] leading-[1.5] text-ink">Waits for {missing.map((k) => (k === "github" ? "GitHub" : k === "gmail" ? "Gmail" : k === "x" ? "X" : "Telegram")).join(" and ")} before its first run. <button type="button" onClick={() => setStep(2)} className="font-medium underline decoration-ink/30 underline-offset-2">Connect now</button></p>}
             </div>
           </>
         )}
