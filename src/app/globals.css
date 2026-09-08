@@ -271,8 +271,8 @@ body {
 .ui-switch[aria-checked="true"]:active > span { transform: translateX(11px); }
 
 /* Side panel: slides and fades; the column width animates so the report re-centres smoothly. */
-.ui-panel { overflow: hidden; transition: width 260ms var(--ease-out), opacity 200ms var(--ease-out), transform 260ms var(--ease-out); }
-.ui-panel[data-open="false"] { width: 0 !important; opacity: 0; transform: translateX(16px); border-left-color: transparent; }
+.ui-panel { overflow: hidden; transition: width 260ms var(--ease-out), opacity 200ms var(--ease-out), transform 260ms var(--ease-out), visibility 0s linear 0s; }
+.ui-panel[data-open="false"] { width: 0 !important; opacity: 0; transform: translateX(16px); border-left-color: transparent; visibility: hidden; transition-delay: 0s, 0s, 0s, 260ms; }
 .ui-panel-inner { width: 320px; }
 @media (min-width: 1280px) { .ui-panel-inner { width: 340px; } }
 
@@ -284,3 +284,5 @@ body {
 @keyframes ui-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 .ui-in { animation: ui-in 220ms var(--ease-out) both; }
 @media (prefers-reduced-motion: reduce) { .app-root *, .ui-panel, .ui-switch > span { transition-duration: 0ms !important; animation: none !important; } }
+.app-root button:not(:disabled), .app-root a, .app-root label:has(input[type="checkbox"]), .app-root select, .app-root [role="switch"]:not(:disabled), .app-root summary { cursor: pointer; }
+.app-root button:disabled { cursor: not-allowed; }

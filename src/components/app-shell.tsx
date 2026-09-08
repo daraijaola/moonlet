@@ -49,13 +49,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AppDataProvider owner={address!}>
-      <div className="app-root min-h-screen bg-cream text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="app-root h-dvh overflow-hidden bg-cream text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
         <Suspense fallback={<aside className="hidden lg:block" />}>
           <Sidebar pathname={pathname} address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} />
         </Suspense>
 
-        <div className="flex min-h-screen min-w-0 flex-col">
-          <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-ink/10 bg-cream/90 px-4 backdrop-blur lg:hidden">
+        <div className="flex h-full min-w-0 flex-col">
+          <header className="z-30 flex h-14 shrink-0 items-center justify-between border-b border-ink/10 bg-cream px-4 lg:hidden">
             <Link href="/app" className="inline-flex items-center gap-2">
               <MoonletMark size={28} face="var(--cream)" />
               <Wordmark className="text-[1.2rem] text-ink" />
@@ -69,8 +69,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {shortAddr(address!)}
             </button>
           </header>
-          <main className="min-w-0 flex-1 pb-20 lg:pb-0">{children}</main>
-          <PoweredBy />
+          <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-16 lg:pb-0 [scrollbar-width:thin]">{children}</main>
           <MobileTabs pathname={pathname} />
         </div>
       </div>
@@ -84,7 +83,7 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
   const selected = pathname === "/app" ? (params.get("m") ?? moonlets?.[0]?.id ?? null) : null;
   const groups = groupMoonlets(moonlets ?? []);
   return (
-    <aside className="hidden lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col lg:border-r lg:border-ink/[0.07] lg:bg-paper">
+    <aside className="hidden lg:flex lg:h-full lg:flex-col lg:border-r lg:border-ink/[0.07] lg:bg-paper">
       <div className="flex h-14 items-center px-4">
         <Link href="/app" className="inline-flex items-center gap-2">
           <MoonletMark size={26} face="var(--cream)" />

@@ -98,8 +98,8 @@ function NewInner() {
   const canNext = step === 0 ? sentence.trim().length > 8 : step === 1 ? !!spec && spec.objective.length > 8 : true;
 
   return (
-    <div className="flex min-h-[calc(100vh-56px)] flex-col lg:min-h-screen">
-      <div className="sticky top-14 z-20 border-b border-ink/10 bg-cream/90 backdrop-blur lg:top-0">
+    <div className="flex min-h-full flex-col">
+      <div className="sticky top-0 z-20 border-b border-ink/10 bg-cream/95 backdrop-blur">
         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
           <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">{editId ? "Edit job" : "Launch a moonlet"}</h1>
           <span className="text-[12px] text-ink-faint">Step {step + 1} of {STEPS.length}</span>

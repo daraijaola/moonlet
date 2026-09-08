@@ -39,8 +39,8 @@ function ConnectionsInner() {
   const has = (k: ConnectionKind) => data.connections.find((c) => c.kind === k);
 
   return (
-    <div className="flex min-h-[calc(100vh-56px)] flex-col lg:min-h-screen">
-      <div className="sticky top-14 z-20 border-b border-ink/10 bg-cream/90 backdrop-blur lg:top-0">
+    <div className="flex min-h-full flex-col">
+      <div className="sticky top-0 z-20 border-b border-ink/10 bg-cream/95 backdrop-blur">
         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
           <h1 className="text-[15px] font-semibold tracking-[-0.01em] text-ink">Connections</h1>
           <span className="text-[12px] text-ink-faint">{data.connections.length + (orbio?.approved ? 1 : 0)} connected</span>

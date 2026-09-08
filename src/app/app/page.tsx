@@ -13,7 +13,7 @@ import { RunCard } from "@/components/run-card";
 import { MicButton, VoiceRecorder, useVoiceSupported } from "@/components/voice-button";
 import { TEMPLATE_LABEL } from "@/components/labels";
 import { DitherField } from "@/components/dither-field";
-import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp, Plus, Download } from "lucide-react";
+import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp, Plus, Download, Ellipsis, Pencil, KeyRound } from "lucide-react";
 import { JobInput } from "@/components/job-input";
 
 function DashboardInner() {
@@ -321,7 +321,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       <section className="ui-card p-4">
         <div className="flex items-center justify-between">
           <h3 className="text-[12.5px] font-semibold text-ink">Fuel</h3>
-          <span className="text-[11.5px] text-ink-faint">{m.cadence} cadence</span>
+          <span className="text-[11.5px] text-ink-faint">{TEMPLATE_LABEL[m.spec.template]} · every {m.cadence} · cap {fmtUsd(m.perRunCapUsd, 3)}</span>
         </div>
         <div className="mt-3">
           <FuelGauge app earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="md" />
@@ -347,15 +347,6 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
           >
             <span />
           </button>
-        </SettingRow>
-        <SettingRow label="Job" hint={`${TEMPLATE_LABEL[m.spec.template]} · every ${m.cadence} · cap ${fmtUsd(m.perRunCapUsd, 3)}/run`}>
-          <Link href={`/app/new?edit=${m.id}`} className="ui-btn ui-btn-sm">Edit</Link>
-        </SettingRow>
-        <SettingRow label="Key" hint={`${m.keysRotated} rotation${m.keysRotated === 1 ? "" : "s"} · ${m.keyLimitUsd ? "on its own key" : "mints on first run"}`}>
-          <button disabled={!!busy} onClick={() => go("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")} className="ui-btn ui-btn-sm">Rotate</button>
-        </SettingRow>
-        <SettingRow label="Public page" hint={`/s/${m.id}`}>
-          <Link href={`/s/${m.id}`} className="ui-btn ui-btn-sm">Open <ExternalLink size={12} strokeWidth={2} /></Link>
         </SettingRow>
       </section>
 
@@ -396,34 +387,17 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         )}
       </section>
 
-      <section className="ui-well px-4 py-3">
-        <div className="flex items-center justify-between gap-3">
-          <div className="min-w-0">
-            <p className="text-[13px] font-medium text-ink">{confirmDelete ? "Delete this moonlet?" : "Delete moonlet"}</p>
-            <p className="truncate text-[12px] text-ink-faint">{confirmDelete ? "Its reports stay public; credits stay yours." : "Credits stay in your Orbio balance."}</p>
-          </div>
-          {!confirmDelete ? (
-            <button onClick={() => setConfirmDelete(true)} className="ui-btn ui-btn-sm ui-btn-ghost ui-danger"><Trash2 size={13} strokeWidth={1.75} /> Delete</button>
-          ) : (
-            <span className="ui-in inline-flex items-center gap-1.5">
-              <button onClick={() => setConfirmDelete(false)} className="ui-btn ui-btn-sm ui-btn-ghost">Cancel</button>
-              <button onClick={async () => { await act("delete", () => api.remove(owner, m.id), "Deleted.").then(() => router.replace("/app")).catch(() => undefined); }} className="ui-btn ui-btn-sm ui-btn-danger">Delete</button>
-            </span>
-          )}
-        </div>
-      </section>
     </div>
   );
 
   return (
-    <section className="flex min-h-[calc(100vh-56px)] flex-col lg:min-h-screen">
+    <section className="flex h-full flex-col">
       {/* ── top bar: what it is, the one action, and the panel toggle ─────── */}
-      <div className="sticky top-14 z-20 border-b border-ink/10 bg-cream/90 backdrop-blur lg:top-0">
+      <div className="z-20 shrink-0 border-b border-ink/[0.07] bg-cream">
         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
           <StatusDot tone={quiet ? "grey" : "green"} pulse={running} />
           <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-ink">{m.name}</h1>
-          <span className="hidden rounded-full border border-ink/12 bg-white px-2 py-0.5 text-[11.5px] font-medium text-ink-soft sm:inline">{TEMPLATE_LABEL[m.spec.template]}</span>
-          {m.autopilot && <span className="hidden rounded-full bg-ink px-2 py-0.5 text-[11.5px] font-medium text-cream sm:inline" title="Acts without asking">autopilot</span>}
+          <span className="hidden text-[12.5px] text-ink-faint sm:inline">{TEMPLATE_LABEL[m.spec.template]}{autopilotOn ? " · autopilot" : ""}</span>
           <div className="ml-auto flex items-center gap-2">
             <span className="hidden text-[12px] text-ink-faint md:inline"><span className="font-mono tabular-nums">{fmtUsd(m.spentTotalUsd, 3)}</span> spent</span>
             <button disabled={!!busy || running} onClick={() => go("run", () => api.runNow(owner, m.id), "Run finished.")} className="ui-btn ui-btn-gold">
@@ -432,6 +406,14 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
             <button disabled={!!busy} onClick={() => go("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")} className="ui-btn">
               {m.status === "paused" ? <><Play size={13} strokeWidth={2} /> Resume</> : <><Pause size={13} strokeWidth={2} /> Pause</>}
             </button>
+            <Menu
+              items={[
+                { label: "Edit job", icon: <Pencil size={14} strokeWidth={1.75} />, href: `/app/new?edit=${m.id}` },
+                { label: "Public page", icon: <ExternalLink size={14} strokeWidth={1.75} />, href: `/s/${m.id}` },
+                { label: "Rotate key", icon: <KeyRound size={14} strokeWidth={1.75} />, onClick: () => go("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.") },
+                { label: "Delete moonlet", icon: <Trash2 size={14} strokeWidth={1.75} />, danger: true, onClick: () => setConfirmDelete(true) },
+              ]}
+            />
             <button
               type="button"
               onClick={togglePanel}
@@ -455,8 +437,9 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
 
       <div className="flex min-h-0 flex-1">
         {/* ── the report: what it did, talk to it ────────────────────────── */}
-        <div className={`min-w-0 flex-1 ${tab === "overview" ? "hidden lg:block" : ""}`}>
-          <div className="mx-auto flex min-h-full max-w-[760px] flex-col px-4 pt-6 sm:px-6">
+        <div className={`flex min-w-0 flex-1 flex-col ${tab === "overview" ? "hidden lg:flex" : ""}`}>
+          <div className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+          <div className="mx-auto max-w-[760px] px-4 pt-6 pb-4 sm:px-6">
             <header>
               <p className="text-[14.5px] leading-[1.55] text-ink [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
               <p className="mt-2 text-[13px] leading-[1.5] text-ink-soft">{statusLine}</p>
@@ -472,7 +455,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
 
             <div className="mt-6"><Queue owner={owner} /></div>
 
-            <div className="flex-1">
+            <div>
               <div className="mb-3 flex items-center justify-between">
                 <h2 className="text-[12px] font-medium text-ink-soft">Reports</h2>
                 <span className="text-[11.5px] text-ink-faint">{anchoring ? `${runs?.filter((r) => r.txHash).length ?? 0} anchored on Robinhood Chain` : "every run hashed"}</span>
@@ -515,20 +498,78 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
               )}
             </div>
 
-            {/* talk to it: docked at the bottom of the column */}
-            <div className="sticky bottom-16 mt-6 -mx-1 bg-cream px-1 pb-4 pt-3 shadow-[0_-20px_20px_-8px_var(--cream)] lg:bottom-0">
-              {askBox}
-            </div>
+          </div>
+          </div>
+          {/* talk to it: pinned under the scrolling report */}
+          <div className="shrink-0 border-t border-ink/[0.06] bg-cream">
+            <div className="mx-auto max-w-[760px] px-4 py-3 sm:px-6">{askBox}</div>
           </div>
         </div>
 
         {/* ── overview: the occasional stuff, in a panel ──────────────────── */}
         <aside data-open={panelOpen} className="ui-panel hidden w-[320px] shrink-0 border-l border-ink/[0.07] bg-paper lg:block xl:w-[340px]">
-          <div className="ui-panel-inner sticky top-14 max-h-[calc(100vh-56px)] overflow-y-auto p-4 [scrollbar-width:thin] lg:top-0 lg:max-h-screen">{overview}</div>
+          <div className="ui-panel-inner h-full overflow-y-auto p-4 [scrollbar-width:thin]">{overview}</div>
         </aside>
         {tab === "overview" && <div className="w-full px-4 py-5 lg:hidden">{overview}</div>}
       </div>
+
+      {confirmDelete && (
+        <Dialog title={`Delete ${m.name}?`} body="Its reports stay public as receipts. Credits stay in your Orbio balance. This can't be undone." onClose={() => setConfirmDelete(false)}>
+          <button onClick={() => setConfirmDelete(false)} className="ui-btn">Cancel</button>
+          <button disabled={!!busy} onClick={async () => { await act("delete", () => api.remove(owner, m.id), "Deleted.").then(() => router.replace("/app")).catch(() => undefined); }} className="ui-btn ui-btn-danger">{busy === "delete" ? "Deleting…" : "Delete"}</button>
+        </Dialog>
+      )}
     </section>
+  );
+}
+
+/** Small anchored menu for the secondary actions of a page. Closes on outside click and Escape. */
+function Menu({ items }: { items: Array<{ label: string; icon: React.ReactNode; href?: string; onClick?: () => void; danger?: boolean }> }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc); document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  return (
+    <div ref={ref} className="relative">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} title="More" className={`ui-btn ui-btn-icon ${open ? "bg-ink/[0.07] text-ink" : "text-ink-soft"}`}>
+        <Ellipsis size={15} strokeWidth={1.75} />
+      </button>
+      {open && (
+        <div role="menu" className="ui-in absolute right-0 top-[38px] z-40 min-w-[196px] rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]">
+          {items.map((it) => {
+            const cls = `flex w-full cursor-pointer items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] ${it.danger ? "text-red-700 hover:bg-red-50" : "text-ink hover:bg-ink/[0.05]"}`;
+            return it.href ? (
+              <Link key={it.label} role="menuitem" href={it.href} onClick={() => setOpen(false)} className={cls}><span className={it.danger ? "" : "text-ink-soft"}>{it.icon}</span>{it.label}</Link>
+            ) : (
+              <button key={it.label} role="menuitem" type="button" onClick={() => { setOpen(false); it.onClick?.(); }} className={cls}><span className={it.danger ? "" : "text-ink-soft"}>{it.icon}</span>{it.label}</button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Dialog({ title, body, onClose, children }: { title: string; body: string; onClose: () => void; children: React.ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
+      <div className="ui-in absolute inset-0 bg-ink/30 backdrop-blur-[2px]" onClick={onClose} />
+      <div className="ui-in relative w-full max-w-[400px] rounded-2xl border border-ink/[0.08] bg-white p-5 shadow-[0_24px_60px_-20px_rgba(21,22,29,0.35)]">
+        <h2 className="text-[15.5px] font-semibold tracking-[-0.01em] text-ink">{title}</h2>
+        <p className="mt-1.5 text-[13.5px] leading-[1.55] text-ink-soft">{body}</p>
+        <div className="mt-5 flex justify-end gap-2">{children}</div>
+      </div>
+    </div>
   );
 }
 
@@ -573,7 +614,7 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
   const githubOk = !!conns?.connections.some((c) => c.kind === "github");
   const telegramAvailable = conns?.available.telegram ?? false;
   return (
-    <div className="relative -mx-4 min-h-[calc(100vh-56px)] overflow-hidden sm:-mx-6 lg:min-h-screen">
+    <div className="relative -mx-4 min-h-full overflow-hidden sm:-mx-6">
       <DitherField className="inset-x-0 top-0 h-[46vh]" from="top" />
       <div className="relative mx-auto max-w-[640px] px-4 pt-[18vh] sm:px-6">
         <div className="text-center">
