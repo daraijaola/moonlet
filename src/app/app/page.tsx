@@ -115,7 +115,7 @@ function Queue({ owner }: { owner: string }) {
                 onClick={async () => {
                   setBusy(p.id);
                   const r = await api.decide(owner, p.id, "approve").catch(() => null);
-                  if (r?.autopilotOn) setNote("Done. This moonlet is on autopilot now: it acts on its own. Switch it off under More… on its page.");
+                  if (r?.status === "executed") setNote("Done. It will ask again next time; turn on Autopilot in the overview to let it act on its own.");
                   await load();
                   setBusy(null);
                 }}

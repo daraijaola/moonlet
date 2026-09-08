@@ -277,7 +277,7 @@ export function Session() {
               <span>cost <span className="text-ink">{run.cost}</span></span>
               <span>calls <span className="text-ink">{run.calls}</span></span>
               <span>took <span className="text-ink">{run.seconds}s</span></span>
-              <span className="ml-auto truncate text-moss">hashed · anchored on Robinhood Chain</span>
+              <span className="ml-auto truncate text-moss">hashed · verifiable</span>
             </div>
           </div>
         </motion.div>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { plan } from "@/moonlet/budget";
+import { committedBurn, plan } from "@/moonlet/budget";
 import { bad, ownerFrom } from "@/moonlet/http";
 import { bagOf, orbioFor } from "@/moonlet/scheduler";
 import { JobSpec } from "@/moonlet/spec";
@@ -50,7 +50,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     // Only a changed job re-plans cadence and cap; flipping autopilot or delivery must not touch the schedule or wake a paused moonlet.
     if (body.data.spec) {
       const spec = body.data.spec;
-      const p = plan(spec, await bagOf(owner));
+      const p = plan(spec, await bagOf(owner), undefined, committedBurn(await store.listMoonlets(owner), id));
       await store.updateMoonlet(id, {
         spec,
         name: spec.name,

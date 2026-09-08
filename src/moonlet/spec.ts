@@ -101,7 +101,7 @@ export const JobSpec = z.object({
     .number()
     .min(0.001)
     .max(5)
-    .describe("Hard ceiling per run in USD. The runner enforces it with maxCost."),
+    .describe("Spend cap per run in USD. The runner stops using tools before crossing it; the first model call is not yet priced, so a run can overshoot by about one call."),
   model: z
     .enum(MODEL_CHOICES)
     .default("auto")

@@ -51,7 +51,7 @@ function ConnectionsInner() {
       </div>
       <div className="mx-auto w-full max-w-[760px] px-4 py-6 sm:px-6">
         <p className="text-[13.5px] leading-[1.6] text-ink-soft">
-          Each connection unlocks a tool. Anything a moonlet wants to <em>do</em> on your behalf is drafted first and waits for your OK; one approval puts that moonlet on autopilot, and you can switch it back on its page.
+          Each connection unlocks a tool. Anything a moonlet wants to <em>do</em> on your behalf is drafted first and waits for your OK. Autopilot is a separate switch on each moonlet&apos;s page.
         </p>
         {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">{err}</p>}
 
@@ -200,7 +200,7 @@ function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: strin
     <Shell
       mark={<GitHubMark size={20} />}
       name="GitHub"
-      blurb="Sign in with GitHub once. A moonlet can then read your repos and open pull requests, issues or comments; the first one waits for your approval, then it acts on its own."
+      blurb="Sign in with GitHub once. A moonlet can then read your repos and open pull requests, issues or comments; each one waits for your approval unless you turn on Autopilot."
       unlocks="github_read, open_pull_request, open_issue, comment_on_issue"
       conn={conn}
       onDisconnect={async () => { await api.disconnect(owner, "github"); await onChange(); }}

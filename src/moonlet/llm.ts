@@ -84,16 +84,21 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
   const models = Array.from(new Set([o.model, ...(o.models ?? [])]));
 
   let cost = 0, calls = 0, usedModel = o.model, lastCallCost = 0, stoppedForBudget = false;
+  let promptTokens = 0, perTokenUsd = 0;
   for (let step = 0; step < o.maxSteps; step++) {
     // Cost is only known after a call. Each call re-sends the whole conversation, so the next one costs at least as much as the
     // last; when that projection would cross the cap, stop using tools now instead of discovering the overshoot afterwards.
     // Cost is only known after a call. Each call re-sends the whole conversation, so the next one costs at least as much as the
     // last; when that projection would cross the cap, stop using tools now instead of discovering the overshoot afterwards.
     const lastStep = step === o.maxSteps - 1 || cost >= o.maxCostUsd * 0.6 || (lastCallCost > 0 && cost + lastCallCost * 1.25 >= o.maxCostUsd);
+    // Provider-side bound on tool-calling turns: the observed price per token says how many output tokens still fit. The final
+    // structured answer is never clipped, since a truncated JSON is worth less than a small overshoot.
+    const maxTokens = perTokenUsd > 0 && !lastStep ? Math.max(1024, Math.floor((o.maxCostUsd - cost) / perTokenUsd - promptTokens * 1.1)) : undefined;
     const body: Record<string, unknown> = {
       model: models[0],
       models: models.length > 1 ? models : undefined,
       messages,
+      ...(maxTokens ? { max_tokens: Math.min(maxTokens, 8192) } : {}),
       usage: { include: true },
       ...(tools.length && !lastStep ? { tools, tool_choice: "auto" } : {}),
       ...(o.webSearch && !lastStep && step === 0 ? { plugins: [{ id: "web", max_results: 2 }] } : {}),
@@ -119,8 +124,8 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
     calls++;
     lastCallCost = j.usage?.cost ?? 0;
     cost += lastCallCost;
-    const promptTokens = j.usage?.prompt_tokens ?? 0;
-    const perTokenUsd = promptTokens + (j.usage?.completion_tokens ?? 0) > 0 ? lastCallCost / (promptTokens + (j.usage?.completion_tokens ?? 0)) : 0;
+    promptTokens = j.usage?.prompt_tokens ?? 0;
+    perTokenUsd = promptTokens + (j.usage?.completion_tokens ?? 0) > 0 ? lastCallCost / (promptTokens + (j.usage?.completion_tokens ?? 0)) : 0;
     const msg = j.choices?.[0]?.message;
     if (!msg) throw new ModelHttpError(502, "empty completion");
     usedModel = (j as { model?: string }).model ?? usedModel;

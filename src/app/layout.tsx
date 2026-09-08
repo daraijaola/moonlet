@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "moonlet — your bag runs an agent",
     description:
-      "Self-funding AI agents for Orbio holders. Claims, spends, rotates, and anchors every run on Robinhood Chain.",
+      "Self-funding AI agents for Orbio holders. Claims, spends, rotates, and leaves a verifiable receipt for every run.",
     type: "website",
     images: [{ url: "/og.png", width: 1200, height: 630, alt: "moonlet — your bag runs an agent" }],
   },

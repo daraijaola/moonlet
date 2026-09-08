@@ -2,7 +2,7 @@ import { z } from "zod";
 import { webFetchTool, type LocalTool } from "./llm";
 import { TEMPLATE_IDS, type JobSpec, type TemplateId, type ToolId } from "./spec";
 import { DOC_FORMATS, DOC_MIME, renderDocument, safeFilename, type DocFormat } from "./documents";
-import { readRepo, type GitHubConn } from "./connections/github";
+import { isPrivateRepo, readRepo, type GitHubConn } from "./connections/github";
 import * as gmail from "./connections/gmail";
 import { propose, type ProposeCtx } from "./proposals";
 
@@ -36,6 +36,8 @@ export type ToolDeps = {
   files?: FileSink;
   /** Called after every local tool call with a one-line summary of what it did. */
   trace?: (e: { tool: string; summary: string }) => void;
+  /** Called the moment a tool touches something the owner alone should see (their mailbox, a private repo). The run is then published as a receipt only. */
+  onPrivate?: (why: string) => void;
 };
 
 const brief = (v: unknown, n = 160) => {
@@ -59,6 +61,8 @@ export type BuiltTools = { tools: LocalTool[]; webSearch: boolean };
 export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
   const f = deps.fetch ?? fetch;
   const traced = <A, R>(name: string, label: (a: A, r: R) => string, run: (a: A) => Promise<R>) => async (a: A) => {
+    // Anything that reaches into the owner's mailbox makes the whole run private, whatever the report ends up saying.
+    if (name.startsWith("gmail_")) deps.onPrivate?.(name);
     const r = await run(a);
     deps.trace?.({ tool: name, summary: label(a, r) });
     return r;
@@ -264,6 +268,8 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
       if (!ghToken) return { error: "GitHub not connected" };
       if (q.action !== "repos" && !q.repo) return { error: "repo (owner/name) is required; call action=repos to find it" };
       try {
+        if (q.repo && (await isPrivateRepo(ghToken, q.repo, f))) deps.onPrivate?.(`private repo ${q.repo}`);
+        if (q.action === "repos") deps.onPrivate?.("repo list");
         return await readRepo(ghToken, q as never, f);
       } catch (e) {
         return { error: (e as Error).message };

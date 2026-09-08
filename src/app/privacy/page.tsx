@@ -48,7 +48,7 @@ export default function Privacy() {
       <p>Connections are deleted the moment you disconnect. Moonlets, runs and files stay while your moonlets exist; delete a moonlet and its runs and files go with it. Hashes already written to Robinhood Chain cannot be removed; they contain no content, only a fingerprint. To delete your account entirely, ask in your linked Telegram chat (the bot knows which wallet you are), or open an issue on GitHub naming the wallet.</p>
 
       <h2>Security</h2>
-      <p>Secrets are encrypted at rest and only decrypted on the server for the run that needs them. Traffic is HTTPS. Anything a moonlet wants to do outside reading is drafted and waits for your approval unless you turned autopilot on. The code is open so you can check these claims.</p>
+      <p>Secrets are encrypted at rest and only decrypted on the server for the run that needs them. Traffic is HTTPS. Anything a moonlet wants to do outside reading is drafted and waits for your approval unless you turned autopilot on. Inbox and private-repo work is published as a receipt (hash, cost, time) only; the words stay with you.</p>
 
       <h2>Changes</h2>
       <p>If this page changes in a way that matters, the date above changes and we say so in the linked Telegram chat. Questions: <a href="https://t.me/moonletbbot">@moonletbbot</a> on Telegram.</p>

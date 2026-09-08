@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 import { makeAnchorer, type Anchorer } from "./anchor";
-import { estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
+import { committedBurn, estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
 import { makeOrbioClient, OrbioAuthError, refreshOrbioToken, type OrbioClient } from "./orbio";
 import { devOrbio } from "./orbio-dev";
 import { runMoonlet } from "./runner";
@@ -250,6 +250,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const result = await run(
     {
       id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
+      committedPerDayUsd: committedBurn(await store.listMoonlets(m.owner), m.id),
       openCalls: m.openCalls, record: { hits: m.hits, misses: m.misses }, tripped: m.watch?.tripped,
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: gmConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
@@ -274,6 +275,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     durationMs: result.durationMs,
     keyEvents: result.keyEvents,
     trace: result.trace,
+    private: result.private,
   });
 
   await store.updateMoonlet(id, {
@@ -378,6 +380,7 @@ async function recordRun(
     durationMs: number;
     keyEvents: store.RunRow["keyEvents"];
     trace?: store.RunRow["trace"];
+    private?: boolean;
   },
 ) {
   const id = r.id ?? store.newId("run");
@@ -405,6 +408,7 @@ async function recordRun(
     keyEvents: r.keyEvents,
     trace: r.trace ?? [],
     error: r.error ?? null,
+    private: !!r.private,
   });
   return id;
 }

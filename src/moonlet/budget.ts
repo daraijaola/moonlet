@@ -37,11 +37,12 @@ export type Plan = {
  * moonlet may run. Slows the cadence before cutting the cap, because a run that
  * can't afford its tools is worse than a run that happens less often.
  */
-export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPerDay(bag)): Plan {
+export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPerDay(bag), committedPerDayUsd = 0): Plan {
   if (bag < HOLDER_FLOOR) {
     return { cadence: spec.cadence, perRunCapUsd: 0, burnPerDayUsd: 0, earnPerDayUsd, quiet: true, reason: `bag below ${HOLDER_FLOOR}` };
   }
-  const spendable = spendablePerDay(earnPerDayUsd);
+  // One wallet, one income: what the owner's other active moonlets already burn per day is not available to this one.
+  const spendable = Math.max(0, spendablePerDay(earnPerDayUsd) - committedPerDayUsd);
   // Templates were costed on Flash; a heavier model needs a bigger cap to finish, so slow the cadence before starving the run.
   const floorCap = Math.min(recommendedCapUsd(spec.template, spec.model ?? "auto"), spec.spendCapUsd);
   const order: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
@@ -59,8 +60,15 @@ export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPer
     burnPerDayUsd: 0,
     earnPerDayUsd,
     quiet: true,
-    reason: `earns $${earnPerDayUsd.toFixed(3)}/day, below the $${floorCap} a ${spec.template} run needs`,
+    reason: committedPerDayUsd > 0
+      ? `the bag earns $${earnPerDayUsd.toFixed(3)}/day and your other moonlets already use $${committedPerDayUsd.toFixed(3)}; not enough left for a ${spec.template} run ($${floorCap})`
+      : `earns $${earnPerDayUsd.toFixed(3)}/day, below the $${floorCap} a ${spec.template} run needs`,
   };
+}
+
+/** Burn per day the wallet's other active moonlets are already planned for. */
+export function committedBurn(siblings: Array<{ id: string; status: string; burnPerDayUsd: number }>, exceptId?: string) {
+  return siblings.filter((m) => m.id !== exceptId && m.status !== "paused" && m.status !== "quiet" && m.status !== "deleted").reduce((s, m) => s + m.burnPerDayUsd, 0);
 }
 
 /** How much to ask Orbio for on a fresh key: about three days of burn, clamped to Orbio's $200 ceiling. */

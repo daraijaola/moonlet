@@ -58,7 +58,10 @@ export function makeAnchorer(privateKey?: Hex): Anchorer | null {
   const pub = createPublicClient({ chain: robinhoodChain, transport: http(RH_RPC) });
   return async (p) => {
     const txHash = await wallet.sendTransaction({ to: ANCHOR_TO, value: BigInt(0), data: encodeAnchor(p) });
-    await pub.waitForTransactionReceipt({ hash: txHash, timeout: 60_000 }).catch(() => undefined);
+    // A hash alone is only "submitted". The run is recorded as anchored only once the chain confirms it; otherwise the next
+    // tick's anchorPending() sends it again.
+    const receipt = await pub.waitForTransactionReceipt({ hash: txHash, timeout: 90_000 });
+    if (receipt.status !== "success") throw new Error(`anchor tx ${txHash} reverted`);
     return { txHash };
   };
 }

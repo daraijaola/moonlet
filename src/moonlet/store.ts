@@ -81,6 +81,8 @@ export type RunRow = {
   calls?: Array<{ claim: string; check: string }>;
   scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }>;
   error: string | null;
+  /** The run touched the owner's mailbox or a private repo: public surfaces show its receipt only. Fixed at write time. */
+  private: boolean;
 };
 
 let client: Client | null = null;
@@ -158,6 +160,13 @@ export function migrate() {
     await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN calls TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN scored TEXT`).catch(() => undefined);
+    // Privacy is a property of the run, decided when it happened, never of the job as it is edited later.
+    // Runs from before this column existed are marked private conservatively: anything whose trace or job touched mail or GitHub.
+    const hadPrivate = ((await c.execute(`PRAGMA table_info(runs)`)).rows as unknown as Array<{ name: string }>).some((r) => r.name === "private");
+    if (!hadPrivate) {
+      await c.execute(`ALTER TABLE runs ADD COLUMN private INTEGER NOT NULL DEFAULT 0`);
+      await c.execute(`UPDATE runs SET private = 1 WHERE trace LIKE '%"tool":"gmail_%' OR trace LIKE '%"tool":"github_read"%' OR moonlet_id IN (SELECT id FROM moonlets WHERE spec LIKE '%gmail_%' OR spec LIKE '%github_read%')`);
+    }
     await c.execute(`ALTER TABLE moonlets ADD COLUMN open_calls TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN hits INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN misses INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
@@ -408,15 +417,15 @@ export async function claimForRun(id: string, now = Date.now()) {
 
 // ---- runs ------------------------------------------------------------------
 
-export async function insertRun(r: RunRow) {
+export async function insertRun(r: Omit<RunRow, "private"> & { private?: boolean }) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace,sections,calls,scored)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace,sections,calls,scored,private)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
       r.id, r.moonletId, r.at, r.status, r.title, r.summary, r.body, JSON.stringify(r.sources), r.signal, r.nothingHappened ? 1 : 0,
       r.costUsd, r.model, r.modelCalls, r.durationMs, r.outputHash, r.txHash, JSON.stringify(r.keyEvents), r.error, JSON.stringify(r.trace ?? []), JSON.stringify(r.sections ?? []),
-      JSON.stringify(r.calls ?? []), JSON.stringify(r.scored ?? []),
+      JSON.stringify(r.calls ?? []), JSON.stringify(r.scored ?? []), r.private ? 1 : 0,
     ],
   });
 }
@@ -432,6 +441,7 @@ function rowToRun(row: Record<string, unknown>): RunRow {
     moonletId: row.moonlet_id as string,
     at: Number(row.at),
     status: row.status as RunRow["status"],
+    private: Number(row.private ?? 0) === 1,
     title: row.title as string,
     summary: row.summary as string,
     body: row.body as string,

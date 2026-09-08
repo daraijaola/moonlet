@@ -41,12 +41,12 @@ No card. No API key to copy. No dashboard to babysit.
 
 | | |
 |---|---|
-| **Fund** | Your $ORBIO earns Orbio credits. A moonlet mints one capped inference key from them and spends only that. Below 1,000 $ORBIO it goes quiet. |
+| **Fund** | Your $ORBIO earns Orbio credits. A moonlet mints one inference key from them and plans its spending against what the bag earns, shared with the wallet’s other moonlets. Below 1,000 $ORBIO it goes quiet. |
 | **Work** | Five job shapes: market watch (tokens, pools, whales on Robinhood Chain), repo mechanic (read repos, open PRs and issues), **inbox** (work in your Gmail), digest (read pages you name), custom. One sentence becomes a plan you can edit before launch. |
 | **Report** | Readable reports with a link to every source. Delivered to Telegram, Discord, the moonlet's page, and as PDF/DOCX files when asked. |
-| **Prove** | Every run: cost, model, duration, tool trace, and a sha256 of the output anchored on Robinhood Chain. Watch jobs end each run with one checkable call about the next and score it hit or miss when it comes; the call and the score are inside the hash, so the receipt holds the call before the outcome. Lifetime record on every moonlet. |
+| **Prove** | Every run: cost, model, duration, tool trace, and a sha256 of the output, anchored on Robinhood Chain when anchoring is enabled. Watch jobs end each run with one checkable call about the next and score it hit or miss when it comes; the call and the score are inside the hash, so the receipt holds the call before the outcome. Lifetime record on every moonlet. |
 | **Watch cheaply** | Alert jobs get a tripwire: one number read for free every 15 minutes; the model wakes only when it moves past your line. |
-| **Ask** | Draft → approve → act. A moonlet that wants to send an email, open a PR, post, archive or spawn another moonlet puts a card in your queue (and Telegram). One approval switches it to autopilot; spawns always ask. |
+| **Ask** | Draft → approve → act. A moonlet that wants to send an email, open a PR, post, archive or spawn another moonlet puts a card in your queue (and Telegram). Each approval covers that one action; Autopilot is a separate switch on the moonlet. Spawns always ask. |
 | **Talk** | Reply to any report in Telegram or on the page. It answers from the run, reaches for its tools when it must, and can act (through the same approval cards). |
 
 ## Quick start
@@ -79,7 +79,7 @@ one sentence ──compile──▶ JobSpec (you review, you edit) ──launch�
       │
       ▼
  RunOutput (strict JSON: title, summary, body, sections, remember, sources, signal)
-   → sha256 → anchored on Robinhood Chain → public page → Telegram / Discord / email / files
+   → sha256 (→ Robinhood Chain when anchoring is on) → public page → Telegram / Discord / email / files
       │
       ▼
  key nearly spent? top up or rotate. Owner sold? goes quiet and says why.

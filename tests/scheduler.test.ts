@@ -115,7 +115,7 @@ describe("scheduler", () => {
         // The owner presses Delete mid-run and the run leaves a draft behind.
         await store.updateMoonlet(mm.id, { status: "deleted", key: null, nextRunAt: Number.MAX_SAFE_INTEGER });
         await store.insertProposal({ id: store.newId("p"), owner: mm.owner, moonletId: mm.id, runId: null, kind: "email_send", payload: { to: "a@b.c", subject: "x", body: "y" } });
-        return { ok: true, status: "done", output: { title: "t", summary: "s", body: "b", sections: [] } as never, outputHash: "0x" + "ab".repeat(32), costUsd: 0.001, model: "m", modelCalls: 1, durationMs: 5, plan: plan(spec, 1_250_000), keyEvents: [], trace: [], key: { kind: "account", hash: "h" } as never };
+        return { ok: true, status: "done", output: { title: "t", summary: "s", body: "b", sections: [] } as never, outputHash: "0x" + "ab".repeat(32), costUsd: 0.001, model: "m", modelCalls: 1, durationMs: 5, plan: plan(spec, 1_250_000), keyEvents: [], trace: [], key: { kind: "account", hash: "h" } as never, private: false };
       },
     });
     expect(r.status).toBe("deleted");

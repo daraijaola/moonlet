@@ -221,7 +221,7 @@ function NewInner() {
               <li className="flex items-center justify-between gap-3 rounded-lg border border-ink/10 bg-paper p-3.5">
                 <div className="min-w-0">
                   <p className="text-[14px] font-semibold text-ink">Public page</p>
-                  <p className="text-[12.5px] text-ink-soft">Anyone can watch it work. Every run is hashed and anchored on Robinhood Chain.</p>
+                  <p className="text-[12.5px] text-ink-soft">Anyone can watch it work. Every run is hashed; anchoring on Robinhood Chain follows when it is switched on.</p>
                 </div>
                 <span className="shrink-0 rounded-full bg-moss/10 px-2 py-0.5 text-[11px] font-medium text-moss">always</span>
               </li>
@@ -259,10 +259,10 @@ function NewInner() {
                     <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-ink/10 bg-paper text-ink">{k === "x" ? <XMark size={16} /> : k === "gmail" ? <GmailMark size={18} /> : <GitHubMark size={18} />}</span>
                     <div className="min-w-0">
                       <p className="text-[14px] font-semibold text-ink">{k === "x" ? "X" : k === "gmail" ? "Gmail" : "GitHub"} <span className="ml-1 text-[11.5px] font-normal text-ink-faint">{linked(k)!.label}</span></p>
-                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">{k === "x" ? (autopilot ? "It may post on its own, the moment it decides to." : "It drafts its first post for your approval; once you approve, it posts on its own.") : k === "gmail" ? (autopilot ? "It may read your inbox, draft, send and tidy on its own." : "It reads and drafts freely; the first send or archive waits for your approval, then it acts on its own.") : autopilot ? "It may read repos and open pull requests or comments on its own." : "It drafts its first pull request or comment for your approval; once you approve, it acts on its own."}</p>
+                      <p className="text-[12.5px] leading-[1.5] text-ink-soft">{k === "x" ? (autopilot ? "It may post on its own, the moment it decides to." : "Every post is drafted for your approval unless you turn on Autopilot.") : k === "gmail" ? (autopilot ? "It may read your inbox, draft, send and tidy on its own." : "It reads and drafts freely; every send or archive waits for your approval unless you turn on Autopilot.") : autopilot ? "It may read repos and open pull requests or comments on its own." : "Every pull request or comment is drafted for your approval unless you turn on Autopilot."}</p>
                     </div>
                   </div>
-                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${autopilot ? "bg-ink text-cream" : "bg-moss/10 text-moss"}`}>{autopilot ? "acts on its own" : "asks once"}</span>
+                  <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${autopilot ? "bg-ink text-cream" : "bg-moss/10 text-moss"}`}>{autopilot ? "acts on its own" : "asks each time"}</span>
                 </li>
               ))}
             </ul>
@@ -273,7 +273,7 @@ function NewInner() {
                   <p className="mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft">
                     {autopilot
                       ? "Posts, pull requests and comments go out the moment the moonlet decides, in your name. Reading never needs approval either way."
-                      : "Its first action that speaks for you is drafted and sent to Telegram with Approve / Reject. One approval and it's on autopilot from then on. You can switch this any time on the moonlet page."}
+                      : "Its first action that speaks for you is drafted and sent to Telegram with Approve / Reject. Each action asks. Turn on Autopilot on the moonlet page if you want it to act without asking."}
                   </p>
                 </div>
                 <button
@@ -291,7 +291,7 @@ function NewInner() {
               <p className="mt-3 rounded-md border border-gold bg-gold/10 px-3 py-2 text-[12.5px] leading-[1.5] text-ink">This is an inbox job, but Gmail isn&apos;t connected, so it would have nothing to read. <Link href="/app/connections" className="underline">Connect Gmail</Link> first; the moonlet waits quietly until you do.</p>
             )}
             {!linked("x") && !linked("github") && !linked("gmail") && (
-              <p className="mt-3 text-[12px] text-ink-faint">Want it to post on X, open pull requests or work in your Gmail? Connect those under <Link href="/app/connections" className="underline">Connections</Link>; it asks once, then acts on its own.</p>
+              <p className="mt-3 text-[12px] text-ink-faint">Want it to post on X, open pull requests or work in your Gmail? Connect those under <Link href="/app/connections" className="underline">Connections</Link>; each action asks unless you turn on Autopilot.</p>
             )}
           </>
         )}
@@ -458,7 +458,7 @@ function SpecEditor({ spec, onChange, compiled }: { spec: JobSpec; onChange: (s:
               <button type="button" onClick={() => set("spendCapUsd", recommendedCapUsd(spec.template, spec.model ?? "auto"))} className="underline">Set to {fmtUsd(recommendedCapUsd(spec.template, spec.model ?? "auto"), 3)}</button>
             </span>
           ) : (
-            <span className="mt-1 block text-[12px] text-ink-faint">Hard ceiling per run. If it is reached mid-job the moonlet stops, reports what it did, and says what it skipped.</span>
+            <span className="mt-1 block text-[12px] text-ink-faint">Cap per run. The moonlet stops calling tools before crossing it and reports what it managed. The first model call isn’t priced until it returns, so a run can land a little over the cap, never double.</span>
           )}
         </label>
       </div>

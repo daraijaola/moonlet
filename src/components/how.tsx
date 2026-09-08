@@ -12,7 +12,7 @@ const STEPS: { gesture: Gesture; title: string; body: string; meta: string }[] =
   { gesture: "listen", title: "Say the job", body: "One sentence. Moonlet drafts the plan: objective, sources, tools, model, cadence. You can change any of it before a cent moves.", meta: "01 · brief" },
   { gesture: "claim", title: "It claims its own key", body: "It reads your Orbio balance and claims a capped inference key through Orbio's MCP. The key never sits in your clipboard.", meta: "02 · key" },
   { gesture: "work", title: "It works while you don't", body: "On its own schedule, budgeted to what the bag earns. Reads the chain, the market and the web; asks you before it posts anything.", meta: "03 · run" },
-  { gesture: "stamp", title: "It leaves a receipt", body: "Every run records cost, model, duration and a hash anchored on Robinhood Chain. The public page is open to anyone.", meta: "04 · receipt" },
+  { gesture: "stamp", title: "It leaves a receipt", body: "Every run records cost, model, duration and a content hash, anchored on Robinhood Chain when anchoring is on. The public page is open to anyone.", meta: "04 · receipt" },
 ];
 
 function Step({ s, i }: { s: (typeof STEPS)[number]; i: number }) {

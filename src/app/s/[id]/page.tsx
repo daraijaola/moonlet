@@ -23,7 +23,7 @@ export async function generateMetadata({ params }: PageProps<"/s/[id]">): Promis
   const m = (await store.getMoonlet(id).then((x) => x && redactMoonlet(x)));
   return {
     title: m ? `${m.name} · a moonlet` : "moonlet",
-    description: m ? `“${m.spec.objective}” — running on ${shortAddr(m.owner)}'s bag, every run anchored on Robinhood Chain.` : undefined,
+    description: m ? `“${m.spec.objective}” — running on ${shortAddr(m.owner)}'s bag, every run hashed and public.` : undefined,
   };
 }
 
@@ -35,7 +35,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
   const mine = openSession((await cookies()).get(COOKIE)?.value) === stored.owner;
   const hidden = !mine && isPrivateSpec(stored.spec);
   const m = hidden ? redactMoonlet(stored) : stored;
-  const runs = (await store.listRuns(m.id)).map((r) => ({ ...(hidden ? redactRun(r) : r), explorerUrl: r.txHash ? explorerTx(r.txHash) : null }));
+  const runs = (await store.listRuns(m.id)).map((r) => ({ ...(!mine && r.private ? redactRun(r) : r), explorerUrl: r.txHash ? explorerTx(r.txHash) : null }));
   const owner = await store.getOwner(m.owner);
   const quiet = m.status === "quiet" || m.status === "paused";
   const tone = fuelTone(m.earnPerDayUsd, m.burnPerDayUsd, quiet);
