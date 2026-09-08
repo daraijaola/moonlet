@@ -1,6 +1,8 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { JobInput } from "./job-input";
 import { DitherField } from "./dither-field";
@@ -40,9 +42,12 @@ export function Hero() {
           <motion.div {...up(0.18)} className="mt-9 max-w-[32rem]">
             <JobInput />
           </motion.div>
-          <motion.p {...up(0.24)} className="mt-4 font-mono text-[12px] text-ink-faint">
-            Hold 1,000+ $ORBIO · approve Orbio once · every run hashed on Robinhood Chain
-          </motion.p>
+          <motion.div {...up(0.24)} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
+            <Link href="#how" className="lp-btn lp-btn-ghost lp-btn-sm -ml-3 w-fit">
+              How it works <ArrowRight className="lp-arrow" size={14} strokeWidth={2.2} />
+            </Link>
+            <p className="font-mono text-[12px] text-ink-faint">Hold 1,000+ $ORBIO · approve Orbio once · every run hashed on Robinhood Chain</p>
+          </motion.div>
         </div>
 
         <motion.div

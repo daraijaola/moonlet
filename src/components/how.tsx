@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { motion, useInView, useReducedMotion } from "motion/react";
 import { DitherField } from "./dither-field";
@@ -68,9 +69,12 @@ export function How() {
           <p className="mt-6 max-w-[26rem] text-[16.5px] leading-[1.55] text-ink-soft">
             No dashboard to babysit. You write the job once; the moonlet handles the money, the schedule and the proof.
           </p>
-          <Link href="/app" className="btn-press mt-8 inline-flex rounded-full bg-ink px-5 py-2.5 text-[14px] font-medium text-cream">
-            Launch a moonlet
-          </Link>
+          <div className="mt-8 flex flex-col gap-2.5 sm:flex-row sm:items-center">
+            <Link href="/app" className="lp-btn lp-btn-primary lp-btn-block">
+              Launch a moonlet <ArrowRight className="lp-arrow" size={15} strokeWidth={2.2} />
+            </Link>
+            <Link href="#use-cases" className="lp-btn lp-btn-secondary lp-btn-block">See it working</Link>
+          </div>
         </div>
         <ol>
           {STEPS.map((s, i) => (

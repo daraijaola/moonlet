@@ -29,7 +29,7 @@ export async function Faces() {
             <span className="block text-[13px] text-ink-soft">Every one of them is paid for by a bag of $ORBIO.</span>
           </p>
         </div>
-        <Link href="/sky" className="ui-btn inline-flex items-center gap-1.5 text-[13.5px]">Meet them <ArrowRight size={14} strokeWidth={2} /></Link>
+        <Link href="/sky" className="lp-btn lp-btn-outline lp-btn-block">Meet them <ArrowRight className="lp-arrow" size={15} strokeWidth={2.2} /></Link>
       </div>
     </section>
   );
