@@ -52,12 +52,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AppDataProvider owner={address!}>
-      <div className="app-root h-dvh overflow-hidden bg-cream text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)]">
+      <div className="app-root h-dvh overflow-hidden bg-cream text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
         <Suspense fallback={<aside className="hidden lg:block" />}>
           <Sidebar pathname={pathname} address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} />
         </Suspense>
 
-        <div className="flex h-full min-w-0 flex-col">
+        <div className="flex h-full min-h-0 min-w-0 flex-col">
           <header className="z-30 flex h-14 shrink-0 items-center justify-between border-b border-ink/10 bg-cream px-4 lg:hidden">
             <Link href="/app" className="inline-flex items-center gap-2">
               <MoonletMark size={28} face="var(--cream)" />
@@ -79,7 +79,7 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
   const selected = pathname === "/app" ? (params.get("m") ?? moonlets?.[0]?.id ?? null) : null;
   const groups = groupMoonlets(moonlets ?? []);
   return (
-    <aside className="hidden lg:flex lg:h-full lg:flex-col lg:border-r lg:border-ink/[0.07] lg:bg-paper">
+    <aside className="hidden min-h-0 lg:flex lg:h-full lg:flex-col lg:border-r lg:border-ink/[0.07] lg:bg-paper">
       <div className="flex h-14 items-center px-4">
         <Link href="/app" className="inline-flex items-center gap-2">
           <MoonletMark size={26} face="var(--cream)" />
