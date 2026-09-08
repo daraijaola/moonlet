@@ -13,6 +13,7 @@ import { RunCard } from "@/components/run-card";
 import { MicButton, VoiceRecorder, useVoiceSupported } from "@/components/voice-button";
 import { TEMPLATE_LABEL } from "@/components/labels";
 import { DitherField } from "@/components/dither-field";
+import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp } from "lucide-react";
 import { JobInput } from "@/components/job-input";
 
 function DashboardInner() {
@@ -117,12 +118,12 @@ function Queue({ owner }: { owner: string }) {
                   await load();
                   setBusy(null);
                 }}
-                className="btn-hard rounded-md border-2 border-ink bg-gold px-3 py-1 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50"
+                className="ui-btn ui-btn-sm ui-btn-gold"
               >
-                {busy === p.id ? "Doing it…" : "✓ Approve"}
+                <Check size={13} strokeWidth={2.4} /> {busy === p.id ? "Doing it…" : "Approve"}
               </button>
-              <button disabled={!!busy} onClick={async () => { setBusy(p.id); await api.decide(owner, p.id, "reject").catch(() => undefined); await load(); setBusy(null); }} className="rounded-md border border-ink/15 bg-white px-3 py-1 font-mono text-[12.5px] text-ink-soft hover:border-ink/40 hover:text-ink disabled:opacity-50">
-                ✗ Reject
+              <button disabled={!!busy} onClick={async () => { setBusy(p.id); await api.decide(owner, p.id, "reject").catch(() => undefined); await load(); setBusy(null); }} className="ui-btn ui-btn-sm ui-btn-ghost">
+                <X size={13} strokeWidth={2.2} /> Reject
               </button>
             </div>
           </li>
@@ -135,7 +136,7 @@ function Queue({ owner }: { owner: string }) {
 const Row = ({ k, v }: { k: string; v: string }) => (
   <div className="flex justify-between">
     <dt className="text-ink-soft">{k}</dt>
-    <dd className="text-ink">{v}</dd>
+    <dd className="font-mono text-[12px] tabular-nums text-ink">{v}</dd>
   </div>
 );
 
@@ -299,16 +300,16 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
               value={question}
               onChange={(e) => setQuestion(e.target.value)}
               placeholder={runs.length ? `Ask ${m.name} about its report, tell it to do something, or say “every 6 hours”…` : `Ask ${m.name} anything about its job…`}
-              className="min-w-0 flex-1 rounded-md border border-ink/15 bg-paper px-3 py-2 text-[13.5px] text-ink outline-none focus:border-ink"
+              className="min-w-0 flex-1 rounded-lg border border-ink/12 bg-paper px-3.5 py-2 text-[13.5px] text-ink outline-none transition-[border-color,box-shadow] focus:border-ink/40 focus:shadow-[0_0_0_3px_rgba(233,182,76,0.25)]"
             />
             {voiceOk && <MicButton disabled={asking} onClick={() => { setSpokenBase(question.trim()); setRecording(true); }} />}
-            <button type="submit" disabled={asking || !question.trim()} className="btn-hard rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[12.5px] font-medium text-cream disabled:opacity-40">
-              {asking ? "…" : "Ask"}
+            <button type="submit" disabled={asking || !question.trim()} className="ui-btn ui-btn-primary h-[38px] px-3.5" aria-label="Ask">
+              {asking ? "…" : <ArrowUp size={16} strokeWidth={2.2} />}
             </button>
           </>
         )}
       </form>
-      <p className="mt-2 font-mono text-[11px] text-ink-faint">Same brain, same tools, billed to its key. Tap the mic to speak; the words land here for you to check first. {tg ? "You can also reply to its Telegram messages." : ""}</p>
+      <p className="mt-2 text-[11.5px] text-ink-faint">Same brain, same tools, billed to its key. {voiceOk ? "Tap the mic to speak; the words land here for you to check first. " : ""}{tg ? "You can also reply to its Telegram messages." : ""}</p>
     </div>
   );
 
@@ -325,7 +326,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         <h3 className="mb-2 text-[12px] font-medium text-ink-soft">Settings</h3>
         <div className="divide-y divide-ink/[0.07] rounded-lg border border-ink/10 bg-white">
           <SettingRow label="Delivery" hint={tg ? `Telegram ${tg.label} and this page` : "This page only"}>
-            {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[11px] text-moss"><TelegramMark size={11} /> linked</span> : <Link href="/app/connections" className="font-mono text-[12px] text-ink underline decoration-ink/30">Link Telegram</Link>}
+            {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 text-[11.5px] font-medium text-moss"><TelegramMark size={11} /> linked</span> : <Link href="/app/connections" className="ui-btn ui-btn-sm">Link Telegram</Link>}
           </SettingRow>
           <SettingRow label="Autopilot" hint={m.autopilot ? "Acts without asking." : "Drafts wait for your OK."}>
             <button disabled={!!busy} onClick={() => act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: !m.autopilot }), m.autopilot ? "Autopilot off. Drafts wait for your OK." : "Autopilot on. It acts without asking.")} role="switch" aria-checked={m.autopilot} className={`relative h-5 w-9 rounded-full transition-colors disabled:opacity-50 ${m.autopilot ? "bg-ink" : "bg-ink/15"}`}>
@@ -333,26 +334,26 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
             </button>
           </SettingRow>
           <SettingRow label="Job" hint={`${TEMPLATE_LABEL[m.spec.template]} · every ${m.cadence} · cap ${fmtUsd(m.perRunCapUsd, 3)}/run`}>
-            <Link href={`/app/new?edit=${m.id}`} className="rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[12px] text-ink hover:border-ink/40">Edit</Link>
+            <Link href={`/app/new?edit=${m.id}`} className="ui-btn ui-btn-sm">Edit</Link>
           </SettingRow>
           <SettingRow label="Key" hint={`${m.keysRotated} rotation${m.keysRotated === 1 ? "" : "s"} · ${m.keyLimitUsd ? "on its own key" : "mints on first run"}`}>
-            <button disabled={!!busy} onClick={() => act("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")} className="rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[12px] text-ink hover:border-ink/40 disabled:opacity-50">Rotate</button>
+            <button disabled={!!busy} onClick={() => act("rotate", () => api.patch(owner, m.id, { action: "rotate_key" }), "Rotated. New secret, same credit, old key revoked.")} className="ui-btn ui-btn-sm">Rotate</button>
           </SettingRow>
           <SettingRow label="Public page" hint={`/s/${m.id}`}>
-            <Link href={`/s/${m.id}`} className="rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[12px] text-ink hover:border-ink/40">Open ↗</Link>
+            <Link href={`/s/${m.id}`} className="ui-btn ui-btn-sm">Open <ExternalLink size={12} strokeWidth={2} /></Link>
           </SettingRow>
         </div>
       </section>
       {files.length > 0 && (
         <section>
-          <h3 className="mb-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-soft"><ArtifactGlyph /> Artifacts · {files.length}</h3>
+          <h3 className="mb-2 inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-soft"><Paperclip size={12} strokeWidth={2} /> Artifacts · {files.length}</h3>
           <div className="rounded-lg border border-ink/10 bg-white px-4 py-1">{artifactList(false)}</div>
         </section>
       )}
       <section>
         <h3 className="mb-2 text-[12px] font-medium text-ink-soft">Your credits</h3>
         <div className="rounded-lg border border-ink/10 bg-white p-4">
-          <dl className="space-y-2 font-mono text-[12.5px]">
+          <dl className="space-y-2 text-[12.5px]">
             <Row k="bag" v={status ? `${fmtBag(status.bag)} $ORBIO` : "…"} />
             <Row k="earning" v={`~${fmtUsd(status?.earnPerDayUsd ?? m.earnPerDayUsd)} / day`} />
             <Row k="put to work" v={`~${fmtUsd(all.reduce((sum, x) => sum + (x.status === "paused" || x.status === "quiet" ? 0 : x.burnPerDayUsd), 0))} / day`} />
@@ -373,11 +374,11 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
             <p className="text-[12px] text-ink-soft">Credits stay in your Orbio balance; only the moonlet goes.</p>
           </div>
           {!confirmDelete ? (
-            <Ctl danger onClick={() => setConfirmDelete(true)}>Delete</Ctl>
+            <button onClick={() => setConfirmDelete(true)} className="ui-btn ui-btn-sm ui-danger"><Trash2 size={13} strokeWidth={1.75} /> Delete</button>
           ) : (
-            <span className="inline-flex items-center gap-2 font-mono text-[12px]">
-              <button onClick={async () => { await act("delete", () => api.remove(owner, m.id), "Deleted."); router.replace("/app"); }} className="rounded bg-ink px-2 py-1 text-cream">Confirm</button>
-              <button onClick={() => setConfirmDelete(false)} className="text-ink-soft">Cancel</button>
+            <span className="inline-flex items-center gap-2">
+              <button onClick={async () => { await act("delete", () => api.remove(owner, m.id), "Deleted."); router.replace("/app"); }} className="ui-btn ui-btn-sm ui-btn-primary">Confirm</button>
+              <button onClick={() => setConfirmDelete(false)} className="ui-btn ui-btn-sm ui-btn-ghost">Cancel</button>
             </span>
           )}
         </div>
@@ -392,35 +393,31 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         <div className="flex h-14 items-center gap-3 px-4 sm:px-6">
           <StatusDot tone={quiet ? "grey" : "green"} pulse={running} />
           <h1 className="truncate text-[15px] font-semibold tracking-[-0.01em] text-ink">{m.name}</h1>
-          <span className="hidden rounded-full border border-ink/15 px-2 py-0.5 font-mono text-[11px] text-ink-soft sm:inline">{TEMPLATE_LABEL[m.spec.template]}</span>
-          {m.autopilot && <span className="hidden rounded-full bg-ink px-2 py-0.5 font-mono text-[11px] text-cream sm:inline" title="Acts without asking">autopilot</span>}
+          <span className="hidden rounded-full border border-ink/12 bg-white px-2 py-0.5 text-[11.5px] font-medium text-ink-soft sm:inline">{TEMPLATE_LABEL[m.spec.template]}</span>
+          {m.autopilot && <span className="hidden rounded-full bg-ink px-2 py-0.5 text-[11.5px] font-medium text-cream sm:inline" title="Acts without asking">autopilot</span>}
           <div className="ml-auto flex items-center gap-2">
-            <span className="hidden font-mono text-[12px] text-ink-soft md:inline">{fmtUsd(m.spentTotalUsd, 3)} spent</span>
-            <button
-              disabled={!!busy || running}
-              onClick={() => act("run", () => api.runNow(owner, m.id), "Run finished.")}
-              className="btn-hard rounded-md border-2 border-ink bg-gold px-3.5 py-1.5 font-mono text-[12.5px] font-medium text-midnight disabled:opacity-50"
-            >
-              {busy === "run" || running ? "Running…" : "Run now"}
+            <span className="hidden font-mono text-[12px] text-ink-faint md:inline">{fmtUsd(m.spentTotalUsd, 3)} spent</span>
+            <button disabled={!!busy || running} onClick={() => act("run", () => api.runNow(owner, m.id), "Run finished.")} className="ui-btn ui-btn-gold">
+              <Play size={13} strokeWidth={2.2} fill="currentColor" /> {busy === "run" || running ? "Running…" : "Run now"}
             </button>
-            <Ctl disabled={!!busy} onClick={() => act("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")}>
-              {m.status === "paused" ? "Resume" : "Pause"}
-            </Ctl>
+            <button disabled={!!busy} onClick={() => act("pause", () => api.patch(owner, m.id, { action: m.status === "paused" ? "resume" : "pause" }), m.status === "paused" ? "Resumed." : "Paused. Key stays funded.")} className="ui-btn">
+              {m.status === "paused" ? <><Play size={13} strokeWidth={2} /> Resume</> : <><Pause size={13} strokeWidth={2} /> Pause</>}
+            </button>
             <button
               type="button"
               onClick={() => setPanel((v) => !v)}
               aria-pressed={panelOpen}
               title={panelOpen ? "Hide overview" : "Show overview"}
-              className={`hidden h-[34px] w-[34px] items-center justify-center rounded-md border lg:inline-flex ${panelOpen ? "border-ink bg-ink text-cream" : "border-ink/15 bg-white text-ink-soft hover:border-ink/40 hover:text-ink"}`}
+              className={`ui-btn ui-btn-icon hidden lg:inline-flex ${panelOpen ? "ui-btn-primary" : ""}`}
             >
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="4" width="18" height="16" rx="2.5" /><path d="M15 4v16" /></svg>
+              <PanelRight size={15} strokeWidth={1.75} />
             </button>
           </div>
         </div>
         {/* phone: which half of the page */}
         <div className="flex gap-1 px-4 pb-2 lg:hidden">
           {(["report", "overview"] as const).map((t) => (
-            <button key={t} type="button" onClick={() => setTab(t)} className={`rounded-md px-3 py-1 font-mono text-[12px] ${tab === t ? "bg-ink text-cream" : "text-ink-soft hover:text-ink"}`}>
+            <button key={t} type="button" onClick={() => setTab(t)} className={`rounded-md px-3 py-1 text-[12.5px] font-medium ${tab === t ? "bg-ink text-cream" : "text-ink-soft hover:text-ink"}`}>
               {t === "report" ? "Report" : "Overview"}
             </button>
           ))}
@@ -513,7 +510,7 @@ function SettingRow({ label, hint, children }: { label: string; hint: string; ch
     <div className="flex items-center justify-between gap-3 px-4 py-2.5">
       <div className="min-w-0">
         <p className="text-[13px] font-medium text-ink">{label}</p>
-        <p className="truncate font-mono text-[11px] text-ink-faint">{hint}</p>
+        <p className="truncate text-[12px] text-ink-faint">{hint}</p>
       </div>
       <div className="shrink-0">{children}</div>
     </div>
@@ -533,24 +530,10 @@ function OrbioApprove() {
 function Vital({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div className="min-w-0">
-      <dt className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-soft">{label}</dt>
-      <dd className="mt-0.5 truncate font-display text-[1.35rem] leading-none text-ink">{value}</dd>
-      {hint && <dd className="mt-1 truncate font-mono text-[11px] text-ink-faint">{hint}</dd>}
+      <dt className="text-[11.5px] text-ink-faint">{label}</dt>
+      <dd className="mt-0.5 truncate text-[17px] font-semibold tabular-nums tracking-[-0.01em] text-ink">{value}</dd>
+      {hint && <dd className="mt-0.5 truncate text-[11.5px] text-ink-faint">{hint}</dd>}
     </div>
-  );
-}
-
-function Ctl({ children, onClick, danger, disabled }: { children: React.ReactNode; onClick: () => void; danger?: boolean; disabled?: boolean }) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      className={`rounded-md border px-3 py-1.5 font-mono text-[12.5px] transition-colors disabled:opacity-50 ${
-        danger ? "border-ink/15 text-ink-soft hover:border-red-700 hover:text-red-700" : "border-ink/15 bg-white text-ink hover:border-ink/40"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
@@ -580,7 +563,7 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
         <div className="mt-10 divide-y divide-ink/[0.07] rounded-lg border border-ink/10 bg-white">
           <SetupStep n={1} done={orbioOk} title={orbioOk ? "Orbio approved" : "Approve Orbio"} hint={orbioOk ? "Your credits can fund runs." : "The budget. Once, on orbio.so; your $ORBIO credits pay for every run."}>
             {!orbioOk && !handoff && (
-              <button onClick={() => void approveOrbio("/app").then((r) => setHandoff(r === "handoff")).catch(() => undefined)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3 py-1.5 font-mono text-[12.5px] font-medium text-midnight">
+              <button onClick={() => void approveOrbio("/app").then((r) => setHandoff(r === "handoff")).catch(() => undefined)} className="ui-btn ui-btn-sm ui-btn-gold">
                 <OrbioMark size={13} /> Approve
               </button>
             )}
@@ -588,14 +571,14 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
           </SetupStep>
           <SetupStep n={2} done={telegramOk} title={telegramOk ? "Telegram linked" : "Link Telegram"} hint={telegramOk ? "Results and approvals reach your phone." : telegramAvailable ? "Where results and approvals reach you. Open the bot, press Start." : "Not switched on here yet; results stay on this dashboard."}>
             {!telegramOk && telegramAvailable && (
-              <Link href="/app/connections" className="inline-flex items-center gap-2 rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[12.5px] text-ink hover:border-ink/40">
+              <Link href="/app/connections" className="ui-btn ui-btn-sm">
                 <TelegramMark size={13} /> Link
               </Link>
             )}
           </SetupStep>
           <SetupStep n={3} done={githubOk} optional title={githubOk ? "GitHub connected" : "GitHub or X"} hint={githubOk ? "Moonlets can read your repos and propose pull requests." : "Only for repo jobs or posting on X. Skip otherwise."}>
             {!githubOk && (
-              <Link href="/app/connections" className="inline-flex items-center gap-2 rounded-md border border-ink/15 bg-white px-3 py-1.5 font-mono text-[12.5px] text-ink hover:border-ink/40">
+              <Link href="/app/connections" className="ui-btn ui-btn-sm">
                 <GitHubMark size={13} /> Connect
               </Link>
             )}
@@ -630,10 +613,3 @@ export default function DashboardPage() {
   );
 }
 
-const ArtifactGlyph = () => (
-  <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden>
-    <path d="M3 1.5h5.5L11.5 4.5v8h-8.5z" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-    <path d="M8.5 1.5v3h3" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
-    <path d="M5 8h4M5 10h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-  </svg>
-);

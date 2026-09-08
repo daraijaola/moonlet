@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, timeAgo, type ConnectionKind, type Connections, type OrbioStatus } from "@/lib/api";
 import { DiscordMark, GitHubMark, GmailMark, OrbioMark, TelegramMark, XMark } from "@/components/marks";
+import { ChevronUp, Ellipsis } from "lucide-react";
 
 function ConnectionsInner() {
   const { address, approveOrbio } = useAuth();
@@ -65,7 +66,7 @@ function ConnectionsInner() {
                   conn={orbio?.approved ? { label: orbio.orbio.dev ? "dev stub" : `${orbio.orbio.tools.length || "MCP"} tools`, createdAt: 0 } : undefined}
                   onDisconnect={orbio?.approved ? async () => { await api.orbioDisconnect(address); await load(); } : undefined}
                   action={orbio && !orbio.approved ? (
-                    <button onClick={() => approveOrbio("/app/connections").catch((e) => setErr((e as Error).message))} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3 py-1.5 font-mono text-[12.5px] font-medium text-midnight">
+                    <button onClick={() => approveOrbio("/app/connections").catch((e) => setErr((e as Error).message))} className="ui-btn ui-btn-gold">
                       <OrbioMark size={13} /> Approve
                     </button>
                   ) : undefined}
@@ -108,21 +109,21 @@ function Shell({ mark, name, blurb, unlocks, conn, children, onDisconnect, actio
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-[14px] font-medium tracking-[-0.01em] text-ink">{name}</h2>
             {conn ? (
-              <span className="rounded-full bg-moss/10 px-2 py-0.5 font-mono text-[10.5px] text-moss">{conn.label}</span>
+              <span className="rounded-full bg-moss/10 px-2 py-0.5 text-[11px] font-medium text-moss">{conn.label}</span>
             ) : (
-              <span className="hidden rounded-full bg-ink/5 px-2 py-0.5 font-mono text-[10.5px] text-ink-soft sm:inline">not connected</span>
+              <span className="hidden rounded-full bg-ink/5 px-2 py-0.5 text-[11px] font-medium text-ink-soft sm:inline">not connected</span>
             )}
           </div>
           <p className={`mt-0.5 text-[12.5px] leading-[1.5] text-ink-soft ${open ? "" : "line-clamp-1 max-sm:hidden"}`}>{blurb}</p>
           {open && <p className="mt-1 font-mono text-[11px] text-ink-faint">unlocks: {unlocks}</p>}
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {conn && conn.createdAt ? <span className="hidden font-mono text-[11px] text-ink-faint sm:inline">linked {timeAgo(conn.createdAt)}</span> : null}
+          {conn && conn.createdAt ? <span className="hidden text-[12px] text-ink-faint sm:inline">linked {timeAgo(conn.createdAt)}</span> : null}
           {conn && onDisconnect && (
-            <button onClick={onDisconnect} className="rounded-md border border-ink/15 bg-white px-2.5 py-1 font-mono text-[12px] text-ink-soft hover:border-red-700 hover:text-red-700">Disconnect</button>
+            <button onClick={onDisconnect} className="ui-btn ui-btn-sm ui-danger text-ink-soft">Disconnect</button>
           )}
           {!conn && action}
-          <button onClick={() => setOpen((v) => !v)} aria-label={open ? "Less" : "More"} className="rounded px-1 font-mono text-[12px] text-ink-faint hover:text-ink">{open ? "–" : "···"}</button>
+          <button onClick={() => setOpen((v) => !v)} aria-label={open ? "Less" : "More"} className="ui-btn ui-btn-ghost ui-btn-sm ui-btn-icon w-7 text-ink-faint">{open ? <ChevronUp size={14} strokeWidth={1.75} /> : <Ellipsis size={14} strokeWidth={1.75} />}</button>
         </div>
       </div>
       {children ? <div className="mt-3 pl-[52px] empty:hidden">{children}</div> : null}
@@ -171,7 +172,7 @@ function TelegramCard({ owner, conn, available, bot, onChange, setErr }: CardPro
             }
             setBusy(false);
           }}
-          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3 py-1.5 font-mono text-[12.5px] font-medium text-ink disabled:opacity-60"
+          className="ui-btn"
         >
           <TelegramMark size={13} /> {busy ? "One moment…" : "Link"}
         </button>
@@ -179,7 +180,7 @@ function TelegramCard({ owner, conn, available, bot, onChange, setErr }: CardPro
     >
       {!conn && link && (
         <div className="flex flex-wrap items-center gap-3">
-          <a href={link} target="_blank" rel="noreferrer" className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[13px] font-medium text-midnight">
+          <a href={link} target="_blank" rel="noreferrer" className="ui-btn ui-btn-gold">
             <TelegramMark size={14} /> Open @{bot} and tap Start
           </a>
           <span className="font-mono text-[11.5px] text-ink-soft">{waiting ? "waiting for you to press Start in Telegram…" : ""}</span>
@@ -214,7 +215,7 @@ function GitHubCard({ owner, conn, oauth, onChange }: CardProps & { owner: strin
               setBusy(false);
             }
           }}
-          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3 py-1.5 font-mono text-[12.5px] font-medium text-cream disabled:opacity-60"
+          className="ui-btn ui-btn-primary"
         >
           <GitHubMark size={13} /> {busy ? "Opening…" : "Connect"}
         </button>
@@ -260,7 +261,7 @@ function XCard({ owner, conn, onChange, setErr }: CardProps & { owner: string; s
       conn={conn}
       onDisconnect={async () => { await api.disconnect(owner, "x"); await onChange(); }}
       action={!open ? (
-        <button onClick={() => setOpen(true)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3 py-1.5 font-mono text-[12.5px] font-medium text-ink">
+        <button onClick={() => setOpen(true)} className="ui-btn">
           <XMark size={13} /> Connect
         </button>
       ) : undefined}
@@ -301,7 +302,7 @@ function XCard({ owner, conn, onChange, setErr }: CardProps & { owner: string; s
             {field("accessToken", "Access Token", "digits-letters")}
             {field("accessSecret", "Access Token Secret", "45 characters")}
             <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
-              <button type="submit" disabled={busy || !ready} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream disabled:opacity-40">
+              <button type="submit" disabled={busy || !ready} className="ui-btn ui-btn-primary">
                 <XMark size={14} /> {busy ? "Checking with X…" : "Verify and connect"}
               </button>
               <button type="button" onClick={() => setOpen(false)} className="font-mono text-[11.5px] text-ink-faint hover:text-ink">cancel</button>
@@ -335,7 +336,7 @@ function DiscordCard({ owner, conn, onChange, setErr }: CardProps & { owner: str
       conn={conn}
       onDisconnect={async () => { await api.disconnect(owner, "discord"); await onChange(); }}
       action={!open ? (
-        <button onClick={() => setOpen(true)} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3 py-1.5 font-mono text-[12.5px] font-medium text-ink">
+        <button onClick={() => setOpen(true)} className="ui-btn">
           <DiscordMark size={13} /> Connect
         </button>
       ) : undefined}
@@ -385,7 +386,7 @@ function DiscordCard({ owner, conn, onChange, setErr }: CardProps & { owner: str
               />
             </label>
             <div className="flex flex-wrap items-center gap-3">
-              <button type="submit" disabled={busy || !looksRight} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-ink px-3.5 py-2 font-mono text-[13px] font-medium text-cream disabled:opacity-40">
+              <button type="submit" disabled={busy || !looksRight} className="ui-btn ui-btn-primary">
                 <DiscordMark size={14} /> {busy ? "Checking with Discord…" : "Verify and connect"}
               </button>
               <button type="button" onClick={() => setOpen(false)} className="font-mono text-[11.5px] text-ink-faint hover:text-ink">cancel</button>
@@ -424,7 +425,7 @@ function GmailCard({ owner, conn, oauth, onChange }: CardProps & { owner: string
               setBusy(false);
             }
           }}
-          className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-white px-3 py-1.5 font-mono text-[12.5px] font-medium text-ink disabled:opacity-60"
+          className="ui-btn"
         >
           <GmailMark size={13} /> {busy ? "Opening…" : "Connect"}
         </button>

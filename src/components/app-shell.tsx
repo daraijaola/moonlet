@@ -10,12 +10,13 @@ import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
 import { StatusDot } from "./fuel-gauge";
 import { TEMPLATE_LABEL } from "./labels";
+import { Orbit, Rocket, Cable, Telescope, Plus, LogOut, type LucideIcon } from "lucide-react";
 
-const NAV = [
-  { href: "/app", label: "Moonlets", match: (p: string) => p === "/app" },
-  { href: "/app/new", label: "Launch", match: (p: string) => p.startsWith("/app/new") },
-  { href: "/app/connections", label: "Connections", match: (p: string) => p.startsWith("/app/connections") },
-  { href: "/sky", label: "The sky", match: () => false },
+const NAV: Array<{ href: string; label: string; icon: LucideIcon; match: (p: string) => boolean }> = [
+  { href: "/app", label: "Moonlets", icon: Orbit, match: (p) => p === "/app" },
+  { href: "/app/new", label: "Launch", icon: Rocket, match: (p) => p.startsWith("/app/new") },
+  { href: "/app/connections", label: "Connections", icon: Cable, match: (p) => p.startsWith("/app/connections") },
+  { href: "/sky", label: "The sky", icon: Telescope, match: (p) => p.startsWith("/sky") || p.startsWith("/s/") },
 ];
 
 /**
@@ -94,8 +95,8 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
         {NAV.map((t) => {
           const active = t.match(pathname);
           return (
-            <Link key={t.href} href={t.href} className={`flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13.5px] ${active ? "bg-ink/[0.07] font-medium text-ink" : "text-ink-soft hover:bg-ink/[0.04] hover:text-ink"}`}>
-              <NavGlyph name={t.label} />
+            <Link key={t.href} href={t.href} className={`flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] transition-colors ${active ? "bg-ink/[0.06] font-medium text-ink" : "text-ink-soft hover:bg-ink/[0.04] hover:text-ink"}`}>
+              <t.icon size={16} strokeWidth={1.75} className={active ? "text-ink" : "text-ink-soft"} />
               {t.label}
             </Link>
           );
@@ -105,12 +106,12 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
       <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-2 pb-3 [scrollbar-width:thin]">
         <div className="flex items-center justify-between px-2.5 pb-1.5">
           <span className="text-[12px] font-medium text-ink-soft">Moonlets{moonlets ? ` · ${moonlets.length}` : ""}</span>
-          <Link href="/app/new" className="rounded px-1 font-mono text-[12px] text-ink-faint hover:text-ink" title="Launch a moonlet">＋</Link>
+          <Link href="/app/new" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-ink/[0.05] hover:text-ink" title="Launch a moonlet"><Plus size={14} strokeWidth={2} /></Link>
         </div>
         {moonlets && moonlets.length === 0 && <p className="px-2.5 py-2 text-[12.5px] leading-[1.5] text-ink-faint">Nothing in orbit yet.</p>}
         {groups.map(([label, items]) => (
           <div key={label} className="mb-3">
-            <p className="px-2.5 pb-1 pt-1 font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">{label} <span className="normal-case tracking-normal">{items.length}</span></p>
+            <p className="px-2.5 pb-1 pt-1 text-[11.5px] font-medium text-ink-faint">{label} <span className="ml-0.5 tabular-nums">{items.length}</span></p>
             <ul className="space-y-0.5">
               {items.map((m) => (
                 <li key={m.id}>
@@ -118,7 +119,7 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
                     <StatusDot tone={m.status === "running" || m.status === "idle" ? "green" : "grey"} pulse={m.status === "running"} />
                     <span className="min-w-0 flex-1">
                       <span className="block truncate text-[13.5px] font-medium text-ink">{m.name}</span>
-                      <span className="block truncate font-mono text-[11px] text-ink-faint">{TEMPLATE_LABEL[m.spec.template]} · {m.status === "running" ? "running" : m.status === "paused" ? "paused" : m.status === "quiet" ? "quiet" : timeUntil(m.nextRunAt)}</span>
+                      <span className="block truncate text-[11.5px] text-ink-faint">{TEMPLATE_LABEL[m.spec.template]} · {m.status === "running" ? "running" : m.status === "paused" ? "paused" : m.status === "quiet" ? "quiet" : timeUntil(m.nextRunAt)}</span>
                     </span>
                   </Link>
                 </li>
@@ -130,14 +131,14 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
 
       <div className="border-t border-ink/10 px-3 py-3">
         <div className="flex items-center gap-2.5 rounded-md px-1.5 py-1">
-          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-ink text-cream"><span className="h-2 w-2 rounded-full bg-moss" /></span>
+          <span className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[conic-gradient(from_200deg,var(--gold),var(--moss),var(--ink))] ring-2 ring-white" />
           <span className="min-w-0 flex-1">
             <span className="block truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</span>
             <span className="block truncate font-mono text-[11px] text-ink-faint">
               {status ? `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio ✓" : "Orbio ✗"}` : "…"}
             </span>
           </span>
-          <button onClick={onDisconnect} className="rounded px-1.5 py-1 font-mono text-[11px] text-ink-faint hover:text-ink" title="Disconnect wallet">out</button>
+          <button onClick={onDisconnect} className="inline-flex h-7 w-7 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-ink/[0.05] hover:text-ink" title="Disconnect wallet"><LogOut size={14} strokeWidth={1.75} /></button>
         </div>
       </div>
     </aside>
@@ -156,81 +157,17 @@ function groupMoonlets(all: ApiMoonlet[]): Array<[string, ApiMoonlet[]]> {
   ).filter(([, items]) => items.length > 0);
 }
 
-function NavGlyph({ name }: { name: string }) {
-  const d =
-    name === "Moonlets" ? <><circle cx="12" cy="12" r="7.25" /><path d="M9.4 13.2c.8 1 1.7 1.5 2.6 1.5s1.8-.5 2.6-1.5" /><circle cx="9.6" cy="10.2" r=".6" fill="currentColor" stroke="none" /><circle cx="14.4" cy="10.2" r=".6" fill="currentColor" stroke="none" /></>
-    : name === "Launch" ? <><path d="M12 3c3 2.2 4.5 5.4 4.5 9.6V17h-9v-4.4C7.5 8.4 9 5.2 12 3z" /><path d="M7.5 15l-3 3h15l-3-3" /><path d="M12 17v4" /></>
-    : name === "Connections" ? <><circle cx="6" cy="12" r="2.2" /><circle cx="18" cy="6" r="2.2" /><circle cx="18" cy="18" r="2.2" /><path d="M8 11l8-4M8 13l8 4" /></>
-    : <><path d="M3 17c2.5-6 6-9 9-9s6.5 3 9 9" /><path d="M2 17h20" /></>;
-  return <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-80">{d}</svg>;
-}
-
 /** Bottom tab bar for phones; the header tabs are hidden there. Also used on public pages when signed in. */
 export function MobileTabs({ pathname }: { pathname: string }) {
-  const items = [
-    {
-      href: "/app",
-      label: "Moonlets",
-      icon: (
-        <>
-          <circle cx="12" cy="12" r="7.25" />
-          <path d="M9.4 13.2c.8 1 1.7 1.5 2.6 1.5s1.8-.5 2.6-1.5" />
-          <circle cx="9.6" cy="10.2" r=".6" fill="currentColor" stroke="none" />
-          <circle cx="14.4" cy="10.2" r=".6" fill="currentColor" stroke="none" />
-          <path d="M16.8 6.6l2.6-2.6" />
-          <circle cx="20" cy="3.4" r="1.1" fill="currentColor" stroke="none" />
-        </>
-      ),
-      match: (p: string) => p.startsWith("/app") && !p.startsWith("/app/connections") && !p.startsWith("/app/new"),
-    },
-    {
-      href: "/app/new",
-      label: "Launch",
-      icon: (
-        <>
-          <path d="M12 3c3 2.2 4.5 5.4 4.5 9.6V17h-9v-4.4C7.5 8.4 9 5.2 12 3z" />
-          <path d="M7.5 15l-3 3h15l-3-3" />
-          <path d="M12 17v4" />
-        </>
-      ),
-      match: (p: string) => p.startsWith("/app/new"),
-    },
-    {
-      href: "/app/connections",
-      label: "Connections",
-      icon: (
-        <>
-          <circle cx="6" cy="12" r="2.2" />
-          <circle cx="18" cy="6" r="2.2" />
-          <circle cx="18" cy="18" r="2.2" />
-          <path d="M8 11l8-4M8 13l8 4" />
-        </>
-      ),
-      match: (p: string) => p.startsWith("/app/connections"),
-    },
-    {
-      href: "/sky",
-      label: "The sky",
-      icon: (
-        <>
-          <path d="M3 17c2.5-6 6-9 9-9s6.5 3 9 9" />
-          <path d="M2 17h20" />
-          <circle cx="18.5" cy="6" r="1" fill="currentColor" stroke="none" />
-          <circle cx="5" cy="8" r=".8" fill="currentColor" stroke="none" />
-        </>
-      ),
-      match: (p: string) => p.startsWith("/sky") || p.startsWith("/s/"),
-    },
-  ];
   return (
     <nav aria-label="App" className="fixed inset-x-0 bottom-0 z-30 border-t border-ink/10 bg-cream/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
       <ul className="mx-auto grid max-w-[640px] grid-cols-4">
-        {items.map((t) => {
-          const active = t.match(pathname);
+        {NAV.map((t) => {
+          const active = t.href === "/app" ? pathname.startsWith("/app") && !pathname.startsWith("/app/connections") && !pathname.startsWith("/app/new") : t.match(pathname);
           return (
             <li key={t.href}>
-              <Link href={t.href} className={`flex flex-col items-center gap-1 py-2.5 font-mono text-[10.5px] ${active ? "text-ink" : "text-ink-soft"}`}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{t.icon}</svg>
+              <Link href={t.href} className={`flex flex-col items-center gap-1 py-2.5 text-[10.5px] font-medium ${active ? "text-ink" : "text-ink-soft"}`}>
+                <t.icon size={21} strokeWidth={active ? 2 : 1.6} />
                 {t.label}
               </Link>
             </li>

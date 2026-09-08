@@ -199,3 +199,34 @@ body {
   background-image: radial-gradient(rgba(138, 122, 85, 0.9) 0.7px, transparent 1px);
   background-size: 6px 6px;
 }
+
+/* App controls: one size, flat, quiet. The playful hard-shadow buttons stay on the landing. */
+.ui-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  height: 32px;
+  padding: 0 0.75rem;
+  border-radius: 7px;
+  border: 1px solid rgba(21, 22, 29, 0.12);
+  background: var(--white);
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease;
+}
+.ui-btn:hover { border-color: rgba(21, 22, 29, 0.28); background: var(--paper); }
+.ui-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(233, 182, 76, 0.4); }
+.ui-btn:disabled { opacity: 0.5; pointer-events: none; }
+.ui-btn-primary { background: var(--ink); border-color: var(--ink); color: var(--cream); }
+.ui-btn-primary:hover { background: #262833; border-color: #262833; }
+.ui-btn-gold { background: var(--gold); border-color: var(--gold); color: var(--midnight); box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.12); }
+.ui-btn-gold:hover { background: #e2ac3f; border-color: #e2ac3f; }
+.ui-btn-ghost { border-color: transparent; background: transparent; color: var(--ink-soft); }
+.ui-btn-ghost:hover { background: rgba(21, 22, 29, 0.05); color: var(--ink); }
+.ui-btn-sm { height: 28px; padding: 0 0.6rem; font-size: 12.5px; border-radius: 6px; }
+.ui-btn-icon { width: 32px; padding: 0; }
+.ui-danger:hover { border-color: rgba(185, 28, 28, 0.5); color: #b91c1c; background: rgba(185, 28, 28, 0.04); }

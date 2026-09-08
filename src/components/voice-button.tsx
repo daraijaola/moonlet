@@ -1,5 +1,7 @@
 "use client";
 
+import { Check, Mic } from "lucide-react";
+
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 /**
@@ -25,11 +27,8 @@ export function useVoiceSupported() {
 
 export function MicButton({ disabled, onClick }: { disabled?: boolean; onClick: () => void }) {
   return (
-    <button type="button" disabled={disabled} onClick={onClick} aria-label="Speak instead of typing" title="Speak" className="inline-flex h-[38px] w-[38px] items-center justify-center rounded-md border border-ink/15 bg-white text-ink-soft transition-colors hover:border-ink/40 hover:text-ink disabled:opacity-40">
-      <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <rect x="9" y="3" width="6" height="12" rx="3" />
-        <path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6" />
-      </svg>
+    <button type="button" disabled={disabled} onClick={onClick} aria-label="Speak instead of typing" title="Speak" className="ui-btn ui-btn-icon h-[38px] w-[38px] shrink-0 rounded-lg text-ink-soft">
+      <Mic size={16} strokeWidth={1.75} />
     </button>
   );
 }
@@ -158,7 +157,7 @@ export function VoiceRecorder({ transcribe, onLive, onDone, onCancel }: { transc
           </>
         )}
       </div>
-      <button type="button" onClick={() => finish("keep")} disabled={phase !== "recording"} aria-label="Keep recording" className="btn-hard inline-flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border-2 border-ink bg-ink text-cream disabled:opacity-40">✓</button>
+      <button type="button" onClick={() => finish("keep")} disabled={phase !== "recording"} aria-label="Keep recording" className="ui-btn ui-btn-primary ui-btn-icon h-[38px] w-[38px] shrink-0 rounded-lg"><Check size={16} strokeWidth={2.2} /></button>
     </div>
   );
 }

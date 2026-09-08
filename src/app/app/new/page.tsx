@@ -288,15 +288,15 @@ function NewInner() {
               ← {step === 0 ? "Cancel" : "Back"}
             </button>
             {step === 0 ? (
-              <button disabled={!canNext || !!busy} onClick={compile} className="btn-hard rounded-md border-2 border-ink bg-white px-4 py-2 font-mono text-[13.5px] font-medium text-ink disabled:opacity-40">
+              <button disabled={!canNext || !!busy} onClick={compile} className="ui-btn ui-btn-primary px-4">
                 {busy === "compile" ? "Planning…" : "Plan it →"}
               </button>
             ) : step < 3 ? (
-              <button disabled={!canNext} onClick={() => setStep((s) => s + 1)} className="btn-hard rounded-md border-2 border-ink bg-white px-4 py-2 font-mono text-[13.5px] font-medium text-ink disabled:opacity-40">
+              <button disabled={!canNext} onClick={() => setStep((s) => s + 1)} className="ui-btn ui-btn-primary px-4">
                 Continue →
               </button>
             ) : (
-              <button disabled={!!busy || !status} onClick={launch} className="btn-hard rounded-md border-2 border-ink bg-gold px-5 py-2 font-mono text-[13.5px] font-medium text-midnight disabled:opacity-40">
+              <button disabled={!!busy || !status} onClick={launch} className="ui-btn ui-btn-gold px-5">
                 {editId ? "Save changes" : "Launch"}
               </button>
             )}
