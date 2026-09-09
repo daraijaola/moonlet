@@ -45,9 +45,9 @@ export async function beginOAuth(owner: string, redirectUri: string, redirectTo:
   return u.toString();
 }
 
-export async function finishOAuth(code: string, state: string, fetchImpl: typeof fetch = fetch) {
-  const saved = await store.takeOauthState(state);
-  if (!saved) throw new Error("state expired");
+export async function finishOAuth(code: string, state: string, sessionOwner: string | null, fetchImpl: typeof fetch = fetch) {
+  const saved = await store.takeOauthState(state, "gh_", sessionOwner);
+  if (!saved) throw new Error("this sign-in link is expired, already used, or was opened in a different browser than the one that started it. Start again from Connections.");
   const res = await fetchImpl("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },

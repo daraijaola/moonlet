@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ORBIO } from "@/moonlet/orbio";
-import { publicOrigin } from "@/moonlet/http";
+import { ownerFrom, publicOrigin } from "@/moonlet/http";
 import * as store from "@/moonlet/store";
 
 export async function GET(req: Request) {
@@ -12,7 +12,7 @@ export async function GET(req: Request) {
   if (err) return NextResponse.redirect(`${appUrl}/sign-in?orbio=denied`);
   if (!code || !state) return NextResponse.redirect(`${appUrl}/sign-in?orbio=invalid`);
 
-  const saved = await store.takeOauthState(state);
+  const saved = await store.takeOauthState(state, "ob_", ownerFrom(req));
   if (!saved) return NextResponse.redirect(`${appUrl}/sign-in?orbio=expired`);
   const redirectUri = saved.redirectUri || `${appUrl}/api/orbio/callback`;
   const back = saved.redirectUri ? new URL(saved.redirectUri).origin : appUrl;

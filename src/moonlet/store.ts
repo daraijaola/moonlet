@@ -256,12 +256,25 @@ export async function saveOauthClient(redirectUri: string, clientId: string) {
   await db().execute({ sql: `INSERT OR REPLACE INTO oauth_clients(redirect_uri,client_id,created_at) VALUES(?,?,?)`, args: [redirectUri, clientId, Date.now()] });
 }
 
-export async function takeOauthState(state: string) {
+export const OAUTH_STATE_TTL_MS = 10 * 60_000;
+
+/**
+ * Redeem an OAuth state exactly once. `provider` is the prefix the flow minted (`gm_`, `gh_`, `ob_`), so a Gmail code cannot be
+ * redeemed on the GitHub callback; `sessionOwner` is the wallet signed in on the browser that hit the callback, and it must be
+ * the wallet that started the flow, so a forwarded authorization link cannot attach an account to someone else's wallet.
+ * A stale, replayed, wrong-provider or wrong-session state returns null and is deleted.
+ */
+export async function takeOauthState(state: string, provider: string, sessionOwner: string | null) {
   await migrate();
   const r = await db().execute({ sql: `SELECT * FROM oauth_states WHERE state=?`, args: [state] });
   const row = r.rows[0];
-  if (!row) return null;
-  await db().execute({ sql: `DELETE FROM oauth_states WHERE state=? OR created_at < ?`, args: [state, Date.now() - 15 * 60_000] });
+  // Single use: whoever deletes the row wins; a concurrent second redemption sees rowsAffected 0.
+  const del = await db().execute({ sql: `DELETE FROM oauth_states WHERE state=?`, args: [state] });
+  await db().execute({ sql: `DELETE FROM oauth_states WHERE created_at < ?`, args: [Date.now() - OAUTH_STATE_TTL_MS] });
+  if (!row || del.rowsAffected !== 1) return null;
+  if (!state.startsWith(provider)) return null;
+  if (Date.now() - Number(row.created_at) > OAUTH_STATE_TTL_MS) return null;
+  if (!sessionOwner || sessionOwner.toLowerCase() !== (row.address as string).toLowerCase()) return null;
   let redirectTo = row.redirect_to as string, redirectUri = "";
   try {
     const j = JSON.parse(redirectTo) as { to: string; uri: string };

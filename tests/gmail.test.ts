@@ -32,7 +32,7 @@ describe("gmail connection", () => {
     expect(url.searchParams.get("scope")).toContain("gmail.modify");
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("prompt")).toBe("consent");
-    const r = await gmail.finishOAuth("code123", url.searchParams.get("state")!, g.fetchImpl);
+    const r = await gmail.finishOAuth("code123", url.searchParams.get("state")!, OWNER, g.fetchImpl);
     expect(r).toMatchObject({ owner: OWNER, email: "micheal@gmail.com", redirectTo: "/app/connections" });
     const conn = await store.getConnection<gmail.GmailConn>(OWNER, "gmail");
     expect(conn?.label).toBe("micheal@gmail.com");
@@ -43,7 +43,7 @@ describe("gmail connection", () => {
   it("a consent without the Gmail box ticked is refused with advice", async () => {
     const g = fakeGoogle();
     const url = new URL(await gmail.beginOAuth("0x00000000000000000000000000000000000000f2", "https://moonlet.16labs.xyz/cb", "/app"));
-    await expect(gmail.finishOAuth("nogmail", url.searchParams.get("state")!, g.fetchImpl)).rejects.toThrow(/Tick the Gmail box/);
+    await expect(gmail.finishOAuth("nogmail", url.searchParams.get("state")!, "0x00000000000000000000000000000000000000f2", g.fetchImpl)).rejects.toThrow(/Tick the Gmail box/);
     expect(await store.getConnection("0x00000000000000000000000000000000000000f2", "gmail")).toBeNull();
   });
 

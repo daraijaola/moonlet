@@ -30,9 +30,9 @@ export async function beginOAuth(owner: string, redirectUri: string, redirectTo:
 
 type TokenResponse = { access_token?: string; refresh_token?: string; expires_in?: number; scope?: string; error?: string; error_description?: string };
 
-export async function finishOAuth(code: string, state: string, fetchImpl: typeof fetch = fetch) {
-  const saved = await store.takeOauthState(state);
-  if (!saved) throw new Error("state expired");
+export async function finishOAuth(code: string, state: string, sessionOwner: string | null, fetchImpl: typeof fetch = fetch) {
+  const saved = await store.takeOauthState(state, "gm_", sessionOwner);
+  if (!saved) throw new Error("this sign-in link is expired, already used, or was opened in a different browser than the one that started it. Start again from Connections.");
   const res = await fetchImpl("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },

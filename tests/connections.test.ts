@@ -333,13 +333,21 @@ describe("connections + proposals", () => {
       if (url.endsWith("/user")) return new Response(JSON.stringify({ login: "octo" }), { headers: { "content-type": "application/json" } });
       return new Response("nf", { status: 404 });
     };
-    const r = await gh.finishOAuth("thecode", state, f);
+    // The callback must arrive on the browser that started the flow: a forwarded link opened while signed in as someone else is refused.
+    await expect(gh.finishOAuth("thecode", state, "0x00000000000000000000000000000000000000ee", f)).rejects.toThrow(/different browser|expired/);
+    // …and that refusal burns the state, so start again.
+    const url2 = new URL(await gh.beginOAuth(OWNER, "https://moonlet.16labs.xyz/api/connections/github/callback", "/app/connections"));
+    const state2 = url2.searchParams.get("state")!;
+    const r = await gh.finishOAuth("thecode", state2, OWNER, f);
     expect(r.login).toBe("octo");
     const c = await store.getConnection<gh.GitHubConn>(OWNER, "github");
     expect(c?.data.token).toBe("gho_abc");
     expect(c?.label).toBe("@octo");
     // replaying the same state must fail
-    await expect(gh.finishOAuth("thecode", state, f)).rejects.toThrow(/state expired/);
+    await expect(gh.finishOAuth("thecode", state2, OWNER, f)).rejects.toThrow(/expired|already used/);
+    // a GitHub state cannot be redeemed as a Gmail one
+    const url3 = new URL(await gh.beginOAuth(OWNER, "https://moonlet.16labs.xyz/api/connections/github/callback", "/app/connections"));
+    expect(await store.takeOauthState(url3.searchParams.get("state")!, "gm_", OWNER)).toBeNull();
   });
 
   it("acting tools are only offered when the connection exists; deliver refuses unlinked channels", async () => {
