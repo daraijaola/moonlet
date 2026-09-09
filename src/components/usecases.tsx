@@ -5,8 +5,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { AnimatePresence, motion, useInView, useReducedMotion } from "motion/react";
 import { ArrowRight, Check, GitPullRequest, Mail, Send } from "lucide-react";
-import { GitHubMark, GmailMark, TelegramMark } from "./marks";
-import { StatusDot } from "./fuel-gauge";
+import { GitHubMark, GmailMark, OrbioMark, TelegramMark } from "./marks";
 
 /**
  * Three jobs people actually hand off, each shown as a small scripted scene inside a comic panel:
@@ -71,7 +70,7 @@ function WatchScene({ on }: { on: boolean }) {
       <div className="flex items-center gap-2.5">
         <span className="relative shrink-0">
           <Image src="/avatars/v2/5.png" alt="" width={34} height={34} className="rounded-full" />
-          <span className="absolute -bottom-px -right-px"><StatusDot tone="green" pulse={step >= 1 && step < 3} /></span>
+          <span className="absolute -bottom-0.5 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white ring-1 ring-ink/[0.08]"><OrbioMark size={10} /></span>
         </span>
         <div className="min-w-0">
           <p className="text-[14px] font-semibold tracking-[-0.01em] text-ink">Sentry <span className="ml-1 text-[11.5px] font-normal text-ink-faint">ORBIO / RH watch · every 12h</span></p>
@@ -224,7 +223,7 @@ function RepoScene({ on }: { on: boolean }) {
       <div className="flex items-center gap-2.5">
         <span className="relative shrink-0">
           <Image src="/avatars/v2/4.png" alt="" width={34} height={34} className="rounded-full" />
-          <span className="absolute -bottom-px -right-px"><StatusDot tone="green" pulse={step >= 1 && step < 4} /></span>
+          <span className="absolute -bottom-0.5 -right-1 inline-flex h-4 w-4 items-center justify-center rounded-full bg-white ring-1 ring-ink/[0.08]"><GitHubMark size={10} /></span>
         </span>
         <div className="min-w-0">
           <p className="text-[14px] font-semibold tracking-[-0.01em] text-ink">Scribe <span className="ml-1 text-[11.5px] font-normal text-ink-faint">Repo watch · nightly</span></p>
