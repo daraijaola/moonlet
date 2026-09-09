@@ -631,6 +631,13 @@ export async function getProposal(id: string) {
   return r.rows[0] ? rowToProposal(r.rows[0] as Record<string, unknown>) : null;
 }
 
+/** Withdraw every pending draft of one moonlet; returns how many. */
+export async function rejectPendingProposals(moonletId: string) {
+  await migrate();
+  const r = await db().execute({ sql: `UPDATE proposals SET status='rejected', decided_at=? WHERE moonlet_id=? AND status='pending'`, args: [Date.now(), moonletId] });
+  return r.rowsAffected;
+}
+
 export async function listProposals(owner: string, status?: ProposalStatus, limit = 50) {
   await migrate();
   const r = status

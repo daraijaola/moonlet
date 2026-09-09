@@ -86,12 +86,14 @@ describe("a moonlet spawns a moonlet", () => {
     expect(await store.listMoonlets(OWNER)).toHaveLength(2);
   });
 
-  it("autopilot spawns without asking", async () => {
+  it("spawns always ask, even on autopilot (autopilot covers the moonlet's own actions, not new moonlets)", async () => {
     const p = await parent();
     const built = buildTools(["spawn_moonlet"], { delivery: {}, fetch: noNet, propose: { owner: OWNER, moonletId: p.id, moonletName: p.name, runId: null, autopilot: true }, compile: async (i) => fallbackSpec(i) });
     const r = await call(built.tools[0], { sentence: "digest orbio.so/build every morning", template: "digest", name: "Morning", reason: "the owner keeps asking about it in reports" });
-    expect(r.executed).toBe(true);
-    expect((await store.listMoonlets(OWNER)).map((m) => m.name).sort()).toEqual(["Morning", "Sentry", "Shadow"]);
+    expect(r.executed).toBeUndefined();
+    expect(r.proposed).toBe(true);
+    expect((await store.listMoonlets(OWNER)).map((m) => m.name).sort()).toEqual(["Sentry", "Shadow"]);
+    expect((await store.listProposals(OWNER, "pending")).some((x) => x.kind === "spawn_moonlet" && x.moonletId === p.id)).toBe(true);
   });
 
   it("the per-wallet cap holds, with a plain reason", async () => {

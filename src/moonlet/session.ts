@@ -11,7 +11,11 @@ export const COOKIE = "moonlet_session";
 const TTL_MS = 30 * 24 * 3600_000;
 
 function secret() {
-  return process.env.SECRET_KEY ?? "moonlet-dev-only-not-secret";
+  const k = process.env.SECRET_KEY;
+  if (k) return k;
+  // A production process without its signing secret must not mint or accept sessions; a known fallback is for local development only.
+  if (process.env.NODE_ENV === "production") throw new Error("SECRET_KEY is not set");
+  return "moonlet-dev-only-not-secret";
 }
 
 export function newNonce() {

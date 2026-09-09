@@ -1,6 +1,7 @@
 import { ImageResponse } from "next/og";
 import { TEMPLATE_LABEL } from "@/components/labels";
 import * as store from "@/moonlet/store";
+import { isPrivateSpec, PRIVATE_OBJECTIVE } from "@/moonlet/privacy";
 import { fmtBag, shortAddr } from "@/lib/api";
 
 export const size = { width: 1200, height: 630 };
@@ -11,7 +12,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
   const m = await store.getMoonlet(id);
   const owner = m ? await store.getOwner(m.owner) : null;
   const name = m?.name ?? "moonlet";
-  const job = m?.spec.objective ?? "Your bag runs an agent.";
+  const job = m ? (isPrivateSpec(m.spec) ? PRIVATE_OBJECTIVE : m.spec.objective) : "Your bag runs an agent.";
   const meta = m ? `${TEMPLATE_LABEL[m.spec.template]} · orbits ${shortAddr(m.owner)}${owner ? ` · ${fmtBag(owner.bag)} $ORBIO` : ""}` : "";
   const alive = m ? m.status === "running" || m.status === "idle" : false;
 

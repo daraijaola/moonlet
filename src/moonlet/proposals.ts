@@ -75,7 +75,8 @@ export async function propose(input: ProposalInput, ctx: ProposeCtx) {
   const id = store.newId("p");
   await store.insertProposal({ id, owner: ctx.owner, moonletId: ctx.moonletId, runId: ctx.runId, kind: input.kind, payload });
 
-  if (ctx.autopilot) {
+  // Autopilot covers the moonlet's own actions; bringing a new moonlet into the world always asks the owner.
+  if (ctx.autopilot && input.kind !== "spawn_moonlet") {
     if (!(await store.decideProposal(id, "approved"))) return { proposalId: id, status: "pending" as const };
     const r = await execute(id, ctx.fetch);
     return { proposalId: id, status: r.status, result: r.result };
