@@ -55,3 +55,29 @@ describe("privacy", () => {
     expect(market.spec.objective).toBe(inbox.objective);
   });
 });
+
+describe("a report id from the client never crosses owners", () => {
+  it("followup on my moonlet with someone else's run id sees my latest run, not theirs", async () => {
+    rmSync("/tmp/moonlet-privacy2.db", { force: true });
+    process.env.DATABASE_URL = "file:/tmp/moonlet-privacy2.db";
+    process.env.SECRET_KEY = "test";
+    await store.migrate();
+    const now = Date.now();
+    const A = "0x00000000000000000000000000000000000000aa", B = "0x00000000000000000000000000000000000000bb";
+    await store.insertMoonlet({ id: "m_a", owner: A, name: "Postie", spec: inbox, status: "idle", delivery: {}, key: { key: "sk-orbio-a", limitUsd: 1, spentUsd: 0 }, cadence: "24h", perRunCapUsd: 0.02, earnPerDayUsd: 1, burnPerDayUsd: 0.02, nextRunAt: now, createdAt: now });
+    await store.insertMoonlet({ id: "m_b", owner: B, name: "Mine", spec: { ...inbox, tools: ["token_market", "deliver"] }, status: "idle", delivery: {}, key: { key: "sk-orbio-b", limitUsd: 1, spentUsd: 0 }, cadence: "24h", perRunCapUsd: 0.02, earnPerDayUsd: 1, burnPerDayUsd: 0.02, nextRunAt: now, createdAt: now });
+    await store.insertRun({ ...run, id: "run_secret", moonletId: "m_a", private: true, summary: "SECRET-LEASE-DETAILS from Jane" });
+    await store.insertRun({ ...run, id: "run_mine", moonletId: "m_b", private: false, title: "ORBIO steady", summary: "Nothing moved.", body: "", sections: [], calls: [] });
+    // Capture what the model is given instead of calling one: the gateway fake echoes the prompt back.
+    let prompt = "";
+    const fake = (async (_u: string | URL | Request, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as { messages: Array<{ role: string; content: string }> };
+      prompt = body.messages.map((mm) => (typeof mm.content === "string" ? mm.content : JSON.stringify(mm.content))).join("\n");
+      return new Response(JSON.stringify({ choices: [{ message: { content: "ok" } }], usage: { cost: 0 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    const { followup } = await import("@/moonlet/followup");
+    await followup({ moonletId: "m_b", owner: B, text: "what did that report say?", runId: "run_secret", fetch: fake });
+    expect(prompt).not.toMatch(/SECRET-LEASE-DETAILS/);
+    expect(prompt).toMatch(/ORBIO steady/);
+  });
+});

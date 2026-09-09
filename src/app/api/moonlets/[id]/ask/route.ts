@@ -15,8 +15,10 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!m || m.owner !== owner) return bad("not found", 404);
   const body = Body.safeParse(await req.json().catch(() => null));
   if (!body.success) return bad("text required");
-  const reply = await followup({ moonletId: id, owner, text: body.data.text, runId: body.data.runId ?? null, history: body.data.history });
-  await store.saveAsk({ moonletId: id, owner, runId: body.data.runId ?? null, q: body.data.text, a: reply }).catch((e) => console.error("saveAsk", (e as Error).message));
+  // The run the question refers to must be one of this moonlet's; a foreign id is dropped, never looked up.
+  const runId = body.data.runId && (await store.getRun(body.data.runId))?.moonletId === id ? body.data.runId : null;
+  const reply = await followup({ moonletId: id, owner, text: body.data.text, runId, history: body.data.history });
+  await store.saveAsk({ moonletId: id, owner, runId, q: body.data.text, a: reply }).catch((e) => console.error("saveAsk", (e as Error).message));
   return NextResponse.json({ reply });
 }
 
