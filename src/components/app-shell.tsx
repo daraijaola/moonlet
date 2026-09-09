@@ -8,7 +8,6 @@ import { fmtBag, shortAddr, timeUntil, type ApiMoonlet } from "@/lib/api";
 import { AppDataProvider, useAppData } from "@/lib/app-data";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
-import { TEMPLATE_LABEL } from "./labels";
 import { Orbit, Rocket, Cable, Telescope, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, Link as LinkIcon, Hash, ExternalLink, type LucideIcon } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
@@ -16,10 +15,10 @@ import type { OrbioStatus } from "@/lib/api";
 
 const NAV: Array<{ href: string; label: string; icon: LucideIcon; match: (p: string) => boolean }> = [
   { href: "/app", label: "Moonlets", icon: Orbit, match: (p) => p === "/app" },
-  { href: "/app/new", label: "Launch", icon: Rocket, match: (p) => p.startsWith("/app/new") },
   { href: "/app/connections", label: "Connections", icon: Cable, match: (p) => p.startsWith("/app/connections") },
   { href: "/sky", label: "The sky", icon: Telescope, match: (p) => p.startsWith("/sky") || p.startsWith("/s/") },
 ];
+const MOBILE_NAV = [NAV[0], { href: "/app/new", label: "Launch", icon: Rocket, match: (p: string) => p.startsWith("/app/new") }, NAV[1], NAV[2]];
 
 /**
  * Signed-in shell. Desktop: one fixed sidebar (nav, the moonlet list grouped by state, the account) and one main pane;
@@ -77,44 +76,57 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
   const params = useSearchParams();
   const selected = pathname === "/app" ? (params.get("m") ?? moonlets?.[0]?.id ?? null) : null;
   const groups = groupMoonlets(moonlets ?? []);
+  const launching = pathname.startsWith("/app/new");
   return (
     <aside className="hidden min-h-0 lg:flex lg:h-full lg:flex-col lg:border-r lg:border-ink/[0.07] lg:bg-paper">
       <div className="flex h-14 items-center px-4">
         <Link href="/app" className="inline-flex items-center gap-2">
-          <MoonletMark size={26} face="var(--cream)" />
-          <Wordmark className="text-[1.1rem] text-ink" />
+          <MoonletMark size={24} face="var(--cream)" />
+          <Wordmark className="text-[1.05rem] text-ink" />
         </Link>
       </div>
-      <nav className="px-2">
+
+      <div className="px-3">
+        <Link
+          href="/app/new"
+          className={`flex h-8 items-center gap-2 rounded-lg border px-2 text-[13px] font-medium transition-colors ${launching ? "border-ink bg-ink text-cream" : "border-ink/[0.12] bg-white text-ink shadow-[0_1px_1px_rgba(21,22,29,0.04)] hover:border-ink/[0.28]"}`}
+        >
+          <Plus size={15} strokeWidth={2} />
+          New moonlet
+        </Link>
+      </div>
+
+      <nav className="mt-3 px-3">
         {NAV.map((t) => {
           const active = t.match(pathname);
           return (
-            <Link key={t.href} href={t.href} className={`flex items-center gap-2.5 rounded-md px-2.5 py-[7px] text-[13px] transition-colors ${active ? "bg-ink/[0.06] font-medium text-ink" : "text-ink-soft hover:bg-ink/[0.04] hover:text-ink"}`}>
-              <t.icon size={16} strokeWidth={1.75} className={active ? "text-ink" : "text-ink-soft"} />
+            <Link key={t.href} href={t.href} className={`flex h-8 items-center gap-2.5 rounded-lg px-2 text-[13px] transition-colors ${active ? "bg-ink/[0.06] font-medium text-ink" : "text-ink-soft hover:bg-ink/[0.04] hover:text-ink"}`}>
+              <t.icon size={16} strokeWidth={1.75} className={active ? "text-ink" : "text-ink-faint"} />
               {t.label}
             </Link>
           );
         })}
       </nav>
 
-      <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-2 pb-3 [scrollbar-width:thin]">
-        <div className="flex items-center justify-between px-2.5 pb-1.5">
-          <span className="text-[12px] font-medium text-ink-soft">Moonlets{moonlets ? ` · ${moonlets.length}` : ""}</span>
-          <Link href="/app/new" className="inline-flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-colors hover:bg-ink/[0.05] hover:text-ink" title="Launch a moonlet"><Plus size={14} strokeWidth={2} /></Link>
+      <div className="relative mt-5 min-h-0 flex-1">
+        <div className="h-full overflow-y-auto px-3 pb-6 [scrollbar-width:thin] [mask-image:linear-gradient(to_bottom,black_calc(100%-24px),transparent)]">
+          {moonlets && moonlets.length === 0 && <p className="px-2 py-1.5 text-[12.5px] leading-[1.5] text-ink-faint">Nothing in orbit yet.</p>}
+          {groups.map(([label, items], gi) => (
+            <div key={label} className={gi === 0 ? "" : "mt-3"}>
+              <p className="flex h-7 items-center justify-between px-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">
+                <span>{groups.length > 1 || label !== "Scheduled" ? label : "Moonlets"}</span>
+                <span className="tabular-nums">{items.length}</span>
+              </p>
+              <ul>
+                {items.map((m) => (
+                  <li key={m.id}>
+                    <MoonletRow m={m} active={m.id === selected} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
         </div>
-        {moonlets && moonlets.length === 0 && <p className="px-2.5 py-2 text-[12.5px] leading-[1.5] text-ink-faint">Nothing in orbit yet.</p>}
-        {groups.map(([label, items]) => (
-          <div key={label} className="mb-3">
-            <p className="px-2.5 pb-1 pt-1 text-[11.5px] font-medium text-ink-faint">{label} <span className="ml-0.5 tabular-nums">{items.length}</span></p>
-            <ul className="space-y-0.5">
-              {items.map((m) => (
-                <li key={m.id}>
-                  <MoonletRow m={m} active={m.id === selected} />
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
       </div>
 
       <div className="border-t border-ink/[0.07] p-2">
@@ -128,7 +140,7 @@ function groupMoonlets(all: ApiMoonlet[]): Array<[string, ApiMoonlet[]]> {
   const by = (f: (m: ApiMoonlet) => boolean) => all.filter(f);
   return (
     [
-      ["Running", by((m) => m.status === "running")],
+      ["Working", by((m) => m.status === "running")],
       ["Scheduled", by((m) => m.status === "idle")],
       ["Paused", by((m) => m.status === "paused")],
       ["Quiet", by((m) => m.status === "quiet")],
@@ -141,7 +153,7 @@ export function MobileTabs({ pathname }: { pathname: string }) {
   return (
     <nav aria-label="App" className="fixed inset-x-0 bottom-0 z-30 border-t border-ink/10 bg-cream/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
       <ul className="mx-auto grid max-w-[640px] grid-cols-4">
-        {NAV.map((t) => {
+        {MOBILE_NAV.map((t) => {
           const active = t.href === "/app" ? pathname.startsWith("/app") && !pathname.startsWith("/app/connections") && !pathname.startsWith("/app/new") : t.match(pathname);
           return (
             <li key={t.href}>
@@ -244,17 +256,15 @@ function AccountMenu({ address, status, onDisconnect }: { address: string; statu
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="menu"
         aria-expanded={open}
-        className={`flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-left transition-colors ${open ? "bg-ink/[0.06]" : "hover:bg-ink/[0.05]"}`}
+        className={`flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left transition-colors ${open ? "bg-ink/[0.06]" : "hover:bg-ink/[0.05]"}`}
       >
         <span className="relative shrink-0">
-          <Profile n={status?.avatar} size={30} />
-          <span className={`absolute -bottom-px -right-px h-2.5 w-2.5 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
+          <Profile n={status?.avatar} size={22} />
+          <span className={`absolute -bottom-px -right-px h-2 w-2 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</span>
-          <span className="block truncate text-[11.5px] text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO` : "…"}</span>
-        </span>
-        <ChevronsUpDown size={14} strokeWidth={1.75} className="shrink-0 text-ink-faint" />
+        <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</span>
+        {status && <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">{fmtBag(status.bag)}</span>}
+        <ChevronsUpDown size={13} strokeWidth={1.75} className="shrink-0 text-ink-faint" />
       </button>
     </div>
   );
@@ -309,24 +319,23 @@ function MoonletRow({ m, active }: { m: ApiMoonlet; active: boolean }) {
       <Link
         href={`/app?m=${m.id}`}
         onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
-        className={`group flex items-center gap-2.5 rounded-md px-2 py-1.5 ${active ? "bg-ink/[0.06]" : "hover:bg-ink/[0.04]"}`}
+        className={`group flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] ${active ? "bg-ink/[0.06] text-ink" : "text-ink-soft hover:bg-ink/[0.04] hover:text-ink"}`}
       >
-        <span className="relative shrink-0">
-          <Avatar n={m.avatar} size={28} />
-          <span className={`absolute -bottom-px -right-px h-2 w-2 rounded-full ring-2 ring-paper ${m.status === "running" ? "bg-gold" : m.status === "idle" ? "bg-moss" : "bg-ink-faint"}`} />
+        <Avatar n={m.avatar} size={20} className={active ? "" : "opacity-90"} />
+        <span className={`min-w-0 flex-1 truncate ${active ? "font-medium" : ""}`}>{m.name}</span>
+        <span className="relative flex h-5 w-8 shrink-0 items-center justify-end">
+          <span className={`font-mono text-[10.5px] tabular-nums text-ink-faint transition-opacity ${menu ? "opacity-0" : "group-hover:opacity-0"}`}>
+            {m.status === "running" ? <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-gold" /> : m.status === "idle" ? timeUntil(m.nextRunAt).replace(/^in /, "") : m.status === "quiet" ? <span className="inline-block h-1.5 w-1.5 rounded-full border border-gold" /> : <span className="inline-block h-1.5 w-1.5 rounded-full border border-ink-faint" />}
+          </span>
+          <button
+            type="button"
+            aria-label="More"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ x: r.right, y: r.bottom + 4 }); }}
+            className={`absolute right-0 inline-flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-opacity hover:bg-ink/[0.06] hover:text-ink ${menu ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+          >
+            <Ellipsis size={14} strokeWidth={1.75} />
+          </button>
         </span>
-        <span className="min-w-0 flex-1">
-          <span className="block truncate text-[13.5px] font-medium text-ink">{m.name}</span>
-          <span className="block truncate text-[11.5px] text-ink-faint">{TEMPLATE_LABEL[m.spec.template]} · {m.status === "running" ? "running" : m.status === "paused" ? "paused" : m.status === "quiet" ? "quiet" : timeUntil(m.nextRunAt)}</span>
-        </span>
-        <button
-          type="button"
-          aria-label="More"
-          onClick={(e) => { e.preventDefault(); e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ x: r.right, y: r.bottom + 4 }); }}
-          className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-ink-faint transition-opacity hover:bg-ink/[0.06] hover:text-ink ${menu ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
-        >
-          <Ellipsis size={14} strokeWidth={1.75} />
-        </button>
       </Link>
       {menu && (
         <div role="menu" onMouseDown={(e) => e.stopPropagation()} className="ui-in fixed z-50 min-w-[200px] rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]" style={{ left: Math.min(menu.x, window.innerWidth - 216), top: Math.min(menu.y, window.innerHeight - 200) }}>
