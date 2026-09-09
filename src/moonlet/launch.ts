@@ -23,7 +23,7 @@ export async function launchMoonlet(owner: string, spec: JobSpec, opts: LaunchOp
   const p = plan(spec, bag);
   const id = store.newId("m");
   const now = Date.now();
-  await store.insertMoonlet({
+  const inserted = await store.insertMoonlet({
     id,
     owner,
     name: spec.name,
@@ -39,7 +39,8 @@ export async function launchMoonlet(owner: string, spec: JobSpec, opts: LaunchOp
     burnPerDayUsd: p.burnPerDayUsd,
     nextRunAt: now,
     createdAt: now,
-  });
+  }, { maxPerOwner: MAX_MOONLETS });
+  if (!inserted) return { ok: false as const, error: `you already have ${MAX_MOONLETS} moonlets, the most one wallet can run; retire one first` };
 
   let firstRunStarted = false;
   if (opts.runNow !== false && !p.quiet && (await store.claimForRun(id, now))) {

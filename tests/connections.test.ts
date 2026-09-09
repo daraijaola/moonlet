@@ -430,15 +430,36 @@ describe("approval cards show what will really happen", () => {
     const { describe: describeCard, propose } = await import("@/moonlet/proposals");
     const card = describeCard("email_send", { mail: { to: "yash@orbio.so", cc: "dara@16labs.xyz", subject: "Re: demo", body: "Thursday works." } });
     expect(card.body).toMatch(/^To: yash@orbio.so\nCc: dara@16labs.xyz\nSubject: Re: demo/);
-    process.env.DATABASE_URL = "file:/tmp/moonlet-cards.db";
-    process.env.SECRET_KEY = "test";
-    const store = await import("@/moonlet/store");
     const O = "0x00000000000000000000000000000000000000cc";
-    await store.migrate();
     await store.setConnection(O, "gmail", "me@gmail.com", { email: "me@gmail.com", refreshToken: "r", accessToken: "a", expiresAt: Date.now() + 3_600_000 });
     const r = await propose({ kind: "email_send", mail: { to: "yash@orbio.so\r\nBcc: thief@evil.io", subject: "Re: demo", body: "x" } }, { owner: O, moonletId: "m_x", moonletName: "X", runId: null, autopilot: false });
     expect(r.status).toBe("failed");
     expect(String((r.result as { error?: string })?.error)).toMatch(/invalid address|line break/);
     expect(await store.listProposals(O, "pending")).toHaveLength(0);
+  });
+});
+
+describe("an approval acts once, and a provider that goes quiet is reported as uncertain, not retried", () => {
+  it("two approvals of the same draft execute one action; a timeout leaves the draft 'uncertain'", async () => {
+    const { propose, decide } = await import("@/moonlet/proposals");
+    await store.setConnection(OWNER, "github", "@dara", { token: "ghp_test", login: "dara" });
+    let posts = 0;
+    const slowGh: typeof fetch = async (i, init) => {
+      if (String(i).endsWith("/repos/dara/moonlet/issues") && init?.method === "POST") { posts++; await new Promise((r) => setTimeout(r, 150)); return new Response(JSON.stringify({ html_url: "https://github.com/dara/moonlet/issues/9", number: 9 }), { status: 201 }); }
+      return new Response("{}", { status: 404 });
+    };
+    const r = await propose({ kind: "issue_create", repo: "dara/moonlet", title: "Race", body: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: slowGh });
+    const [a, b] = await Promise.all([decide(r.proposalId!, "approve", slowGh), decide(r.proposalId!, "approve", slowGh)]);
+    expect([a, b].filter((x) => x.ok && x.status === "executed")).toHaveLength(1);
+    expect(posts).toBe(1);
+
+    const hang: typeof fetch = async () => { throw new Error("The operation was aborted due to timeout"); };
+    const r2 = await propose({ kind: "issue_create", repo: "dara/moonlet", title: "Hang", body: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: hang });
+    const d = await decide(r2.proposalId!, "approve", hang);
+    expect(d.ok && d.status).toBe("uncertain");
+    expect((await store.getProposal(r2.proposalId!))!.status).toBe("uncertain");
+    // and it cannot be approved again by accident
+    const again = await decide(r2.proposalId!, "approve", hang);
+    expect(again.ok).toBe(false);
   });
 });

@@ -58,6 +58,8 @@ export type RunLoopOptions = {
   appUrl?: string;
   /** Called after each local tool call. */
   onTool?: (name: string, args: unknown, result: unknown) => void;
+  /** Called after every paid model call with its cost, so spend is known even if the loop later throws. */
+  onSpend?: (costUsd: number) => void;
 };
 
 export type RunLoopResult = { text: string; costUsd: number; modelCalls: number; model: string; stoppedForBudget: boolean };
@@ -130,6 +132,7 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
     calls++;
     lastCallCost = j.usage?.cost ?? 0;
     cost += lastCallCost;
+    o.onSpend?.(lastCallCost);
     promptTokens = j.usage?.prompt_tokens ?? 0;
     perTokenUsd = promptTokens + (j.usage?.completion_tokens ?? 0) > 0 ? lastCallCost / (promptTokens + (j.usage?.completion_tokens ?? 0)) : 0;
     const msg = j.choices?.[0]?.message;

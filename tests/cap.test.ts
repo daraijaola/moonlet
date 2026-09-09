@@ -32,3 +32,18 @@ describe("spend cap", () => {
     expect(r.costUsd).toBeLessThan(0.5 * 1.1);
   });
 });
+
+describe("spend survives a failed loop", () => {
+  it("a paid call followed by a provider error still reports its cost and call count", async () => {
+    let n = 0;
+    const gateway = (async () => {
+      n++;
+      if (n <= 2) return new Response(JSON.stringify({ choices: [{ message: { content: null, tool_calls: [{ id: `c${n}`, type: "function", function: { name: "big_read", arguments: "{}" } }] } }], usage: { cost: 0.004, prompt_tokens: 100, completion_tokens: 20 } }), { status: 200, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ error: { message: "invalid key", code: 401 } }), { status: 401, headers: { "content-type": "application/json" } });
+    }) as typeof fetch;
+    let seen = 0, calls = 0;
+    await expect(runLoop({ key: "k", model: "fake", instructions: "x", input: "run", tools: [bigRead], maxCostUsd: 0.5, maxSteps: 8, fetch: gateway, onSpend: (c) => { seen += c; calls++; } })).rejects.toThrow(/invalid key/);
+    expect(calls).toBe(2);
+    expect(seen).toBeCloseTo(0.008, 6);
+  });
+});

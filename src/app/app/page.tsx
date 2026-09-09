@@ -119,6 +119,8 @@ function Queue({ owner }: { owner: string }) {
                   setBusy(p.id);
                   const r = await api.decide(owner, p.id, "approve").catch(() => null);
                   if (r?.status === "executed") setNote("Done. It will ask again next time; turn on Autopilot in the overview to let it act on its own.");
+                  else if (r?.status === "uncertain") setNote("Approved, but the provider didn't answer in time. It may have gone through; check there before approving it again.");
+                  else if (r?.status === "failed") setNote(`Approved, but it failed: ${String((r.result as { error?: string } | undefined)?.error ?? "unknown")}`);
                   await load();
                   setBusy(null);
                 }}

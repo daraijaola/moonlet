@@ -110,3 +110,13 @@ describe("a moonlet spawns a moonlet", () => {
     expect(familyNote([sib(0.02), sib(0.02)], 0.02, 0.035)).toMatch(/3 moonlets can spend up to about \$0\.060\/day against the \$0\.030\/day/);
   });
 });
+
+describe("the per-wallet cap holds under a race", () => {
+  it("six launches at once with room for one create exactly one", async () => {
+    const O = "0x00000000000000000000000000000000000000d7";
+    for (let i = 0; i < MAX_MOONLETS - 1; i++) expect((await launchMoonlet(O, { ...parentSpec, name: `Pre${i}` }, { runNow: false, fetch: noNet })).ok).toBe(true);
+    const results = await Promise.all(Array.from({ length: 6 }, (_, i) => launchMoonlet(O, { ...parentSpec, name: `Race${i}` }, { runNow: false, fetch: noNet })));
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect((await store.listMoonlets(O)).length).toBe(MAX_MOONLETS);
+  });
+});

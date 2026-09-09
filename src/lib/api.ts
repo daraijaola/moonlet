@@ -70,7 +70,7 @@ export type Proposal = {
   id: string;
   moonletId: string;
   kind: "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create";
-  status: "pending" | "approved" | "rejected" | "executed" | "failed";
+  status: "pending" | "approved" | "executing" | "rejected" | "executed" | "failed" | "uncertain";
   title: string;
   body: string;
   result: Record<string, unknown> | null;

@@ -189,9 +189,14 @@ export async function decide(id: string, action: "approve" | "reject", fetchImpl
   return { ok: true as const, status: r.status, result: r.result, autopilotOn: false };
 }
 
-async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ status: "executed" | "failed"; result: Record<string, unknown> }> {
+/** Errors after the request may have left the provider: the action might have happened. Never retried blindly; the owner checks. */
+const maybeHappened = (e: unknown) => /timeout|timed out|aborted|econnreset|socket hang up|fetch failed|network/i.test(String((e as Error)?.message ?? e));
+
+async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ status: "executed" | "failed" | "uncertain"; result: Record<string, unknown> }> {
   const p = await store.getProposal(id);
   if (!p) return { status: "failed", result: { error: "not found" } };
+  // Intent is on record (status executing) before any effect; a second caller finds no approved row to lease and does nothing.
+  if (!(await store.leaseProposal(id))) return { status: "failed", result: { error: `already ${p.status}` } };
   try {
     let result: Record<string, unknown>;
     if (p.kind === "tweet") {
@@ -228,6 +233,11 @@ async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ s
     await store.finishProposal(id, "executed", result);
     return { status: "executed", result };
   } catch (e) {
+    if (maybeHappened(e)) {
+      const result = { error: `${(e as Error).message}. The request may have reached the provider; check there before asking again. Nothing was retried.` };
+      await store.finishProposal(id, "uncertain", result);
+      return { status: "uncertain", result };
+    }
     const result = { error: (e as Error).message };
     await store.finishProposal(id, "failed", result);
     return { status: "failed", result };
@@ -252,5 +262,6 @@ export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
     if (p.kind === "email_organize") return `<b>${tg.esc(d.title)}</b>\n\n✓ Done in your Gmail.${note}`;
     return `<b>${tg.esc(d.title)}</b>\n\n✓ Done.${url ? ` ${tg.esc(url)}` : ""}${note}`;
   }
+  if (r.status === "uncertain") return `<b>${tg.esc(d.title)}</b>\n\n⚠ Approved, but the provider didn't answer in time. It may have gone through; check there before approving again. ${tg.esc(String((r.result as { error?: string })?.error ?? ""))}`;
   return `<b>${tg.esc(d.title)}</b>\n\n⚠ Approved, but it failed: ${tg.esc(String((r.result as { error?: string })?.error ?? "unknown"))}`;
 };

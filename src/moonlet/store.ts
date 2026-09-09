@@ -337,17 +337,24 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
   };
 }
 
-export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses" | "watch" | "avatar"> & { autopilot?: boolean; parentId?: string | null; avatar?: number }) {
+/** Insert a moonlet. With `maxPerOwner`, the count check and the insert are one statement, so two launches racing at the cap cannot both land. Returns false when the cap held. */
+export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses" | "watch" | "avatar"> & { autopilot?: boolean; parentId?: string | null; avatar?: number }, opts: { maxPerOwner?: number } = {}) {
   await migrate();
-  await db().execute({
-    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id,avatar)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    args: [
-      m.id, m.owner.toLowerCase(), m.name, JSON.stringify(m.spec), m.status, JSON.stringify(m.delivery), m.autopilot ? 1 : 0,
-      m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt, m.parentId ?? null,
-      m.avatar ?? 1 + Math.floor(Math.random() * AVATAR_COUNT),
-    ],
+  const args = [
+    m.id, m.owner.toLowerCase(), m.name, JSON.stringify(m.spec), m.status, JSON.stringify(m.delivery), m.autopilot ? 1 : 0,
+    m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt, m.parentId ?? null,
+    m.avatar ?? 1 + Math.floor(Math.random() * AVATAR_COUNT),
+  ];
+  const cols = `id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id,avatar`;
+  if (opts.maxPerOwner == null) {
+    await db().execute({ sql: `INSERT INTO moonlets(${cols}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args });
+    return true;
+  }
+  const r = await db().execute({
+    sql: `INSERT INTO moonlets(${cols}) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM moonlets WHERE owner=? AND status != 'deleted') < ?`,
+    args: [...args, m.owner.toLowerCase(), opts.maxPerOwner],
   });
+  return r.rowsAffected === 1;
 }
 
 export async function getMoonlet(id: string) {
@@ -619,7 +626,7 @@ export async function takeLinkCode(code: string) {
 // ---- proposals (draft → approve → act) --------------------------------------
 
 export type ProposalKind = "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create";
-export type ProposalStatus = "pending" | "approved" | "rejected" | "executed" | "failed";
+export type ProposalStatus = "pending" | "approved" | "executing" | "rejected" | "executed" | "failed" | "uncertain";
 export type ProposalRow = {
   id: string;
   owner: string;
@@ -685,8 +692,14 @@ export async function decideProposal(id: string, status: "approved" | "rejected"
   return r.rowsAffected === 1;
 }
 
-export async function finishProposal(id: string, status: "executed" | "failed", result: Record<string, unknown>) {
-  await db().execute({ sql: `UPDATE proposals SET status=?, result=? WHERE id=?`, args: [status, JSON.stringify(result), id] });
+/** Take the execution lease: only one caller moves approved → executing, so a double tap or two ticks cannot act twice. */
+export async function leaseProposal(id: string) {
+  const r = await db().execute({ sql: `UPDATE proposals SET status='executing' WHERE id=? AND status='approved'`, args: [id] });
+  return r.rowsAffected === 1;
+}
+
+export async function finishProposal(id: string, status: "executed" | "failed" | "uncertain", result: Record<string, unknown>) {
+  await db().execute({ sql: `UPDATE proposals SET status=?, result=? WHERE id=? AND status='executing'`, args: [status, JSON.stringify(result), id] });
 }
 
 /** Remember which Telegram message carried which report, so a reply can be routed to it. */
