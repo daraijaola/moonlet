@@ -131,6 +131,9 @@ export function migrate() {
         `CREATE TABLE IF NOT EXISTS oauth_states (
           state TEXT PRIMARY KEY, address TEXT NOT NULL, verifier TEXT NOT NULL, client_id TEXT NOT NULL, redirect_to TEXT NOT NULL, created_at INTEGER NOT NULL
         )`,
+        `CREATE TABLE IF NOT EXISTS nonces (
+          nonce TEXT PRIMARY KEY, address TEXT NOT NULL, message TEXT NOT NULL, expires_at INTEGER NOT NULL
+        )`,
         `CREATE TABLE IF NOT EXISTS oauth_clients (
           redirect_uri TEXT PRIMARY KEY, client_id TEXT NOT NULL, created_at INTEGER NOT NULL
         )`,
@@ -234,6 +237,23 @@ export async function setOwnerBag(address: string, bag: number) {
 
 export async function clearOwnerOrbio(address: string) {
   await db().execute({ sql: `UPDATE owners SET orbio_access_token=NULL, orbio_refresh_token=NULL, orbio_expires_at=NULL WHERE address=?`, args: [address.toLowerCase()] });
+}
+
+// ---- sign-in nonces -------------------------------------------------------
+
+/** A nonce is minted with the exact message the wallet must sign; redeeming it returns that message once, then it is gone. */
+export async function saveNonce(nonce: string, address: string, message: string, ttlMs = 10 * 60_000) {
+  await migrate();
+  await db().execute({ sql: `INSERT INTO nonces(nonce,address,message,expires_at) VALUES(?,?,?,?)`, args: [nonce, address.toLowerCase(), message, Date.now() + ttlMs] });
+  await db().execute({ sql: `DELETE FROM nonces WHERE expires_at < ?`, args: [Date.now()] });
+}
+export async function takeNonce(nonce: string): Promise<{ address: string; message: string } | null> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM nonces WHERE nonce=?`, args: [nonce] });
+  const row = r.rows[0];
+  const del = await db().execute({ sql: `DELETE FROM nonces WHERE nonce=?`, args: [nonce] });
+  if (!row || del.rowsAffected !== 1 || Number(row.expires_at) < Date.now()) return null;
+  return { address: row.address as string, message: row.message as string };
 }
 
 // ---- oauth state -----------------------------------------------------------

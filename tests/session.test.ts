@@ -17,6 +17,20 @@ describe("siwe sessions", () => {
     expect(await verifySiwe({ message: stale, signature: await acct.signMessage({ message: stale }), address: acct.address, expectedNonce: nonce })).toBe(false);
   });
 
+  it("a signature given to another site, a malformed date, a future date or a duplicated field is refused", async () => {
+    const nonce = newNonce();
+    const sign = async (message: string) => ({ message, signature: await acct.signMessage({ message }), address: acct.address, expectedNonce: nonce });
+    const foreign = siweMessage({ domain: "evil.example", uri: "https://evil.example", address: acct.address, nonce, issuedAt: new Date().toISOString() });
+    expect(await verifySiwe({ ...(await sign(foreign)), expectedDomain: "moonlet.sky", expectedUri: "https://moonlet.sky" })).toBe(false);
+    const good = siweMessage({ domain: "moonlet.sky", uri: "https://moonlet.sky", address: acct.address, nonce, issuedAt: new Date().toISOString() });
+    expect(await verifySiwe({ ...(await sign(good)), expectedDomain: "moonlet.sky", expectedUri: "https://moonlet.sky" })).toBe(true);
+    expect(await verifySiwe(await sign(good.replace(/Issued At: .*/, "Issued At: yesterday-ish")))).toBe(false);
+    expect(await verifySiwe(await sign(good.replace(/Issued At: .*/, `Issued At: ${new Date(Date.now() + 3600_000).toISOString()}`)))).toBe(false);
+    expect(await verifySiwe(await sign(good + `\nNonce: ${nonce}`))).toBe(false);
+    expect(await verifySiwe(await sign(good.replace("Chain ID: 4663", "Chain ID: 1")))).toBe(false);
+    expect(await verifySiwe(await sign(good.replace(`\n${acct.address}\n`, `\n${acct.address}\n${acct.address}\n`)))).toBe(false);
+  });
+
   it("session tokens round-trip and reject forgery", () => {
     const t = sealSession(acct.address);
     expect(openSession(t)).toBe(acct.address.toLowerCase());
