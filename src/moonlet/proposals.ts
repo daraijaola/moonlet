@@ -59,7 +59,7 @@ async function fence(input: ProposalInput, owner: string, spec: JobSpec | null, 
     const allowed = namedAddresses(spec, gm?.data.email);
     const to = gmail.parseAddresses(input.kind === "email_send" ? input.mail.to : input.to, "To");
     const cc = input.kind === "email_send" && input.mail.cc?.trim() ? gmail.parseAddresses(input.mail.cc, "Cc") : [];
-    let participants = new Set<string>();
+    const participants = new Set<string>();
     if (input.kind === "email_send" && input.mail.threadId) {
       const { token } = await gmail.accessToken(owner, fetchImpl);
       const t = await gmail.readThread(token, input.mail.threadId, fetchImpl).catch(() => null);
