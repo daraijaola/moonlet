@@ -31,7 +31,50 @@ export type ProposalInput =
  * subject and attachment list come from the actual source message, not from the model; a bulk tidy by search is pinned to
  * the message ids it matches right now, so mail arriving after the owner approves is not swept up.
  */
-async function canonical(input: ProposalInput, owner: string, fetchImpl?: typeof fetch): Promise<Record<string, unknown>> {
+/** Addresses a job is allowed to write to on its own initiative: anything the owner named in the job, plus the owner's own mailbox. */
+function namedAddresses(spec: JobSpec | null, own: string | undefined) {
+  const text = spec ? [spec.objective, ...spec.sources, ...(spec.checks ?? [])].join(" ") : "";
+  const found = (text.toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) ?? []);
+  return new Set([...found, ...(own ? [own.toLowerCase()] : [])]);
+}
+/** Repositories a job may write to: the owner/name slugs named in its sources. */
+function namedRepos(spec: JobSpec | null) {
+  return new Set((spec?.sources ?? []).map((x) => x.replace(/^https?:\/\/github\.com\//, "").replace(/\.git$/, "").trim().toLowerCase()).filter((x) => /^[\w.-]+\/[\w.-]+$/.test(x)));
+}
+export const BULK_LIMIT = 100;
+
+/**
+ * Fences the model cannot talk its way past. They are code, not prompt: a GitHub write must target a repository the owner named
+ * in the job; a new email or a forward may only go to addresses the owner named (or the owner's own mailbox), while a reply
+ * may go to the people already on the thread it answers; a bulk tidy touches at most BULK_LIMIT messages per approval.
+ */
+async function fence(input: ProposalInput, owner: string, spec: JobSpec | null, fetchImpl?: typeof fetch) {
+  if (input.kind === "pull_request" || input.kind === "issue_create" || input.kind === "issue_comment") {
+    const repo = (input.kind === "pull_request" ? input.plan.repo : input.repo).toLowerCase();
+    const allowed = namedRepos(spec);
+    if (!allowed.has(repo)) throw new Error(`this job may only write to ${allowed.size ? [...allowed].join(", ") : "a repository the owner names in the job (none yet)"}; ${repo} is outside it`);
+  }
+  if (input.kind === "email_send" || input.kind === "email_forward") {
+    const gm = await store.getConnection<{ email: string }>(owner, "gmail");
+    const allowed = namedAddresses(spec, gm?.data.email);
+    const to = gmail.parseAddresses(input.kind === "email_send" ? input.mail.to : input.to, "To");
+    const cc = input.kind === "email_send" && input.mail.cc?.trim() ? gmail.parseAddresses(input.mail.cc, "Cc") : [];
+    let participants = new Set<string>();
+    if (input.kind === "email_send" && input.mail.threadId) {
+      const { token } = await gmail.accessToken(owner, fetchImpl);
+      const t = await gmail.readThread(token, input.mail.threadId, fetchImpl).catch(() => null);
+      if (!t) throw new Error("the thread this reply answers could not be read; not sending");
+      for (const m of t.messages) for (const a of [m.from, m.to, (m as { cc?: string }).cc ?? ""]) for (const addr of a.toLowerCase().match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/g) ?? []) participants.add(addr);
+    }
+    const outside = [...to, ...cc].filter((a) => !allowed.has(a) && !participants.has(a));
+    if (outside.length) throw new Error(`${outside.join(", ")} ${outside.length === 1 ? "is" : "are"} not on this thread and not named in the job; the owner has to add them to the job before mail can go there`);
+  }
+  if (input.kind === "email_organize" && (input.organize.messageIds?.length ?? 0) > BULK_LIMIT) throw new Error(`at most ${BULK_LIMIT} emails per approval`);
+}
+
+async function canonical(input: ProposalInput, owner: string, moonletId: string, fetchImpl?: typeof fetch): Promise<Record<string, unknown>> {
+  const spec = (await store.getMoonlet(moonletId))?.spec ?? null;
+  await fence(input, owner, spec, fetchImpl);
   if (input.kind === "email_send") {
     const m = gmail.canonicalOutgoing(input.mail);
     return { mail: { to: m.to, cc: m.cc, subject: m.subject, body: m.body, threadId: m.threadId, inReplyTo: m.inReplyTo }, recipients: [...m.toList, ...m.ccList] };
@@ -47,7 +90,7 @@ async function canonical(input: ProposalInput, owner: string, fetchImpl?: typeof
     const o = input.organize;
     if (!o.messageIds?.length && o.q) {
       const { token } = await gmail.accessToken(owner, fetchImpl);
-      const ids = await gmail.resolveQuery(token, o.q, 500, fetchImpl);
+      const ids = await gmail.resolveQuery(token, o.q, BULK_LIMIT, fetchImpl);
       return { organize: { ...o, messageIds: ids }, why: input.why, matched: ids.length };
     }
     return { organize: o, why: input.why };
@@ -100,7 +143,7 @@ export async function propose(input: ProposalInput, ctx: ProposeCtx) {
   if (needs && !(await store.getConnection(ctx.owner, needs))) return { proposalId: null, status: "failed" as const, result: { error: `${needs === "x" ? "X" : needs === "gmail" ? "Gmail" : "GitHub"} is not connected` } };
   let payload: Record<string, unknown>;
   try {
-    payload = await canonical(input, ctx.owner, ctx.fetch);
+    payload = await canonical(input, ctx.owner, ctx.moonletId, ctx.fetch);
   } catch (e) {
     return { proposalId: null, status: "failed" as const, result: { error: (e as Error).message } };
   }

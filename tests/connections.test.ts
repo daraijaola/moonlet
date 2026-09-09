@@ -60,7 +60,8 @@ beforeAll(async () => {
   rmSync("/tmp/moonlet-conn.db", { force: true });
   process.env.DATABASE_URL = "file:/tmp/moonlet-conn.db";
   await store.migrate();
-  const spec = { name: "Lumen", template: "market-watch", objective: "watch", cadence: "6h", sources: [], checks: [], tools: ["token_market", "deliver", "post_tweet"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto" } as unknown as import("@/moonlet/spec").JobSpec;
+  // The job names the repository it may write to; the fence in proposals.ts holds writes to it.
+  const spec = { name: "Lumen", template: "market-watch", objective: "watch", cadence: "6h", sources: ["dara/moonlet"], checks: [], tools: ["token_market", "deliver", "post_tweet"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto" } as unknown as import("@/moonlet/spec").JobSpec;
   await store.insertMoonlet({ id: "m1", owner: OWNER, name: "Lumen", spec, status: "idle", delivery: {}, key: null, cadence: "6h", perRunCapUsd: 0.02, earnPerDayUsd: 0.05, burnPerDayUsd: 0.02, nextRunAt: Date.now(), createdAt: Date.now() });
 });
 
@@ -223,6 +224,14 @@ describe("connections + proposals", () => {
     const r = await propose({ kind: "tweet", text: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: true, fetch: xFetch });
     expect(r.status).toBe("failed");
     expect(String((await store.getProposal(r.proposalId!))?.result?.error)).toMatch(/^X post failed: X refused \(403\): Forbidden/);
+  });
+
+  it("a GitHub write to a repository the job does not name is refused in code, whatever the model was told", async () => {
+    await store.setConnection(OWNER, "github", "@dara", { token: "ghp_test", login: "dara" });
+    const r = await propose({ kind: "issue_create", repo: "someone-else/repo", title: "hi", body: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: true });
+    expect(r.status).toBe("failed");
+    expect(String((r.result as { error?: string }).error)).toMatch(/may only write to dara\/moonlet/);
+    expect((await store.listProposals(OWNER)).some((p) => p.kind === "issue_create" && (p.payload as { repo: string }).repo === "someone-else/repo")).toBe(false);
   });
 
   it("open_issue: proposed, approved, opened on GitHub with title, body and labels", async () => {

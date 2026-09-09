@@ -161,6 +161,8 @@ describe("gmail connection", () => {
 
   it("attachments come out as files; forwarding re-attaches them and quotes the original", async () => {
     const g = fakeGoogle();
+    // The job names the accountant, so forwarding there is inside the fence.
+    await store.insertMoonlet({ id: "m_inbox", owner: OWNER, name: "Postie", spec: { name: "Postie", template: "inbox", objective: "Forward the weekly digest to accountant@firm.com", cadence: "24h", sources: [], checks: [], tools: ["gmail_read", "gmail_forward"], output: { kind: "digest", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto", tripwire: null }, status: "idle", delivery: {}, key: null, cadence: "24h", perRunCapUsd: 0.02, earnPerDayUsd: 1, burnPerDayUsd: 0.02, nextRunAt: Date.now(), createdAt: Date.now() }).catch(() => undefined);
     const saved: Array<{ name: string; mime: string; size: number; caption: string }> = [];
     const built = buildTools(["gmail_read", "gmail_forward"], {
       fetch: g.fetchImpl,
@@ -245,6 +247,25 @@ describe("gmail connection", () => {
   it("inbox markdown becomes Telegram HTML: headings bold, links clickable, angle brackets escaped", () => {
     const html = mdToHtml("## Needs you\n- **Yash** <yash@orbio.so> · Demo slot · [open](https://mail.google.com/mail/u/0/#all/t1)\n\n## Done this run\n- Archived 15 newsletters");
     expect(html).toBe('<b>Needs you</b>\n• <b>Yash</b> &lt;yash@orbio.so&gt; · Demo slot · <a href="https://mail.google.com/mail/u/0/#all/t1">open</a>\n\n<b>Done this run</b>\n• Archived 15 newsletters');
+  });
+});
+
+describe("who a job may write to is decided in code", () => {
+  it("a new email to someone the job never named is refused; a reply to a thread participant is allowed", async () => {
+    const g = fakeGoogle();
+    const { propose } = await import("@/moonlet/proposals");
+    await store.insertMoonlet({ id: "m_fence", owner: OWNER, name: "Postie", spec: { name: "Postie", template: "inbox", objective: "Brief me on what needs an answer and draft replies", cadence: "24h", sources: [], checks: [], tools: ["gmail_read", "gmail_send"], output: { kind: "digest", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto", tripwire: null }, status: "idle", delivery: {}, key: null, cadence: "24h", perRunCapUsd: 0.02, earnPerDayUsd: 1, burnPerDayUsd: 0.02, nextRunAt: Date.now(), createdAt: Date.now() }).catch(() => undefined);
+    const ctx = { owner: OWNER, moonletId: "m_fence", moonletName: "Postie", runId: null, autopilot: true, fetch: g.fetchImpl };
+    const cold = await propose({ kind: "email_send", mail: { to: "stranger@evil.io", subject: "hi", body: "x" } }, ctx);
+    expect(cold.status).toBe("failed");
+    expect(String((cold.result as { error?: string }).error)).toMatch(/not on this thread and not named in the job/);
+    const { token } = await gmail.accessToken(OWNER, g.fetchImpl);
+    const t = await gmail.readThread(token, "t1", g.fetchImpl);
+    const someone = t.messages[0].from.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)![0];
+    const reply = await propose({ kind: "email_send", mail: { to: someone, subject: "Re: hi", body: "Thursday works.", threadId: "t1", inReplyTo: "<x@y>" } }, ctx);
+    expect(["executed", "pending"]).toContain(reply.status);
+    const sneaky = await propose({ kind: "email_send", mail: { to: someone, cc: "stranger@evil.io", subject: "Re: hi", body: "x", threadId: "t1" } }, ctx);
+    expect(sneaky.status).toBe("failed");
   });
 });
 
