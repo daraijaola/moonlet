@@ -12,6 +12,8 @@ import type { Tripwire } from "./spec";
  */
 
 export const PROBE_EVERY_MS = 15 * 60_000;
+/** A trip pulls a run forward; the next trip waits this long after that run, so a busy metric can't turn an alert into a 15-minute loop. */
+export const TRIP_COOLDOWN_MS = 3 * 60 * 60_000;
 const DEXSCREENER = "https://api.dexscreener.com";
 
 /** Repo activity as one number: the newest of (last push, last issue/PR update), in ms. Public repos need no token; a connected owner's token covers private ones. */
@@ -61,6 +63,7 @@ export async function probeTripwires(now = Date.now(), fetchImpl: typeof fetch =
     const t = m.spec.tripwire;
     if (!t || m.status !== "idle" || m.nextRunAt <= now) continue;
     if (m.watch && now - m.watch.at < PROBE_EVERY_MS) continue;
+    if (m.lastRunAt && now - m.lastRunAt < TRIP_COOLDOWN_MS) continue;
     const gh = t.metric === "repo_activity" ? await store.getConnection<{ token: string }>(m.owner, "github") : null;
     const value = await readMetric(t, fetchImpl, gh?.data.token).catch(() => null);
     if (value == null) continue;

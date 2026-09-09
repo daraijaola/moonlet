@@ -15,7 +15,7 @@ import type { GitHubConn } from "./connections/github";
 import * as discord from "./connections/discord";
 import type { DiscordConn } from "./connections/discord";
 import * as gmail from "./connections/gmail";
-import { probeTripwires } from "./tripwire";
+import { probeTripwires, readMetric } from "./tripwire";
 import type { GmailConn } from "./connections/gmail";
 import { telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
@@ -283,7 +283,8 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     status: result.status === "quiet" ? "quiet" : "idle",
     key: result.key,
     ...(result.status === "done" && result.output ? { memory: result.output.remember?.slice(0, 1200) || m.memory } : {}),
-    ...(m.watch?.tripped ? { watch: { value: m.watch.value, at: now(), tripped: undefined } } : {}),
+    // After a run the watch re-baselines to a fresh reading, so what the moonlet itself just did (a PR it opened, a comment) is not the "activity" that wakes it next.
+    ...(m.spec.tripwire ? { watch: { value: (await readMetric(m.spec.tripwire, deps.fetch, ghConn?.data.token).catch(() => null)) ?? m.watch?.value ?? 0, at: now(), tripped: undefined } } : {}),
     ...(result.status === "done" && result.output
       ? {
           // Calls made this run wait for the next; the ones just scored are settled into the record.
