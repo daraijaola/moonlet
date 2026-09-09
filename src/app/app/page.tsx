@@ -49,7 +49,7 @@ function DashboardInner() {
     <>
       {/* Phone: the moonlet picker is a horizontal rail under the header; on desktop the sidebar has the list. */}
       <MobileRail moonlets={moonlets} selected={selected.id} />
-      <Detail key={selected.id} m={selected} all={moonlets} owner={address!} onChange={reload} conns={conns} launched={params.get("launched") === "1"} status={status} />
+      <Detail key={`${selected.id}${params.get("delete") === "1" ? "-delete" : ""}`} m={selected} all={moonlets} owner={address!} onChange={reload} conns={conns} launched={params.get("launched") === "1"} askDelete={params.get("delete") === "1"} status={status} />
     </>
   );
 }
@@ -138,7 +138,7 @@ function Queue({ owner }: { owner: string }) {
 }
 
 
-function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMoonlet; all: ApiMoonlet[]; owner: string; onChange: () => Promise<void>; conns: Connections | null; launched?: boolean; status: OrbioStatus | null }) {
+function Detail({ m, all, owner, onChange, conns, launched, askDelete, status }: { m: ApiMoonlet; all: ApiMoonlet[]; owner: string; onChange: () => Promise<void>; conns: Connections | null; launched?: boolean; askDelete?: boolean; status: OrbioStatus | null }) {
   const router = useRouter();
   const parent = m.parentId ? all.find((x) => x.id === m.parentId) : undefined;
   const children = all.filter((x) => x.parentId === m.id);
@@ -151,6 +151,14 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   const visibleThread = showEarlier ? thread : thread.slice(earlierCount);
   const threadEndRef = useRef<HTMLDivElement>(null);
   const paneRef = useRef<HTMLDivElement>(null);
+  const [isPhone, setIsPhone] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(max-width: 639px)");
+    const on = () => setIsPhone(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
   const [moreBelow, setMoreBelow] = useState(false);
   // Anything new in the conversation scrolls into view; restored history stays put.
   const lastLen = useRef(0);
@@ -172,7 +180,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   void tick;
   const [anchoring, setAnchoring] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(!!askDelete);
   const [autopilotOn, setAutopilotOn] = useState(m.autopilot);
   useEffect(() => setAutopilotOn(m.autopilot), [m.autopilot]);
   const [showAllRuns, setShowAllRuns] = useState(false);
@@ -335,7 +343,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
               }
             }}
             rows={1}
-            placeholder={runs.length ? `Ask ${m.name} anything, or tell it what to do…` : `Ask ${m.name} anything about its job…`}
+            placeholder={isPhone ? `Ask ${m.name} anything…` : runs.length ? `Ask ${m.name} anything, or tell it what to do…` : `Ask ${m.name} anything about its job…`}
             className="block max-h-40 min-h-[44px] w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[15px] leading-[1.5] text-ink outline-none placeholder:text-ink-faint"
             style={{ fieldSizing: "content" } as React.CSSProperties}
           />
@@ -356,7 +364,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
           </button>
         </div>
       </form>
-      <p className="mt-2 px-1 text-[11.5px] text-ink-faint">Billed to its key. {voiceOk ? "Tap the mic to speak. " : ""}{tg ? "You can also reply on Telegram." : ""}</p>
+      <p className="mt-2 truncate px-1 text-[11.5px] text-ink-faint">Billed to its key.{voiceOk ? " Tap the mic to speak." : ""}{tg ? <span className="max-sm:hidden"> You can also reply on Telegram.</span> : null}</p>
     </div>
   );
 
@@ -398,7 +406,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   );
 
   return (
-    <section className="flex h-full flex-col">
+    <section className="flex min-h-0 flex-1 flex-col">
       {/* ── top bar: what it is, the one action, and the panel toggle ─────── */}
       <div className="z-20 shrink-0 border-b border-ink/[0.07] bg-cream">
         <div className="flex h-14 items-center gap-2.5 px-3 sm:gap-3 sm:px-6">
@@ -451,7 +459,8 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       <div className="flex min-h-0 flex-1">
         {/* ── the report: what it did, talk to it ────────────────────────── */}
         <div className={`relative flex min-w-0 flex-1 flex-col ${tab === "overview" ? "hidden lg:flex" : ""}`}>
-          <div ref={paneRef} className="relative min-h-0 flex-1 overflow-y-auto [scrollbar-width:thin]">
+          <div className="relative min-h-0 flex-1">
+          <div ref={paneRef} className="h-full overflow-y-auto [scrollbar-width:thin]">
           <div className="mx-auto max-w-[760px] px-4 pt-6 pb-4 sm:px-6">
             <header>
               <p className="text-[14.5px] leading-[1.55] text-ink [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
@@ -519,11 +528,12 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
               type="button"
               onClick={() => paneRef.current?.scrollTo({ top: paneRef.current.scrollHeight, behavior: "smooth" })}
               aria-label="Scroll to the end"
-              className="ui-in absolute bottom-[96px] left-1/2 z-10 -translate-x-1/2 rounded-full border border-ink/[0.1] bg-white p-2 text-ink-soft shadow-[0_6px_16px_-6px_rgba(21,22,29,0.3)] hover:text-ink lg:bottom-[92px]"
+              className="ui-in absolute bottom-3 left-1/2 z-10 -translate-x-1/2 rounded-full border border-ink/[0.1] bg-white p-2 text-ink-soft shadow-[0_6px_16px_-6px_rgba(21,22,29,0.3)] hover:text-ink"
             >
               <ArrowDown size={16} strokeWidth={2} />
             </button>
           )}
+          </div>
           {/* talk to it: pinned under the scrolling report */}
           <div className="shrink-0 border-t border-ink/[0.06] bg-cream">
             <div className="mx-auto max-w-[760px] px-4 py-3 sm:px-6">{askBox}</div>
@@ -538,8 +548,8 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
       </div>
 
       {confirmDelete && (
-        <Dialog title={`Delete ${m.name}?`} body="Its reports stay public as receipts. Credits stay in your Orbio balance. This can't be undone." onClose={() => setConfirmDelete(false)}>
-          <button onClick={() => setConfirmDelete(false)} className="ui-btn">Cancel</button>
+        <Dialog title={`Delete ${m.name}?`} body="Its reports stay public as receipts. Credits stay in your Orbio balance. This can't be undone." onClose={() => { setConfirmDelete(false); if (askDelete) router.replace(`/app?m=${m.id}`); }}>
+          <button onClick={() => { setConfirmDelete(false); if (askDelete) router.replace(`/app?m=${m.id}`); }} className="ui-btn">Cancel</button>
           <button disabled={!!busy} onClick={async () => { await act("delete", () => api.remove(owner, m.id), "Deleted.").then(() => router.replace("/app")).catch(() => undefined); }} className="ui-btn ui-btn-danger">{busy === "delete" ? "Deleting…" : "Delete"}</button>
         </Dialog>
       )}
