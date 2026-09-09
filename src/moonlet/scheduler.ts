@@ -258,8 +258,10 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;
-  // Failures retry within the hour; a moonlet quiet for money checks back daily (the bag grows, a sibling gets paused) rather than sleeping a week.
-  const nextRunAt = now() + (result.status === "failed" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : result.status === "quiet" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["24h"]) : CADENCE_MS[cadence]);
+  // One failure retries within the hour; a second in a row waits for the cadence, so a broken job can't bill an attempt every hour all day.
+  // A moonlet quiet for money checks back daily rather than sleeping a week.
+  const failedTwice = result.status === "failed" && (await store.listRuns(m.id, 1))[0]?.status === "failed";
+  const nextRunAt = now() + (result.status === "failed" && !failedTwice ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : result.status === "quiet" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["24h"]) : CADENCE_MS[cadence]);
   const rotated = result.keyEvents.filter((e) => e.kind === "rotated").length;
   if (m.watch?.tripped) result.keyEvents.unshift({ kind: "tripwire", detail: `woke early: ${m.watch.tripped}` });
 
@@ -299,7 +301,6 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     nextRunAt,
     lastRunAt: now(),
     keysRotated: m.keysRotated + rotated,
-    runsTotal: m.runsTotal + 1,
     runsFailed: m.runsFailed + (result.status === "failed" ? 1 : 0),
     spentTotalUsd: m.spentTotalUsd + result.costUsd,
   });

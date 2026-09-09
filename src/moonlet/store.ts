@@ -153,6 +153,7 @@ export function migrate() {
     await c.execute(`ALTER TABLE moonlets ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE owners ADD COLUMN avatar INTEGER`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN avatar INTEGER`).catch(() => undefined);
+    await c.execute(`UPDATE moonlets SET runs_total = (SELECT COUNT(*) FROM runs WHERE runs.moonlet_id = moonlets.id)`).catch(() => undefined);
     // Every moonlet wears one of ten faces; older rows draw theirs once here.
     await c.execute(`UPDATE moonlets SET avatar = 1 + (abs(random()) % ${AVATAR_COUNT}) WHERE avatar IS NULL`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
@@ -428,6 +429,8 @@ export async function insertRun(r: Omit<RunRow, "private"> & { private?: boolean
       JSON.stringify(r.calls ?? []), JSON.stringify(r.scored ?? []), r.private ? 1 : 0,
     ],
   });
+  // The counter on the moonlet is the number of run rows, whichever path wrote them, so no two surfaces can disagree.
+  await db().execute({ sql: `UPDATE moonlets SET runs_total = (SELECT COUNT(*) FROM runs WHERE moonlet_id = ?) WHERE id = ?`, args: [r.moonletId, r.moonletId] });
 }
 
 export async function setRunTx(id: string, txHash: string) {

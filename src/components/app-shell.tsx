@@ -64,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
             <Suspense><PhoneAccount address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} /></Suspense>
           </header>
-          <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 [scrollbar-width:thin]">{children}</main>
+          <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 [scrollbar-width:thin]">{children}</main>
           <MobileTabs pathname={pathname} />
         </div>
       </div>

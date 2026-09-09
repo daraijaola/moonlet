@@ -46,11 +46,11 @@ function DashboardInner() {
   const selected = moonlets.find((m) => m.id === selectedId) ?? moonlets[0];
 
   return (
-    <>
+    <div className="flex h-full flex-col">
       {/* Phone: the moonlet picker is a horizontal rail under the header; on desktop the sidebar has the list. */}
       <MobileRail moonlets={moonlets} selected={selected.id} />
       <Detail key={`${selected.id}${params.get("delete") === "1" ? "-delete" : ""}`} m={selected} all={moonlets} owner={address!} onChange={reload} conns={conns} launched={params.get("launched") === "1"} askDelete={params.get("delete") === "1"} status={status} />
-    </>
+    </div>
   );
 }
 
