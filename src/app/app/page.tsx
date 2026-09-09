@@ -6,17 +6,17 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { useAppData } from "@/lib/app-data";
-import { api, fmtBag, fmtUsd, shortenHexes, timeAgo, timeUntil, type ApiFile, type ApiMoonlet, type ApiRun, type Connections, type OrbioStatus, type Proposal } from "@/lib/api";
+import { api, fmtUsd, shortenHexes, timeAgo, timeUntil, type ApiFile, type ApiMoonlet, type ApiRun, type Connections, type OrbioStatus, type Proposal } from "@/lib/api";
 import { GitHubMark, OrbioMark, TelegramMark } from "@/components/marks";
-import { FuelGauge } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
 import { MicButton, VoiceRecorder, useVoiceSupported } from "@/components/voice-button";
 import { TEMPLATE_LABEL } from "@/components/labels";
 import { ModelPicker } from "@/components/model-picker";
+import { OverviewPanel } from "@/components/overview-panel";
 import { recommendedCapUsd } from "@/moonlet/spec";
 import { DitherField } from "@/components/dither-field";
 import { Avatar, publicUrl } from "@/components/app-shell";
-import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp, ArrowDown, ChevronUp, Plus, Download, Ellipsis, Pencil, KeyRound, Share2 } from "lucide-react";
+import { Play, Pause, PanelRight, ExternalLink, Trash2, Check, X, ArrowUp, ArrowDown, ChevronUp, Plus, Download, Ellipsis, Pencil, KeyRound, Share2 } from "lucide-react";
 import { JobInput } from "@/components/job-input";
 
 function DashboardInner() {
@@ -244,15 +244,6 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
             ? <>Watching {m.spec.tripwire.target} for free every 15 min; wakes on a new push, issue or pull request. Heartbeat <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>.</>
             : <>Watching {m.spec.tripwire.metric.replace("_", " ")} of {m.spec.tripwire.target} for free every 15 min; wakes on a ±{m.spec.tripwire.thresholdPct}% move. Heartbeat <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>.</>
           : <>Next report <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>, then every {m.cadence}.</>;
-  const vitals = (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-4 lg:grid-cols-2">
-      <Vital label="next run" value={m.status === "paused" ? "paused" : running ? "now" : timeUntil(m.nextRunAt)} hint={m.cadence} />
-      <Vital label="runs" value={String(m.runsTotal)} hint={m.runsFailed ? `${m.runsFailed} failed` : m.lastRunAt ? `last ${timeAgo(m.lastRunAt)}` : "none yet"} />
-      <Vital label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint={`cap ${fmtUsd(m.perRunCapUsd, 3)}/run`} />
-      {(m.hits + m.misses > 0 || m.openCalls.length > 0) && <Vital label="calls" value={`${m.hits} hit${m.hits === 1 ? "" : "s"} · ${m.misses} miss${m.misses === 1 ? "" : "es"}`} hint={m.openCalls.length ? `${m.openCalls.length} open, scored next run` : "record, on-chain"} />}
-      <Vital label="fuel" value={status?.idleCreditsUsd != null ? fmtUsd(status.idleCreditsUsd) : fmtUsd(m.keyRemainingUsd)} hint={status?.idleCreditsUsd != null ? "Orbio balance, shared" : m.keyLimitUsd ? "on its key" : "mints a key on first run"} />
-    </dl>
-  );
   const artifactList = (compact: boolean) =>
     files.length === 0 ? (
       <p className="text-[12.5px] leading-[1.55] text-ink-soft">Nothing yet. Ask for a report as a file (“send me this as a PDF”, or put it in the job) and every PDF, DOCX or TXT it writes collects here.</p>
@@ -362,79 +353,39 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
 
   const burnAll = all.reduce((sum, x) => sum + (x.status === "paused" || x.status === "quiet" ? 0 : x.burnPerDayUsd), 0);
   const earnAll = status?.earnPerDayUsd ?? m.earnPerDayUsd;
-  const share = earnAll > 0 ? Math.min(1, burnAll / earnAll) : 0;
   const overview = (
-    <div className="space-y-5">
-      <section className="ui-card p-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-[12.5px] font-semibold text-ink">Fuel</h3>
-          <span className="text-[11.5px] text-ink-faint">{TEMPLATE_LABEL[m.spec.template]} · every {m.cadence} · cap {fmtUsd(m.perRunCapUsd, 3)}</span>
-        </div>
-        <div className="mt-3">
-          <FuelGauge app earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={status?.idleCreditsUsd ?? m.keyRemainingUsd} quiet={quiet} size="md" />
-        </div>
-        <div className="mt-4 border-t border-ink/[0.06] pt-3">{vitals}</div>
-      </section>
-
-      <section className="ui-card divide-y divide-ink/[0.06]">
-        <SettingRow label="Delivery" hint={tg ? `Telegram ${tg.label} and this page` : "This page only"}>
-          {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 text-[11.5px] font-medium text-moss"><TelegramMark size={11} /> linked</span> : <Link href="/app/connections" className="ui-btn ui-btn-sm">Link Telegram</Link>}
-        </SettingRow>
-        <SettingRow label="Autopilot" hint={autopilotOn ? "Acts without asking." : "Drafts wait for your OK."}>
-          <button
-            disabled={!!busy}
-            onClick={() => {
-              const next = !autopilotOn;
-              setAutopilotOn(next);
-              act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: next }), next ? "Autopilot on. It acts without asking." : "Autopilot off. Drafts wait for your OK.").catch(() => setAutopilotOn(!next));
-            }}
-            role="switch"
-            aria-checked={autopilotOn}
-            className="ui-switch"
-          >
-            <span />
-          </button>
-        </SettingRow>
-      </section>
-
-      {files.length > 0 && (
-        <section className="ui-card px-4 py-3">
-          <h3 className="inline-flex items-center gap-1.5 text-[12.5px] font-semibold text-ink"><Paperclip size={12} strokeWidth={2} /> Artifacts <span className="font-normal text-ink-faint">{files.length}</span></h3>
-          <div className="mt-1">{artifactList(false)}</div>
-        </section>
-      )}
-
-      <section className="ui-card p-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-[12.5px] font-semibold text-ink">Your credits</h3>
-          <span className="text-[11.5px] text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO` : "…"}</span>
-        </div>
-        <div className="mt-3 flex items-end justify-between">
-          <div>
-            <p className="text-[11.5px] text-ink-faint">Earning</p>
-            <p className="mt-0.5 font-mono text-[17px] font-semibold tabular-nums tracking-[-0.01em] text-ink">{fmtUsd(earnAll)}<span className="ml-1 text-[11.5px] font-normal text-ink-faint">/ day</span></p>
-          </div>
-          <div className="text-right">
-            <p className="text-[11.5px] text-ink-faint">Put to work</p>
-            <p className="mt-0.5 font-mono text-[17px] font-semibold tabular-nums tracking-[-0.01em] text-ink">{fmtUsd(burnAll)}<span className="ml-1 text-[11.5px] font-normal text-ink-faint">/ day</span></p>
-          </div>
-        </div>
-        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-ink/[0.07]">
-          <div className="h-full rounded-full bg-moss transition-[width] duration-500" style={{ width: `${Math.round(share * 100)}%` }} />
-        </div>
-        <p className="mt-2 text-[12px] text-ink-soft">
-          {status?.idleCreditsUsd == null
-            ? "Credits update after the first run."
-            : status.idleCreditsUsd > 1
-              ? <><span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> of inference sitting idle. <Link href="/app/new" className="font-medium text-ink underline decoration-ink/30 underline-offset-2">Put it to work</Link>.</>
-              : "Nearly all of what your bag earns is at work."}
-        </p>
-        {status && !status.approved && (
-          <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-[12px] leading-[1.5] text-ink">Approve Moonlet on orbio.so so it can mint a key. <OrbioApprove /></p>
-        )}
-      </section>
-
-    </div>
+    <OverviewPanel
+      m={m}
+      runs={runs}
+      status={status}
+      running={running}
+      earnAll={earnAll}
+      burnAll={burnAll}
+      approve={status && !status.approved ? <>Approve Moonlet on orbio.so so it can mint a key. <OrbioApprove /></> : null}
+      artifacts={files.length > 0 ? artifactList(false) : null}
+      settings={
+        <>
+          <SettingRow label="Delivery" hint={tg ? `Telegram ${tg.label} and this page` : "This page only"}>
+            {tg ? <span className="inline-flex items-center gap-1 rounded-full bg-moss/10 px-2 py-0.5 text-[11.5px] font-medium text-moss"><TelegramMark size={11} /> linked</span> : <Link href="/app/connections" className="ui-btn ui-btn-sm">Link Telegram</Link>}
+          </SettingRow>
+          <SettingRow label="Autopilot" hint={autopilotOn ? "Acts without asking." : "Drafts wait for your OK."}>
+            <button
+              disabled={!!busy}
+              onClick={() => {
+                const next = !autopilotOn;
+                setAutopilotOn(next);
+                act("autopilot", () => api.patch(owner, m.id, { action: "edit", autopilot: next }), next ? "Autopilot on. It acts without asking." : "Autopilot off. Drafts wait for your OK.").catch(() => setAutopilotOn(!next));
+              }}
+              role="switch"
+              aria-checked={autopilotOn}
+              className="ui-switch"
+            >
+              <span />
+            </button>
+          </SettingRow>
+        </>
+      }
+    />
   );
 
   return (
@@ -656,16 +607,6 @@ function OrbioApprove() {
     <button disabled={busy} onClick={async () => { setBusy(true); await approveOrbio("/app").catch(() => setBusy(false)); }} className="text-[12.5px] font-medium text-ink underline decoration-ink/30 disabled:opacity-50">
       Approve on Orbio
     </button>
-  );
-}
-
-function Vital({ label, value, hint }: { label: string; value: string; hint?: string }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-[11.5px] text-ink-faint">{label}</dt>
-      <dd className="mt-0.5 truncate text-[17px] font-semibold tabular-nums tracking-[-0.01em] text-ink">{value}</dd>
-      {hint && <dd className="mt-0.5 truncate text-[11.5px] text-ink-faint">{hint}</dd>}
-    </div>
   );
 }
 
