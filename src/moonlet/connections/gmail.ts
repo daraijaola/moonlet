@@ -211,8 +211,42 @@ export type Outgoing = {
 
 const encodeHeader = (s: string) => (/^[\x20-\x7e]*$/.test(s) ? s : `=?UTF-8?B?${Buffer.from(s, "utf8").toString("base64")}?=`);
 
+/** A header value may not contain CR, LF or other control characters: that is how a "reply to Yash" grows a hidden Bcc. */
+export function assertHeaderSafe(name: string, value: string) {
+  if (/[\r\n\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/.test(value)) throw new Error(`${name} header contains a line break or control character`);
+  return value;
+}
+
+const ADDR = /^[A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$/;
+
+/** Split a recipient list into validated addresses. Accepts "a@b.c" and "Name <a@b.c>", comma or semicolon separated; rejects anything else so a card can list exactly who will get the mail. */
+export function parseAddresses(list: string, field = "To"): string[] {
+  const out: string[] = [];
+  for (const raw of list.split(/[,;]/).map((s) => s.trim()).filter(Boolean)) {
+    const m = raw.match(/^(?:"?([^"<>]*)"?\s*)?<([^<>\s]+)>$/);
+    const addr = (m ? m[2] : raw).trim();
+    if (!ADDR.test(addr)) throw new Error(`${field} has an invalid address: ${raw.slice(0, 60)}`);
+    if (raw.includes("<") && !m) throw new Error(`${field} has a malformed recipient: ${raw.slice(0, 60)}`);
+    out.push(addr.toLowerCase());
+  }
+  if (!out.length) throw new Error(`${field} has no recipient`);
+  return Array.from(new Set(out));
+}
+
+/** The message exactly as it will be sent: recipients parsed, headers checked. Cards describe this, and the sender builds from it. */
+export function canonicalOutgoing(o: Outgoing): Outgoing & { toList: string[]; ccList: string[] } {
+  const toList = parseAddresses(o.to, "To");
+  const ccList = o.cc?.trim() ? parseAddresses(o.cc, "Cc") : [];
+  assertHeaderSafe("Subject", o.subject);
+  if (o.inReplyTo) assertHeaderSafe("In-Reply-To", o.inReplyTo);
+  if (o.threadId) assertHeaderSafe("threadId", o.threadId);
+  return { ...o, to: toList.join(", "), cc: ccList.length ? ccList.join(", ") : undefined, toList, ccList };
+}
+
 /** RFC 5322 message, base64url as Gmail wants it. Plain text only: a moonlet writes prose, not templates. */
-export function buildRaw(from: string, o: Outgoing) {
+export function buildRaw(from: string, raw: Outgoing) {
+  const o = canonicalOutgoing(raw);
+  assertHeaderSafe("From", from);
   const headers = [
     `From: ${from}`,
     `To: ${o.to}`,
@@ -227,12 +261,18 @@ export function buildRaw(from: string, o: Outgoing) {
   let message: string;
   if (o.attachments?.length) {
     const boundary = `moonlet_${Date.now().toString(36)}_${Math.random().toString(36).slice(2)}`;
-    const parts = o.attachments.map((a) => [`Content-Type: ${a.mime || "application/octet-stream"}; name="${a.name.replace(/"/g, "")}"`, `Content-Disposition: attachment; filename="${a.name.replace(/"/g, "")}"`, "Content-Transfer-Encoding: base64", "", wrap76(Buffer.from(a.bytes).toString("base64"))].join("\r\n"));
+    const parts = o.attachments.map((a) => [`Content-Type: ${assertHeaderSafe("attachment type", a.mime || "application/octet-stream").replace(/[;"]/g, "")}; name="${assertHeaderSafe("attachment name", a.name).replace(/"/g, "")}"`, `Content-Disposition: attachment; filename="${a.name.replace(/"/g, "")}"`, "Content-Transfer-Encoding: base64", "", wrap76(Buffer.from(a.bytes).toString("base64"))].join("\r\n"));
     message = [...headers, `Content-Type: multipart/mixed; boundary="${boundary}"`, "", `--${boundary}`, textPart, ...parts.flatMap((p) => [`--${boundary}`, p]), `--${boundary}--`, ""].join("\r\n");
   } else {
     message = `${headers.join("\r\n")}\r\n${textPart}`;
   }
   return Buffer.from(message, "utf8").toString("base64url");
+}
+
+/** What a forward will really carry: the source message's own subject, sender and attachment names, read from Gmail, for the approval card. */
+export async function describeForward(token: string, messageId: string, fetchImpl?: typeof fetch) {
+  const m = await readMessage(token, messageId, fetchImpl);
+  return { subject: m.subject, from: m.from, date: m.date, attachments: m.attachments.map((a) => a.name) };
 }
 
 /** Forward a message: original text quoted under the note, original attachments re-attached. */
@@ -256,14 +296,17 @@ export async function sendMail(token: string, from: string, o: Outgoing, fetchIm
 export type OrganizeAction = "archive" | "unarchive" | "mark_read" | "mark_unread" | "star" | "unstar" | "important" | "not_important" | "spam" | "not_spam" | "trash" | "untrash" | "label" | "unlabel";
 export type Organize = { messageIds?: string[]; q?: string; action: OrganizeAction; label?: string };
 
+/** The messages a search selects right now, so an approval covers a fixed list and not whatever arrives later. */
+export async function resolveQuery(token: string, q: string, limit = 500, fetchImpl?: typeof fetch) {
+  const list = await api<{ messages?: Array<{ id: string }> }>(token, `/messages?q=${encodeURIComponent(q)}&maxResults=${Math.min(500, Math.max(1, limit))}`, {}, fetchImpl);
+  return (list.messages ?? []).map((m) => m.id);
+}
+
 /** Tidy up, by explicit ids or by a Gmail search (up to 500 at a time). Labels resolve (and are created) by name; archive is "remove INBOX"; trash is reversible for 30 days. */
 export async function organize(token: string, o: Organize, fetchImpl?: typeof fetch) {
   if (!o.messageIds?.length && !o.q) throw new Error("messageIds or q required");
   let ids = (o.messageIds ?? []).slice(0, 500);
-  if (!ids.length && o.q) {
-    const list = await api<{ messages?: Array<{ id: string }> }>(token, `/messages?q=${encodeURIComponent(o.q)}&maxResults=500`, {}, fetchImpl);
-    ids = (list.messages ?? []).map((m) => m.id);
-  }
+  if (!ids.length && o.q) ids = await resolveQuery(token, o.q, 500, fetchImpl);
   if (!ids.length) return { changed: 0, action: o.action, q: o.q };
   if (o.action === "trash" || o.action === "untrash") {
     for (let i = 0; i < ids.length; i += 10) await Promise.all(ids.slice(i, i + 10).map((id) => api(token, `/messages/${id}/${o.action}`, { method: "POST" }, fetchImpl)));

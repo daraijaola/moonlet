@@ -25,13 +25,48 @@ export type ProposalInput =
   | { kind: "email_organize"; organize: gmail.Organize; why: string }
   | { kind: "email_forward"; messageId: string; to: string; note: string; subject: string };
 
+/**
+ * What gets stored is what gets executed, and what the card shows is what gets stored. Mail recipients are parsed and
+ * headers checked here (a bad address or a smuggled line break fails the proposal instead of reaching Gmail); a forward's
+ * subject and attachment list come from the actual source message, not from the model; a bulk tidy by search is pinned to
+ * the message ids it matches right now, so mail arriving after the owner approves is not swept up.
+ */
+async function canonical(input: ProposalInput, owner: string, fetchImpl?: typeof fetch): Promise<Record<string, unknown>> {
+  if (input.kind === "email_send") {
+    const m = gmail.canonicalOutgoing(input.mail);
+    return { mail: { to: m.to, cc: m.cc, subject: m.subject, body: m.body, threadId: m.threadId, inReplyTo: m.inReplyTo }, recipients: [...m.toList, ...m.ccList] };
+  }
+  if (input.kind === "email_forward") {
+    const to = gmail.parseAddresses(input.to, "To");
+    gmail.assertHeaderSafe("note", input.note.replace(/\r?\n/g, " "));
+    const { token } = await gmail.accessToken(owner, fetchImpl);
+    const src = await gmail.describeForward(token, input.messageId, fetchImpl);
+    return { messageId: input.messageId, to: to.join(", "), note: input.note, subject: src.subject, from: src.from, attachments: src.attachments, recipients: to };
+  }
+  if (input.kind === "email_organize") {
+    const o = input.organize;
+    if (!o.messageIds?.length && o.q) {
+      const { token } = await gmail.accessToken(owner, fetchImpl);
+      const ids = await gmail.resolveQuery(token, o.q, 500, fetchImpl);
+      return { organize: { ...o, messageIds: ids }, why: input.why, matched: ids.length };
+    }
+    return { organize: o, why: input.why };
+  }
+  return input.kind === "tweet" ? { text: input.text }
+    : input.kind === "pull_request" ? { plan: input.plan }
+    : input.kind === "spawn_moonlet" ? { spec: input.spec, reason: input.reason }
+    : input.kind === "issue_create" ? { repo: input.repo, title: input.title, body: input.body, labels: input.labels ?? [] }
+    : { repo: input.repo, number: input.number, body: input.body };
+}
+
 export type ProposeCtx = { owner: string; moonletId: string; moonletName: string; runId: string | null; autopilot: boolean; fetch?: typeof fetch };
 
 export function describe(kind: store.ProposalKind, payload: Record<string, unknown>) {
   if (kind === "tweet") return { title: "Post on X", body: String(payload.text ?? "") };
   if (kind === "pull_request") {
     const p = payload.plan as gh.PullRequestPlan;
-    return { title: `Open PR on ${p.repo}`, body: `${p.title}\n\n${p.body}\n\nfiles: ${p.files.map((f) => f.path).join(", ")}` };
+    const files = p.files.map((f) => `── ${f.path} (${f.content.split("\n").length} lines)\n${f.content.length > 1500 ? f.content.slice(0, 1500) + "\n…" : f.content}`).join("\n\n");
+    return { title: `Open PR on ${p.repo}`, body: `${p.title}\n\n${p.body}\n\n${p.files.length} file${p.files.length === 1 ? "" : "s"}:\n\n${files}` };
   }
   if (kind === "spawn_moonlet") {
     const { spec, reason } = payload as { spec: JobSpec; reason: string };
@@ -43,17 +78,17 @@ export function describe(kind: store.ProposalKind, payload: Record<string, unkno
   }
   if (kind === "email_send") {
     const m = payload.mail as gmail.Outgoing;
-    return { title: m.threadId ? `Reply to ${m.to}` : `Email ${m.to}`, body: `Subject: ${m.subject}\n\n${m.body}` };
+    return { title: m.threadId ? `Reply to ${m.to}` : `Email ${m.to}`, body: `To: ${m.to}${m.cc ? `\nCc: ${m.cc}` : ""}\nSubject: ${m.subject}\n\n${m.body}` };
   }
   if (kind === "email_organize") {
     const { organize: o, why } = payload as { organize: gmail.Organize; why: string };
     const verb: Record<gmail.OrganizeAction, string> = { archive: "Archive", unarchive: "Move back to inbox", mark_read: "Mark as read", mark_unread: "Mark as unread", star: "Star", unstar: "Unstar", important: "Mark important", not_important: "Mark not important", spam: "Report as spam", not_spam: "Not spam", trash: "Move to trash", untrash: "Restore from trash", label: `Label "${o.label ?? ""}"`, unlabel: `Remove label "${o.label ?? ""}"` };
-    const what = o.messageIds?.length ? `${o.messageIds.length} email${o.messageIds.length === 1 ? "" : "s"}` : `everything matching "${o.q ?? ""}"`;
-    return { title: `${verb[o.action]}: ${what}`, body: why };
+    const what = o.messageIds?.length ? `${o.messageIds.length} email${o.messageIds.length === 1 ? "" : "s"}${o.q ? ` matching "${o.q}"` : ""}` : `nothing matched "${o.q ?? ""}"`;
+    return { title: `${verb[o.action]}: ${what}`, body: `${why}${o.q ? "\n\nOnly the emails matched when this was drafted; anything arriving later is untouched." : ""}` };
   }
   if (kind === "email_forward") {
-    const f = payload as { messageId: string; to: string; note: string; subject: string };
-    return { title: `Forward "${f.subject}" to ${f.to}`, body: f.note };
+    const f = payload as { messageId: string; to: string; note: string; subject: string; from?: string; attachments?: string[] };
+    return { title: `Forward "${f.subject}" to ${f.to}`, body: `To: ${f.to}${f.from ? `\nOriginal from: ${f.from}` : ""}${f.attachments?.length ? `\nAttachments: ${f.attachments.join(", ")}` : ""}\n\n${f.note}` };
   }
   const c = payload as { repo: string; number: number; body: string };
   return { title: `Comment on ${c.repo}#${c.number}`, body: c.body };
@@ -63,15 +98,12 @@ export function describe(kind: store.ProposalKind, payload: Record<string, unkno
 export async function propose(input: ProposalInput, ctx: ProposeCtx) {
   const needs = input.kind === "tweet" ? "x" : input.kind === "spawn_moonlet" ? null : input.kind === "email_send" || input.kind === "email_organize" || input.kind === "email_forward" ? "gmail" : "github";
   if (needs && !(await store.getConnection(ctx.owner, needs))) return { proposalId: null, status: "failed" as const, result: { error: `${needs === "x" ? "X" : needs === "gmail" ? "Gmail" : "GitHub"} is not connected` } };
-  const payload: Record<string, unknown> =
-    input.kind === "tweet" ? { text: input.text }
-    : input.kind === "pull_request" ? { plan: input.plan }
-    : input.kind === "spawn_moonlet" ? { spec: input.spec, reason: input.reason }
-    : input.kind === "email_send" ? { mail: input.mail }
-    : input.kind === "email_organize" ? { organize: input.organize, why: input.why }
-    : input.kind === "email_forward" ? { messageId: input.messageId, to: input.to, note: input.note, subject: input.subject }
-    : input.kind === "issue_create" ? { repo: input.repo, title: input.title, body: input.body, labels: input.labels ?? [] }
-    : { repo: input.repo, number: input.number, body: input.body };
+  let payload: Record<string, unknown>;
+  try {
+    payload = await canonical(input, ctx.owner, ctx.fetch);
+  } catch (e) {
+    return { proposalId: null, status: "failed" as const, result: { error: (e as Error).message } };
+  }
   const id = store.newId("p");
   await store.insertProposal({ id, owner: ctx.owner, moonletId: ctx.moonletId, runId: ctx.runId, kind: input.kind, payload });
 

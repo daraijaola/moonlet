@@ -247,3 +247,22 @@ describe("gmail connection", () => {
     expect(html).toBe('<b>Needs you</b>\n• <b>Yash</b> &lt;yash@orbio.so&gt; · Demo slot · <a href="https://mail.google.com/mail/u/0/#all/t1">open</a>\n\n<b>Done this run</b>\n• Archived 15 newsletters');
   });
 });
+
+describe("outgoing mail is exactly what the card says", () => {
+  it("a line break in any header is refused, so a reply cannot grow a hidden Bcc", () => {
+    expect(() => gmail.buildRaw("a@b.co", { to: "yash@orbio.so\r\nBcc: thief@evil.io", subject: "Re: demo", body: "x" })).toThrow(/invalid address|line break/);
+    expect(() => gmail.buildRaw("a@b.co", { to: "yash@orbio.so", subject: "Re: demo\nBcc: thief@evil.io", body: "x" })).toThrow(/line break/);
+    expect(() => gmail.buildRaw("a@b.co", { to: "yash@orbio.so", cc: "ok@x.io\r\nBcc: thief@evil.io", subject: "s", body: "x" })).toThrow(/invalid address|line break/);
+    expect(() => gmail.buildRaw("a@b.co", { to: "yash@orbio.so", subject: "s", body: "x", inReplyTo: "<a@b>\r\nBcc: thief@evil.io" })).toThrow(/line break/);
+  });
+  it("recipients are parsed into plain addresses; names are kept out of the envelope and junk is refused", () => {
+    expect(gmail.parseAddresses("Yash <yash@orbio.so>, dara@16labs.xyz; Yash <yash@orbio.so>")).toEqual(["yash@orbio.so", "dara@16labs.xyz"]);
+    expect(() => gmail.parseAddresses("yash at orbio")).toThrow(/invalid address/);
+    expect(() => gmail.parseAddresses("")).toThrow(/no recipient/);
+    expect(() => gmail.parseAddresses("Yash <yash@orbio.so> extra@x.io")).toThrow();
+    const raw = Buffer.from(gmail.buildRaw("a@b.co", { to: "Yash <yash@orbio.so>", cc: "Dara <dara@16labs.xyz>", subject: "s", body: "x" }), "base64url").toString("utf8");
+    expect(raw).toMatch(/^To: yash@orbio.so$/m);
+    expect(raw).toMatch(/^Cc: dara@16labs.xyz$/m);
+    expect(raw.match(/^Bcc:/m)).toBeNull();
+  });
+});

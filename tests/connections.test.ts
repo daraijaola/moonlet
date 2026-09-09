@@ -407,3 +407,21 @@ describe("github (live, read-only unless GITHUB_TOKEN can write)", () => {
     expect(del.status).toBe(204);
   });
 });
+
+describe("approval cards show what will really happen", () => {
+  it("an email card lists every recipient including Cc, and a smuggled header fails the proposal instead of reaching Gmail", async () => {
+    const { describe: describeCard, propose } = await import("@/moonlet/proposals");
+    const card = describeCard("email_send", { mail: { to: "yash@orbio.so", cc: "dara@16labs.xyz", subject: "Re: demo", body: "Thursday works." } });
+    expect(card.body).toMatch(/^To: yash@orbio.so\nCc: dara@16labs.xyz\nSubject: Re: demo/);
+    process.env.DATABASE_URL = "file:/tmp/moonlet-cards.db";
+    process.env.SECRET_KEY = "test";
+    const store = await import("@/moonlet/store");
+    const O = "0x00000000000000000000000000000000000000cc";
+    await store.migrate();
+    await store.setConnection(O, "gmail", "me@gmail.com", { email: "me@gmail.com", refreshToken: "r", accessToken: "a", expiresAt: Date.now() + 3_600_000 });
+    const r = await propose({ kind: "email_send", mail: { to: "yash@orbio.so\r\nBcc: thief@evil.io", subject: "Re: demo", body: "x" } }, { owner: O, moonletId: "m_x", moonletName: "X", runId: null, autopilot: false });
+    expect(r.status).toBe("failed");
+    expect(String((r.result as { error?: string })?.error)).toMatch(/invalid address|line break/);
+    expect(await store.listProposals(O, "pending")).toHaveLength(0);
+  });
+});
