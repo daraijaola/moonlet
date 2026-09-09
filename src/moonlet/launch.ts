@@ -1,4 +1,4 @@
-import { activeSiblings, plan, spendablePerDay, CADENCE_WORDS } from "./budget";
+import { plan, spendablePerDay, CADENCE_WORDS } from "./budget";
 import { bagOf } from "./bag";
 import type { JobSpec } from "./spec";
 import * as store from "./store";
@@ -20,7 +20,7 @@ export async function launchMoonlet(owner: string, spec: JobSpec, opts: LaunchOp
   if (siblings.length >= MAX_MOONLETS) return { ok: false as const, error: `you already have ${siblings.length} moonlets, the most one wallet can run; retire one first` };
 
   const bag = await bagOf(owner, opts.fetch);
-  const p = plan(spec, bag, undefined, activeSiblings(siblings));
+  const p = plan(spec, bag);
   const id = store.newId("m");
   const now = Date.now();
   await store.insertMoonlet({
@@ -57,7 +57,7 @@ export function familyNote(siblings: store.MoonletRow[], burnPerDayUsd: number, 
   const total = active.reduce((s, m) => s + m.burnPerDayUsd, 0) + burnPerDayUsd;
   const spendable = spendablePerDay(earnPerDayUsd);
   if (total <= spendable) return "";
-  return `Together your ${active.length + 1} moonlets would burn about $${total.toFixed(3)}/day against the $${spendable.toFixed(3)}/day your bag earns; when credits run short the ones with the most runs go quiet first.`;
+  return `Together your ${active.length + 1} moonlets can spend up to about $${total.toFixed(3)}/day against the $${spendable.toFixed(3)}/day your bag earns; they'll draw the balance down and go quiet when the credits run out.`;
 }
 
 export function describeSpec(spec: JobSpec) {

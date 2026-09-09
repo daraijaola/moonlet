@@ -35,8 +35,6 @@ export type MoonletState = {
   runId?: string | null;
   /** Set when this moonlet was itself spawned; children do not spawn (no chain reactions). */
   parentId?: string | null;
-  /** The wallet's other moonlets sharing its income; this one plans against its even slice. */
-  siblings?: number;
   openCalls?: Array<{ claim: string; check: string; madeAt: number }>;
   record?: { hits: number; misses: number };
   /** Set when the free tripwire probe pulled this run forward: what moved. */
@@ -81,7 +79,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   // Set by the tools the moment they touch mail or a private repo; inbox jobs are private from the start.
   let isPrivate = m.spec.tools.some((t) => t.startsWith("gmail_"));
   const bag = deps.bagOf ? await deps.bagOf(m.owner) : m.bag;
-  const p = plan(m.spec, bag, undefined, m.siblings ?? 0);
+  const p = plan(m.spec, bag);
   const askedModel = m.spec.model && m.spec.model !== "auto" ? m.spec.model : pickModel(p.earnPerDayUsd, m.spec.template === "repo-mechanic" ? "code" : "run");
   // The receipt names the model that answered, which after a fallback is not the one we asked for.
   let model = askedModel;

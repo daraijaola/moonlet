@@ -231,7 +231,7 @@ function Detail({ m, all, owner, onChange, conns, launched, askDelete, status }:
     try {
       const r = (await fn()) as { status?: string; error?: string } | undefined;
       await Promise.all([onChange(), loadRuns()]);
-      flash(r?.status === "failed" ? `Run failed: ${r.error ?? "see the run below"}` : r?.status === "quiet" ? "Run went quiet: not enough fuel this time." : done);
+      flash(r?.status === "failed" ? `Run failed: ${r.error ?? "see the run below"}` : r?.status === "quiet" ? "Run went quiet: no credits for a run right now." : done);
     } catch (e) {
       flash(`Failed: ${(e as Error).message}`);
       setBusy(null);
@@ -247,7 +247,7 @@ function Detail({ m, all, owner, onChange, conns, launched, askDelete, status }:
     : m.status === "paused"
       ? <>Paused. Resume to pick the schedule back up.</>
       : m.status === "quiet"
-        ? <>Quiet: not enough fuel. It wakes up when the bag earns.</>
+        ? <>Quiet: out of credits. It wakes up as the bag earns.</>
         : m.spec.tripwire
           ? m.spec.tripwire.metric === "repo_activity"
             ? <>Watching {m.spec.tripwire.target} for free every 15 min; wakes on a new push, issue or pull request. Heartbeat <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>.</>

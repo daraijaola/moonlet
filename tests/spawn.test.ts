@@ -105,6 +105,6 @@ describe("a moonlet spawns a moonlet", () => {
   it("familyNote is silent when the income covers everyone and honest when it does not", () => {
     const sib = (burn: number) => ({ burnPerDayUsd: burn, status: "idle" }) as store.MoonletRow;
     expect(familyNote([sib(0.01)], 0.01, 1)).toBe("");
-    expect(familyNote([sib(0.02), sib(0.02)], 0.02, 0.035)).toMatch(/3 moonlets would burn about \$0\.060\/day against the \$0\.030\/day/);
+    expect(familyNote([sib(0.02), sib(0.02)], 0.02, 0.035)).toMatch(/3 moonlets can spend up to about \$0\.060\/day against the \$0\.030\/day/);
   });
 });

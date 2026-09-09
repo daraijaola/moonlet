@@ -41,7 +41,7 @@ export function publicMoonlet(m: store.MoonletRow) {
     status: m.status,
     delivery: m.delivery,
     autopilot: m.autopilot,
-    cadence: m.cadence,
+    cadence: m.spec.cadence,
     perRunCapUsd: m.perRunCapUsd,
     earnPerDayUsd: m.earnPerDayUsd,
     burnPerDayUsd: m.burnPerDayUsd,

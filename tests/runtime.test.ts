@@ -217,15 +217,13 @@ describe("runner", () => {
 });
 
 describe("budget", () => {
-  it("slows cadence before going quiet", () => {
+  it("keeps the owner's cadence and cap; only the holder floor makes it quiet", () => {
     const p = plan({ ...marketWatch, cadence: "15m" }, 5_000);
     expect(p.quiet).toBe(false);
-    expect(p.cadence).not.toBe("15m");
-    expect(p.perRunCapUsd).toBeGreaterThanOrEqual(0.012);
+    expect(p.cadence).toBe("15m");
+    expect(p.perRunCapUsd).toBe(marketWatch.spendCapUsd);
     expect(plan(marketWatch, 999).quiet).toBe(true);
-    const tiny = plan({ ...marketWatch, template: "repo-mechanic" }, 1_000);
-    expect(tiny.quiet).toBe(false);
-    expect(["24h", "7d"]).toContain(tiny.cadence);
+    expect(plan({ ...marketWatch, template: "repo-mechanic" }, 1_000).cadence).toBe(marketWatch.cadence);
   });
 });
 
