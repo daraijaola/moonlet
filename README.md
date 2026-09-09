@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://moonlet.16labs.xyz"><img alt="live" src="https://img.shields.io/badge/live-moonlet.16labs.xyz-15161d?style=flat-square"></a>
-  <img alt="tests" src="https://img.shields.io/badge/tests-137%20passing-4f7a5a?style=flat-square">
+  <img alt="tests" src="https://img.shields.io/badge/tests-152%20passing-4f7a5a?style=flat-square">
   <img alt="stack" src="https://img.shields.io/badge/Next.js%2016-TypeScript-15161d?style=flat-square">
   <a href="https://www.orbio.so/build"><img alt="Orbio Build Week" src="https://img.shields.io/badge/Orbio-Build%20Week%202026-e6b64a?style=flat-square"></a>
 </p>
@@ -115,7 +115,12 @@ Gmail is a workspace, not a mailbox to post into. An inbox moonlet reads what ca
 - Recommended caps follow the model (Gemini Flash 1×, GPT-5.6 Terra 4×, Claude Sonnet 5 6× of the template's base cost). The wizard warns when a cap is too small to finish and offers the recommended one. A run that hits its cap finishes with what it has and says so on the card.
 - Orbio's gateway takes one model per request; if that model is down or rate-limited the loop moves to the next one itself, and the receipt names the model that actually answered.
 - Moonlets never see your private key, never move tokens, never ask for seeds. Model calls go through Orbio's gateway under your own key.
-- Acting tools always create a draft unless the moonlet is on autopilot. Spawning a new moonlet always asks.
+- Acting tools always create a draft unless the moonlet is on autopilot. Spawning a new moonlet always asks, autopilot or not.
+- What you approve is what runs. The draft stored at proposal time is the exact payload executed later: every recipient (To and Cc) is parsed and listed on the card, a forward's subject and attachments are read from the real source message, a bulk tidy is pinned to the messages it matched when drafted, PR cards carry the file contents. Header values are refused if they contain line breaks or control characters.
+- Fences live in code, not in the prompt: GitHub writes only to a repository named in the job; new emails and forwards only to addresses named in the job (replies may go to people already on the thread); at most 100 emails per approval. Text inside an email, page or repo cannot widen them.
+- An approval executes once (an execution lease is taken before any effect). If a provider stops answering after the request, the draft is marked *uncertain* and never retried on its own.
+- `web_fetch` only reaches public hosts: loopback, private, link-local and IPv6 equivalents are refused, redirects are re-checked, bodies are capped while streaming.
+- Sign-in accepts only the exact message the server minted (domain, URI, nonce, time), once. OAuth links for Gmail, GitHub and Orbio are single-use, expire in ten minutes, and only complete in the browser session that started them.
 - [Privacy](https://moonlet.16labs.xyz/privacy) · [Terms](https://moonlet.16labs.xyz/terms)
 
 ## Where we stand
@@ -131,7 +136,7 @@ Built during Orbio Build Week 2026, live at [moonlet.16labs.xyz](https://moonlet
 - Hashing on every run. Anchoring on Robinhood Chain is implemented and tested; the live deployment runs without an anchoring key, so its receipts are hashed, not anchored, and the copy says so.
 - Tripwire: a free 15-minute probe of one metric (price, liquidity, volume, wallet balance, repo activity) pulls a run forward when it moves past your line, at most once every three hours, and re-baselines after each run so a moonlet's own actions don't wake it.
 - Prove: each watch run makes one checkable call, the next scores it hit or miss, both inside the hash; a lifetime record per moonlet.
-- Privacy: each run carries its own private flag (mailbox or private-repo access); public pages, the sky and the JSON feed redact by run, receipts stay public.
+- Privacy: each run carries its own private flag (mailbox or private-repo access); public pages, previews, the sky and the JSON feed redact by run, receipts stay public. A report id from a client is honoured only if it belongs to the moonlet being asked.
 - Consent: acting tools create a draft; approving executes that one action; Autopilot is an explicit switch; spawning a moonlet always asks.
 
 **Connections**: Telegram (webhook, typing bubble, photos, files, approve/reject buttons, two-way chat), Discord webhooks, GitHub (OAuth), Gmail (OAuth, `gmail.modify`), X (OAuth). Tokens sealed at rest, deleted on disconnect.
