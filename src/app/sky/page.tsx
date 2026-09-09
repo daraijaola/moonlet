@@ -35,8 +35,11 @@ export default async function SkyPage() {
       <PublicHeader />
       <main className="relative mx-auto max-w-[1180px] px-4 pb-16 pt-10 sm:px-6 sm:pt-14">
         <header className="max-w-[640px]">
-          <p className="inline-flex items-center gap-1.5 rounded-full border border-ink/[0.1] bg-white/80 px-2.5 py-1 text-[12px] font-medium text-ink backdrop-blur">{running > 0 && <span className="h-1.5 w-1.5 rounded-full bg-moss animate-pulse" />}{running > 0 ? `${running} working right now` : `${stats.alive} in orbit`}</p>
-          <h1 className="mt-1 font-display text-[3.6rem] leading-[0.9] text-ink sm:text-[4.6rem]">The sky</h1>
+          <p className="inline-flex items-center gap-2 font-mono text-[11.5px] font-medium uppercase tracking-[0.14em] text-ink">
+            {running > 0 && <span className="h-1.5 w-1.5 rounded-full bg-moss animate-pulse" />}
+            {running > 0 ? `${running} working right now` : `${stats.alive} ${stats.alive === 1 ? "moonlet" : "moonlets"} alive · ${stats.total} launched`}
+          </p>
+          <h1 className="mt-3 font-display text-[3.6rem] leading-[0.9] text-ink sm:text-[4.6rem]">The sky</h1>
           <p className="mt-3 text-[15px] leading-[1.6] text-ink-soft">Every moonlet alive right now, funded by the bags they orbit. Dot size is the bag; a pulse means it&apos;s working.</p>
           <div className="mt-4"><FuelLive /></div>
         </header>
