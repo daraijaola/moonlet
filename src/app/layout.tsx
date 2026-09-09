@@ -24,13 +24,15 @@ export const metadata: Metadata = {
   title: "moonlet — your bag runs an agent",
   description:
     "Connect your wallet, type one sentence, and a moonlet works around the clock, paid only by the credits your $ORBIO earns. No key ever touches a human.",
-  metadataBase: new URL(process.env.APP_URL ?? "https://moonlet.sky"),
+  metadataBase: new URL(process.env.APP_URL ?? "https://moonlet.16labs.xyz"),
   openGraph: {
     title: "moonlet — your bag runs an agent",
     description:
-      "Self-funding AI agents for Orbio holders. Claims, spends, rotates, and anchors every run on Robinhood Chain.",
+      "Self-funding AI agents for Orbio holders. Claims, spends, rotates, and leaves a verifiable receipt for every run.",
     type: "website",
+    images: [{ url: "/og.png", width: 1200, height: 630, alt: "moonlet — your bag runs an agent" }],
   },
+  twitter: { card: "summary_large_image", images: ["/og.png"] },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -21,6 +21,8 @@ type Props = {
   size?: "sm" | "md" | "lg";
   showLabel?: boolean;
   className?: string;
+  /** Inside the app: sans labels and a smaller, quieter dial. Public pages keep the display face. */
+  app?: boolean;
 };
 
 /**
@@ -35,12 +37,13 @@ export function FuelGauge({
   size = "md",
   showLabel = true,
   className,
+  app = false,
 }: Props) {
   const tone = fuelTone(earnPerDay, burnPerDay, quiet);
   const t = TONE[tone];
   const ratio = earnPerDay > 0 ? Math.min(1, burnPerDay / earnPerDay) : 0;
-  const px = size === "lg" ? 168 : size === "md" ? 104 : 44;
-  const stroke = size === "lg" ? 12 : size === "md" ? 9 : 5;
+  const px = size === "lg" ? 168 : size === "md" ? (app ? 84 : 104) : 44;
+  const stroke = size === "lg" ? 12 : size === "md" ? (app ? 7 : 9) : 5;
   const r = (px - stroke) / 2;
   const c = 2 * Math.PI * r;
   const runwayDays =
@@ -76,13 +79,11 @@ export function FuelGauge({
         {size !== "sm" && (
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             <span
-              className={`font-display leading-none text-ink ${
-                size === "lg" ? "text-[2.6rem]" : "text-[1.5rem]"
-              }`}
+              className={app ? "text-[19px] font-semibold leading-none tracking-[-0.02em] text-ink tabular-nums" : `font-display leading-none text-ink ${size === "lg" ? "text-[2.6rem]" : "text-[1.5rem]"}`}
             >
               {tone === "grey" ? "—" : ratio < 0.01 && ratio > 0 ? `${(ratio * 100).toFixed(1)}%` : `${Math.round(ratio * 100)}%`}
             </span>
-            <span className="font-mono text-[10px] uppercase tracking-[0.12em] text-ink-soft">
+            <span className={app ? "mt-0.5 text-[10.5px] text-ink-faint" : "font-mono text-[10px] uppercase tracking-[0.12em] text-ink-soft"}>
               burn
             </span>
           </div>
@@ -92,15 +93,15 @@ export function FuelGauge({
       {showLabel && size !== "sm" && (
         <div className="min-w-0">
           <span
-            className={`inline-block rounded-full px-2 py-0.5 font-mono text-[11px] font-medium ${t.chip}`}
+            className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-medium ${app ? "" : "font-mono"} ${t.chip}`}
           >
             {t.label}
           </span>
-          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 font-mono text-[12.5px]">
+          <dl className={`mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5 text-[12.5px] ${app ? "" : "font-mono"}`}>
             <dt className="whitespace-nowrap text-ink-soft">in / day</dt>
-            <dd className="text-ink">{fmtUsd(earnPerDay)}</dd>
+            <dd className="font-mono tabular-nums text-ink">{fmtUsd(earnPerDay)}</dd>
             <dt className="whitespace-nowrap text-ink-soft">out / day</dt>
-            <dd className="text-ink">{fmtUsd(burnPerDay)}</dd>
+            <dd className="font-mono tabular-nums text-ink">{fmtUsd(burnPerDay)}</dd>
             {runwayDays !== null && (
               <>
                 <dt className="text-ink-soft">runway</dt>

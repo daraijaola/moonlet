@@ -1,4 +1,4 @@
-import { plan, spendablePerDay, CADENCE_WORDS } from "./budget";
+import { activeSiblings, plan, spendablePerDay, CADENCE_WORDS } from "./budget";
 import { bagOf } from "./bag";
 import type { JobSpec } from "./spec";
 import * as store from "./store";
@@ -20,7 +20,7 @@ export async function launchMoonlet(owner: string, spec: JobSpec, opts: LaunchOp
   if (siblings.length >= MAX_MOONLETS) return { ok: false as const, error: `you already have ${siblings.length} moonlets, the most one wallet can run; retire one first` };
 
   const bag = await bagOf(owner, opts.fetch);
-  const p = plan(spec, bag);
+  const p = plan(spec, bag, undefined, activeSiblings(siblings));
   const id = store.newId("m");
   const now = Date.now();
   await store.insertMoonlet({

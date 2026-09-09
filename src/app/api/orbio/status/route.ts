@@ -25,9 +25,10 @@ export async function GET(req: Request) {
     }
   }
   const canWrite = !!sessionFrom(req) || process.env.ALLOW_HEADER_AUTH === "1" || process.env.NODE_ENV !== "production";
-  const o = await store.getOwner(owner);
+  const [o, avatar] = await Promise.all([store.getOwner(owner), store.avatarOf(owner)]);
   const res = NextResponse.json({
     approved: !!orbio,
+    avatar,
     bag,
     earnPerDayUsd: estimateEarnPerDay(bag),
     idleCreditsUsd: balanceUsd,

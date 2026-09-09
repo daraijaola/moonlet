@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 import { makeAnchorer, type Anchorer } from "./anchor";
-import { estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
+import { activeSiblings, estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
 import { makeOrbioClient, OrbioAuthError, refreshOrbioToken, type OrbioClient } from "./orbio";
 import { devOrbio } from "./orbio-dev";
 import { runMoonlet } from "./runner";
@@ -225,14 +225,10 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   }
   if (!ghConn && m.spec.tools.some((t) => t === "github_read" || t === "open_pull_request" || t === "comment_on_issue" || t === "open_issue") && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read")) {
     // A repo job without GitHub access has nothing to read; park it rather than burn credits reporting 404s.
-    await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
-    await recordRun(m.id, now(), { status: "quiet", error: "GitHub isn't connected; reconnect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "GitHub isn't connected. Reconnect it under Connections and this moonlet resumes on its own." }] });
-    return { status: "quiet" };
+    return parkForConnection(m, "GitHub isn't connected; reconnect it under Connections and this moonlet resumes on its own", now);
   }
   if (!gmConn && m.spec.tools.some((t) => t.startsWith("gmail_")) && !m.spec.tools.some((t) => t === "token_market" || t === "chain_read" || t === "web_fetch" || t === "web_search")) {
-    await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
-    await recordRun(m.id, now(), { status: "quiet", error: "Gmail isn't connected; connect it under Connections and this moonlet resumes on its own", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: "Gmail isn't connected. Connect it under Connections and this moonlet resumes on its own." }] });
-    return { status: "quiet" };
+    return parkForConnection(m, "Gmail isn't connected; connect it under Connections and this moonlet resumes on its own", now);
   }
   const deliver: DeliverySink | undefined =
     deps.deliver ??
@@ -254,6 +250,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const result = await run(
     {
       id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
+      siblings: activeSiblings(await store.listMoonlets(m.owner), m.id),
       openCalls: m.openCalls, record: { hits: m.hits, misses: m.misses }, tripped: m.watch?.tripped,
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: gmConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
@@ -262,7 +259,8 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;
-  const nextRunAt = now() + (result.status === "failed" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : CADENCE_MS[cadence]);
+  // Failures retry within the hour; a moonlet quiet for money checks back daily (the bag grows, a sibling gets paused) rather than sleeping a week.
+  const nextRunAt = now() + (result.status === "failed" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : result.status === "quiet" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["24h"]) : CADENCE_MS[cadence]);
   const rotated = result.keyEvents.filter((e) => e.kind === "rotated").length;
   if (m.watch?.tripped) result.keyEvents.unshift({ kind: "tripwire", detail: `woke early: ${m.watch.tripped}` });
 
@@ -278,6 +276,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     durationMs: result.durationMs,
     keyEvents: result.keyEvents,
     trace: result.trace,
+    private: result.private,
   });
 
   await store.updateMoonlet(id, {
@@ -304,6 +303,12 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     runsFailed: m.runsFailed + (result.status === "failed" ? 1 : 0),
     spentTotalUsd: m.spentTotalUsd + result.costUsd,
   });
+
+  // Deleted while running: the run stays as a receipt, but nothing is anchored, delivered or proposed for a moonlet that no longer exists.
+  if (!(await store.getMoonlet(id))) {
+    for (const p of (await store.listProposals(m.owner, "pending")).filter((p) => p.moonletId === id)) await store.decideProposal(p.id, "rejected").catch(() => undefined);
+    return { status: "deleted", runId, outputHash: result.outputHash };
+  }
 
   let txHash: string | undefined;
   if (result.status === "done" && result.outputHash) {
@@ -351,6 +356,16 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   return { status: result.status, error: result.error, runId, txHash, outputHash: result.outputHash };
 }
 
+/** No connection, nothing to read: park quietly and check back hourly, but write the reason once rather than one identical run per hour. */
+async function parkForConnection(m: store.MoonletRow, reason: string, now: () => number) {
+  await store.updateMoonlet(m.id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
+  const last = (await store.listRuns(m.id, 1))[0];
+  if (!(last?.status === "quiet" && last.error === reason)) {
+    await recordRun(m.id, now(), { status: "quiet", error: reason, model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [{ kind: "quiet", detail: `${reason.replace(/; (\w)/, (_, c: string) => `. ${c.toUpperCase()}`)}.` }] });
+  }
+  return { status: "quiet" };
+}
+
 async function recordRun(
   moonletId: string,
   at: number,
@@ -366,6 +381,7 @@ async function recordRun(
     durationMs: number;
     keyEvents: store.RunRow["keyEvents"];
     trace?: store.RunRow["trace"];
+    private?: boolean;
   },
 ) {
   const id = r.id ?? store.newId("run");
@@ -393,6 +409,7 @@ async function recordRun(
     keyEvents: r.keyEvents,
     trace: r.trace ?? [],
     error: r.error ?? null,
+    private: !!r.private,
   });
   return id;
 }

@@ -1,4 +1,4 @@
-import { CADENCE_MS, type Cadence, type JobSpec, TEMPLATE_DEFAULTS } from "./spec";
+import { CADENCE_MS, type Cadence, type JobSpec, recommendedCapUsd } from "./spec";
 
 /**
  * Budgeting to income. A moonlet may only spend what its owner's bag earns,
@@ -37,12 +37,17 @@ export type Plan = {
  * moonlet may run. Slows the cadence before cutting the cap, because a run that
  * can't afford its tools is worse than a run that happens less often.
  */
-export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPerDay(bag)): Plan {
+export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPerDay(bag), siblings = 0): Plan {
   if (bag < HOLDER_FLOOR) {
     return { cadence: spec.cadence, perRunCapUsd: 0, burnPerDayUsd: 0, earnPerDayUsd, quiet: true, reason: `bag below ${HOLDER_FLOOR}` };
   }
-  const spendable = spendablePerDay(earnPerDayUsd);
-  const floorCap = Math.min(TEMPLATE_DEFAULTS[spec.template].costPerRunUsd, spec.spendCapUsd);
+  // One wallet, one income, split evenly between the moonlets on it. Splitting (rather than letting earlier launches claim
+  // what they planned for) means a job that ran once last week cannot starve the ones that run every day; the slice slows
+  // cadence, and a moonlet only goes quiet when its slice can't pay for one run even weekly.
+  const shares = 1 + Math.max(0, siblings);
+  const spendable = spendablePerDay(earnPerDayUsd) / shares;
+  // Templates were costed on Flash; a heavier model needs a bigger cap to finish, so slow the cadence before starving the run.
+  const floorCap = Math.min(recommendedCapUsd(spec.template, spec.model ?? "auto"), spec.spendCapUsd);
   const order: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
   let cadence = spec.cadence;
   for (let i = order.indexOf(spec.cadence); i < order.length; i++) {
@@ -58,8 +63,15 @@ export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPer
     burnPerDayUsd: 0,
     earnPerDayUsd,
     quiet: true,
-    reason: `earns $${earnPerDayUsd.toFixed(3)}/day, below the $${floorCap} a ${spec.template} run needs`,
+    reason: shares > 1
+      ? `the bag earns $${earnPerDayUsd.toFixed(3)}/day shared by ${shares} moonlets; this one's slice can't cover a ${spec.template} run ($${floorCap}) even weekly. Pause one of the others to free it`
+      : `earns $${earnPerDayUsd.toFixed(3)}/day, below the $${floorCap} a ${spec.template} run needs`,
   };
+}
+
+/** The wallet's other moonlets that share its income: everything the owner hasn't paused or deleted. Quiet ones count; they're waiting on money. */
+export function activeSiblings(siblings: Array<{ id: string; status: string }>, exceptId?: string) {
+  return siblings.filter((m) => m.id !== exceptId && m.status !== "paused" && m.status !== "deleted").length;
 }
 
 /** How much to ask Orbio for on a fresh key: about three days of burn, clamped to Orbio's $200 ceiling. */

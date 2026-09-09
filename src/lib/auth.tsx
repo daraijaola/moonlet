@@ -106,7 +106,7 @@ async function walletConnectProvider(): Promise<Eip1193> {
     optionalChains: [1],
     showQrModal: true,
     rpcMap: { 4663: "https://rpc.mainnet.chain.robinhood.com" },
-    metadata: { name: "Moonlet", description: "Self-funding agents for $ORBIO holders", url: typeof window !== "undefined" ? window.location.origin : "https://moonlet.sky", icons: ["/icon.svg"] },
+    metadata: { name: "Moonlet", description: "Self-funding agents for $ORBIO holders", url: typeof window !== "undefined" ? window.location.origin : "https://moonlet.16labs.xyz", icons: ["/icon.svg"] },
   });
   await p.connect();
   wcProvider = p as unknown as Eip1193;

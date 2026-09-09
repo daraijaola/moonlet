@@ -85,6 +85,18 @@ export async function listRepos(token: string, limit = 30, fetchImpl?: typeof fe
   return items.map((r) => ({ repo: r.full_name as string, private: !!r.private, description: String(r.description ?? "").slice(0, 160), language: r.language as string | null, pushed: r.pushed_at as string, stars: r.stargazers_count as number, url: r.html_url as string, defaultBranch: r.default_branch as string }));
 }
 
+const repoPrivacy = new Map<string, boolean>();
+/** Whether owner/name is a private repo, cached per process. Unknown (404, network) is treated as private. */
+export async function isPrivateRepo(token: string, repo: string, fetchImpl?: typeof fetch): Promise<boolean> {
+  const key = `${token.slice(-8)}:${repo.toLowerCase()}`;
+  const hit = repoPrivacy.get(key);
+  if (hit !== undefined) return hit;
+  const r = await gh<{ private?: boolean }>(token, `/repos/${repo}`, {}, fetchImpl).catch(() => null);
+  const priv = r ? !!r.private : true;
+  repoPrivacy.set(key, priv);
+  return priv;
+}
+
 export async function readRepo(token: string, q: RepoRead, fetchImpl?: typeof fetch) {
   if (q.action === "repos") return { repos: await listRepos(token, q.limit ?? 30, fetchImpl) };
   const [o, r] = q.repo.split("/");

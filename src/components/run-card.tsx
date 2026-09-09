@@ -2,6 +2,7 @@
 
 import { LightMarkdown } from "@/components/light-markdown";
 import { useState } from "react";
+import { ChevronDown, ChevronUp, FileText, Hash, ShieldCheck } from "lucide-react";
 import { fmtUsd, shortenHexes, timeAgo, type ApiRun } from "@/lib/api";
 
 export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: boolean }) {
@@ -9,14 +10,14 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
   const tone = run.status === "failed" ? "border-red-700/30" : run.status === "quiet" ? "border-ink/10 opacity-80" : "border-ink/10";
   const hasBody = run.body.trim().length > 0;
   return (
-    <article className={`rounded-lg border bg-white p-4 transition-colors hover:border-ink/25 ${tone}`}>
+    <article className={`rounded-xl border bg-white p-4 shadow-[0_1px_2px_rgba(21,22,29,0.04)] transition-colors hover:border-ink/20 ${tone}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-            <time className="font-mono text-[11px] text-ink-faint" dateTime={new Date(run.at).toISOString()}>{timeAgo(run.at)}</time>
-            {run.signal === "high" && <span className="rounded-full bg-gold/25 px-1.5 py-0.5 font-mono text-[10px]">high signal</span>}
-            {run.nothingHappened && run.status === "done" && <span className="rounded-full bg-ink/5 px-1.5 py-0.5 font-mono text-[10px] text-ink-soft">nothing new</span>}
-            {run.status === "failed" && <span className="rounded-full bg-red-50 px-1.5 py-0.5 font-mono text-[10px] text-red-700">failed</span>}
+            <time className="text-[11.5px] text-ink-faint" dateTime={new Date(run.at).toISOString()}>{timeAgo(run.at)}</time>
+            {run.signal === "high" && <span className="rounded-full bg-gold/25 px-1.5 py-0.5 text-[10.5px] font-medium">high signal</span>}
+            {run.nothingHappened && run.status === "done" && <span className="rounded-full bg-ink/5 px-1.5 py-0.5 text-[10.5px] font-medium text-ink-soft">nothing new</span>}
+            {run.status === "failed" && <span className="rounded-full bg-red-50 px-1.5 py-0.5 text-[10.5px] font-medium text-red-700">failed</span>}
           </div>
           <h4 className="mt-1 text-[15.5px] font-semibold leading-[1.3] tracking-[-0.01em] text-ink [overflow-wrap:anywhere]" title={run.title}>{shortenHexes(run.title)}</h4>
           <p className={`mt-1.5 text-[13.5px] leading-[1.6] text-ink-soft [overflow-wrap:anywhere] ${open ? "" : "line-clamp-3"}`}>{shortenHexes(run.summary)}</p>
@@ -31,15 +32,15 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
                   </span>
                 </li>
               ))}
-              {!open && run.sections!.length > 3 && <li className="font-mono text-[11px] text-ink-faint">+{run.sections!.length - 3} more</li>}
+              {!open && run.sections!.length > 3 && <li className="text-[11.5px] text-ink-faint">+{run.sections!.length - 3} more</li>}
             </ul>
           )}
           {(run.files?.length ?? 0) > 0 && (
             <ul className="mt-3 flex flex-wrap gap-2">
               {run.files!.map((f) => (
                 <li key={f.id}>
-                  <a href={f.url} download={f.name} className="inline-flex items-center gap-1.5 rounded-md border border-ink/15 bg-paper px-2.5 py-1 font-mono text-[11.5px] text-ink hover:border-ink/40" title={`${f.mime} · ${(f.size / 1024).toFixed(0)} KB`}>
-                    <FileGlyph /> {f.name}
+                  <a href={f.url} download={f.name} className="inline-flex items-center gap-1.5 rounded-md border border-ink/12 bg-paper px-2.5 py-1 text-[12px] text-ink hover:border-ink/30" title={`${f.mime} · ${(f.size / 1024).toFixed(0)} KB`}>
+                    <FileText size={12} strokeWidth={1.75} /> {f.name}
                     <span className="text-ink-faint">{(f.size / 1024).toFixed(0)} KB</span>
                   </a>
                 </li>
@@ -73,13 +74,13 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
               {run.scored?.map((s, i) => (
                 <li key={`s${i}`} className="flex items-start gap-2 text-[12.5px] leading-[1.5]">
                   <span className={`mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] ${s.result === "hit" ? "bg-moss/15 text-moss" : s.result === "miss" ? "bg-red-700/10 text-red-800" : "bg-ink/5 text-ink-soft"}`}>{s.result}</span>
-                  <span className="text-ink"><span className="text-ink-soft">called: </span>{s.claim}{s.evidence ? <span className="text-ink-soft"> · {s.evidence}</span> : null}</span>
+                  <span className="min-w-0 break-words text-ink"><span className="text-ink-soft">called: </span>{s.claim}{s.evidence ? <span className="text-ink-soft"> · {s.evidence}</span> : null}</span>
                 </li>
               ))}
               {run.calls?.map((c, i) => (
                 <li key={`c${i}`} className="flex items-start gap-2 text-[12.5px] leading-[1.5]">
                   <span className="mt-0.5 shrink-0 rounded-full bg-gold/25 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-ink">calls it</span>
-                  <span className="text-ink">{c.claim}<span className="text-ink-soft"> · scored next run{c.check ? ` by ${c.check}` : ""}</span></span>
+                  <span className="min-w-0 break-words text-ink">{c.claim}<span className="text-ink-soft"> · scored next run{c.check ? ` by ${c.check}` : ""}</span></span>
                 </li>
               ))}
             </ul>
@@ -100,21 +101,21 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
         </div>
       </div>
 
-      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 font-mono text-[11.5px] text-ink-soft">
+      <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-ink/[0.06] pt-3 text-[12px] text-ink-soft">
         {(hasBody || run.sources.length > 0 || run.keyEvents.length > 0 || (run.sections?.length ?? 0) > 3 || (run.trace?.length ?? 0) > 0) && (
-          <button onClick={() => setOpen((o) => !o)} className="rounded-md border border-ink/15 bg-paper px-2 py-1 text-ink hover:border-ink/40">
-            {open ? "Collapse" : hasBody ? "Read" : "Details"}
+          <button onClick={() => setOpen((o) => !o)} className="inline-flex items-center gap-1 font-medium text-ink hover:text-ink-soft">
+            {open ? <><ChevronUp size={13} strokeWidth={2} /> Collapse</> : <><ChevronDown size={13} strokeWidth={2} /> {hasBody ? "Read the report" : "Details"}</>}
           </button>
         )}
-        <span>{run.costUsd === 0 ? "no spend" : `${fmtUsd(run.costUsd, 4)} spent`}</span>
-        {run.model !== "-" && <span className="hidden sm:inline">{run.model}</span>}
-        <span className="hidden sm:inline">{(run.durationMs / 1000).toFixed(1)}s</span>
+        <span className="font-mono text-[11.5px] tabular-nums">{run.costUsd === 0 ? "no spend" : fmtUsd(run.costUsd, 4)}</span>
+        {run.model !== "-" && <span className="hidden text-ink-faint sm:inline">{run.model.split("/").pop()}</span>}
+        <span className="hidden font-mono text-[11.5px] tabular-nums text-ink-faint sm:inline">{(run.durationMs / 1000).toFixed(1)}s</span>
         {run.txHash ? (
-          <a href={run.explorerUrl ?? "#"} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 text-moss hover:underline" title={`output hash ${run.outputHash}`}>
-            <Check /> verified on chain
+          <a href={run.explorerUrl ?? "#"} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 font-medium text-moss hover:underline" title={`output hash ${run.outputHash}`}>
+            <ShieldCheck size={13} strokeWidth={2} /> verified on chain
           </a>
         ) : run.outputHash ? (
-          <span className="ml-auto inline-flex items-center gap-1 text-ink-faint" title={run.outputHash}>{anchoring ? "hashed · anchoring…" : "hashed"}</span>
+          <span className="ml-auto inline-flex items-center gap-1 text-ink-faint" title={run.outputHash}><Hash size={12} strokeWidth={2} /> {anchoring ? "anchoring…" : "hashed"}</span>
         ) : (
           <span className="ml-auto text-ink-faint">{run.status}</span>
         )}
@@ -122,17 +123,3 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
     </article>
   );
 }
-
-const Check = () => (
-  <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden>
-    <circle cx="6" cy="6" r="5.2" fill="none" stroke="currentColor" strokeWidth="1.4" />
-    <path d="M3.6 6.2 5.3 7.8 8.5 4.4" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
-);
-
-const FileGlyph = () => (
-  <svg width="11" height="12" viewBox="0 0 11 12" aria-hidden>
-    <path d="M1.5 1.5h5l3 3v6h-8z" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-    <path d="M6.5 1.5v3h3" fill="none" stroke="currentColor" strokeWidth="1.2" strokeLinejoin="round" />
-  </svg>
-);

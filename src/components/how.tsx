@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ArrowRight } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { motion, useInView, useReducedMotion } from "motion/react";
 import { DitherField } from "./dither-field";
@@ -9,10 +10,10 @@ import { MiniMoonlet, type Gesture } from "./mini-moonlet";
 const EASE = [0.23, 1, 0.32, 1] as const;
 
 const STEPS: { gesture: Gesture; title: string; body: string; meta: string }[] = [
-  { gesture: "listen", title: "Say the job", body: "One sentence. Moonlet drafts the plan: objective, sources, tools, model, cadence. You can change any of it before a cent moves.", meta: "01 · brief" },
-  { gesture: "claim", title: "It claims its own key", body: "It reads your Orbio balance and claims a capped inference key through Orbio's MCP. The key never sits in your clipboard.", meta: "02 · key" },
-  { gesture: "work", title: "It works while you don't", body: "On its own schedule, budgeted to what the bag earns. Reads the chain, the market and the web; asks you before it posts anything.", meta: "03 · run" },
-  { gesture: "stamp", title: "It leaves a receipt", body: "Every run records cost, model, duration and a hash anchored on Robinhood Chain. The public page is open to anyone.", meta: "04 · receipt" },
+  { gesture: "listen", title: "Say the job", body: "One sentence is enough. Moonlet writes the plan: what to check, which tools, how often. Change any of it before a cent moves.", meta: "01 · brief" },
+  { gesture: "claim", title: "It claims its own key", body: "It reads your Orbio balance and claims a capped inference key for itself. The key never touches your clipboard.", meta: "02 · key" },
+  { gesture: "work", title: "It works while you don't", body: "On its own schedule, spending only what the bag earns. It reads the chain, the market and the web, and asks before it posts anything.", meta: "03 · run" },
+  { gesture: "stamp", title: "It leaves a receipt", body: "Every run leaves a receipt: cost, model, time taken and a hash of what it wrote, stamped on Robinhood Chain when anchoring is on. Anyone can open the page.", meta: "04 · receipt" },
 ];
 
 function Step({ s, i }: { s: (typeof STEPS)[number]; i: number }) {
@@ -68,9 +69,12 @@ export function How() {
           <p className="mt-6 max-w-[26rem] text-[16.5px] leading-[1.55] text-ink-soft">
             No dashboard to babysit. You write the job once; the moonlet handles the money, the schedule and the proof.
           </p>
-          <Link href="/app" className="btn-press mt-8 inline-flex rounded-full bg-ink px-5 py-2.5 text-[14px] font-medium text-cream">
-            Launch a moonlet
-          </Link>
+          <div className="mt-8 flex flex-col gap-2.5 sm:flex-row sm:items-center">
+            <Link href="/app" className="lp-btn lp-btn-primary lp-btn-block">
+              Launch a moonlet <ArrowRight className="lp-arrow" size={15} strokeWidth={2.2} />
+            </Link>
+            <Link href="#use-cases" className="lp-btn lp-btn-secondary lp-btn-block">See it working</Link>
+          </div>
         </div>
         <ol>
           {STEPS.map((s, i) => (

@@ -57,6 +57,7 @@ export function publicMoonlet(m: store.MoonletRow) {
     runsFailed: m.runsFailed,
     spentTotalUsd: m.spentTotalUsd,
     openCalls: m.openCalls,
+    avatar: m.avatar,
     hits: m.hits,
     misses: m.misses,
   };

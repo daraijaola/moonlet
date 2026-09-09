@@ -191,7 +191,7 @@ function SignInInner() {
             </p>
             <p className="mt-4 text-[13.5px] leading-[1.6] text-ink-soft">
               You approve once. From then on the moonlet keeps itself funded off your bag, and
-              every finished run is anchored on Robinhood Chain so anyone can check it did the
+              every finished run is hashed, and anchored on Robinhood Chain once anchoring is switched on, so anyone can check it did the
               work.
             </p>
           </div>

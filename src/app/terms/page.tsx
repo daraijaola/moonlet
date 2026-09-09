@@ -29,7 +29,7 @@ export default function Terms() {
       <p>What we store and how connections work is in the <a href="/privacy">privacy page</a>.</p>
 
       <h2>Contact</h2>
-      <p><a href="https://t.me/moonletbbot">@moonletbbot</a> on Telegram, or <a href="https://github.com/daraijaola/moonlet/issues">an issue on GitHub</a>.</p>
+      <p><a href="https://github.com/daraijaola/moonlet/issues">Open an issue on GitHub</a>. The Telegram bot delivers your moonlets&apos; reports; it isn&apos;t a support channel.</p>
     </LegalPage>
   );
 }

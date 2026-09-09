@@ -27,6 +27,7 @@ export type ApiMoonlet = {
   runsFailed: number;
   spentTotalUsd: number;
   openCalls: Array<{ claim: string; check: string; madeAt: number; runId: string | null }>;
+  avatar: number;
   hits: number;
   misses: number;
 };
@@ -77,7 +78,7 @@ export type Proposal = {
   decidedAt: number | null;
 };
 
-export type OrbioStatus = { approved: boolean; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; legacyKeyUsd?: number | null; canWrite: boolean; orbio: { tools: string[]; error: string | null; expiresAt: number | null; dev: boolean } };
+export type OrbioStatus = { approved: boolean; avatar: number; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; legacyKeyUsd?: number | null; canWrite: boolean; orbio: { tools: string[]; error: string | null; expiresAt: number | null; dev: boolean } };
 
 async function req<T>(owner: string | null, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -114,7 +115,7 @@ export const api = {
   disconnect: (owner: string, kind: ConnectionKind) => req<{ ok: boolean }>(owner, "/api/connections", { method: "DELETE", body: JSON.stringify({ kind }) }),
   telegramLink: (owner: string) => req<{ code: string; url: string | null }>(owner, "/api/connections/telegram", { method: "POST" }),
   telegramPoll: (owner: string) => req<{ linked: boolean; label: string | null }>(owner, "/api/connections/telegram"),
-  githubStart: (owner: string) => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo: "/app/connections" }) }),
+  githubStart: (owner: string, redirectTo = "/app/connections") => req<{ url: string }>(owner, "/api/connections/github/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo }) }),
   githubConnect: (owner: string, token: string) => req<{ ok: boolean; login: string }>(owner, "/api/connections/github", { method: "POST", body: JSON.stringify({ token }) }),
   gmailStart: (owner: string, redirectTo?: string) => req<{ url: string }>(owner, "/api/connections/gmail/start", { method: "POST", body: JSON.stringify({ origin: typeof window !== "undefined" ? window.location.origin : undefined, redirectTo }) }),
   discordConnect: (owner: string, webhookUrl: string) => req<{ ok: boolean; label: string }>(owner, "/api/connections/discord", { method: "POST", body: JSON.stringify({ webhookUrl }) }),

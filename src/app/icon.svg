@@ -1,17 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-  <style>
-    .ink { fill: #15161D; } .ink-s { stroke: #15161D; } .face { fill: #FFFFFF; } .face-s { stroke: #FFFFFF; }
-    @media (prefers-color-scheme: dark) {
-      .ink { fill: #F7F4EE; } .ink-s { stroke: #F7F4EE; } .face { fill: #15161D; } .face-s { stroke: #15161D; }
-    }
-  </style>
-  <path class="ink-s" d="M45.5 18.5 L52.5 9.5" stroke-width="4.2" stroke-linecap="round"/>
-  <circle class="ink" cx="53.5" cy="8" r="4.6"/>
-  <circle class="ink" cx="30" cy="37" r="24.5"/>
-  <circle class="face" cx="19.5" cy="28" r="2.7"/>
-  <circle class="face" cx="41" cy="51" r="2.1"/>
-  <circle class="face" cx="16" cy="45.5" r="1.7"/>
-  <path class="face-s" d="M19.5 38.5 q5 4.4 10 0" stroke-width="3.2" stroke-linecap="round" fill="none"/>
-  <path class="face-s" d="M33 38.5 q5 4.4 10 0" stroke-width="3.2" stroke-linecap="round" fill="none"/>
-  <path class="face-s" d="M27.5 48 q3.8 3 7.6 0" stroke-width="2.6" stroke-linecap="round" fill="none"/>
-</svg>
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="#17191f"/><g transform="translate(8 9) scale(0.48)"><g fill="#f7f4ee" stroke="#f7f4ee" stroke-linecap="round" stroke-linejoin="round"><path d="M57 27C58 18 64 12 72 11" fill="none" stroke-width="5.2"/><path d="M46 24C37 24 32 28 26 28C23 28 24 32 22 35C20 41 15 44 11 43C8 42 9 47 7 51C1 65 6 82 20 89C35 97 54 94 68 85C82 76 87 61 80 46C74 32 61 24 46 24Z" fill="none" stroke-width="6.2"/><path d="M28 57Q35 62 42 56M54 54Q61 60 68 54" fill="none" stroke-width="4.8"/><path d="M47 67Q52 71 57 66" fill="none" stroke-width="4.2"/></g><circle cx="74" cy="11" r="6.5" fill="#e5b65b"/></g></svg>

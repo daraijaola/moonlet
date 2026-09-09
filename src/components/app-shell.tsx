@@ -1,20 +1,29 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import { useAuth } from "@/lib/auth";
-import { shortAddr } from "@/lib/api";
+import { fmtBag, shortAddr, timeUntil, type ApiMoonlet } from "@/lib/api";
+import { AppDataProvider, useAppData } from "@/lib/app-data";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
+import { Orbit, Rocket, Cable, Telescope, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, Link as LinkIcon, Hash, ExternalLink, type LucideIcon } from "lucide-react";
+import Image from "next/image";
+import { useEffect, useRef, useState } from "react";
+import type { OrbioStatus } from "@/lib/api";
 
-const TABS = [
-  { href: "/app", label: "Moonlets" },
-  { href: "/app/connections", label: "Connections" },
-  { href: "/sky", label: "The sky" },
+const NAV: Array<{ href: string; label: string; icon: LucideIcon; match: (p: string) => boolean }> = [
+  { href: "/app", label: "Moonlets", icon: Orbit, match: (p) => p === "/app" },
+  { href: "/app/connections", label: "Connections", icon: Cable, match: (p) => p.startsWith("/app/connections") },
+  { href: "/sky", label: "The sky", icon: Telescope, match: (p) => p.startsWith("/sky") || p.startsWith("/s/") },
 ];
+const MOBILE_NAV = [NAV[0], { href: "/app/new", label: "Launch", icon: Rocket, match: (p: string) => p.startsWith("/app/new") }, NAV[1], NAV[2]];
 
-/** Quiet top bar for signed-in surfaces. Gates on a connected wallet. */
+/**
+ * Signed-in shell. Desktop: one fixed sidebar (nav, the moonlet list grouped by state, the account) and one main pane;
+ * every page owns its own top bar. Phone: a slim header and the bottom tab bar. Gates on a connected wallet.
+ */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { ready, address, signed, disconnect } = useAuth();
   const router = useRouter();
@@ -40,132 +49,117 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-cream text-ink">
-      <header className="sticky top-0 z-30 border-b border-ink/10 bg-cream/90 backdrop-blur">
-        <div className="mx-auto flex h-14 max-w-[1280px] items-center justify-between px-4 sm:px-6 xl:max-w-[1400px]">
-          <div className="flex items-center gap-6">
-            <Link href="/app" className="inline-flex items-center gap-2">
-              <MoonletMark size={30} face="var(--cream)" />
-              <Wordmark className="text-[1.25rem] text-ink" />
-            </Link>
-            <nav className="hidden items-center gap-1 sm:flex">
-              {TABS.map((t) => {
-                const active = t.href === "/app" ? pathname.startsWith("/app") && !pathname.startsWith("/app/connections") : pathname.startsWith(t.href);
-                return (
-                  <Link
-                    key={t.href}
-                    href={t.href}
-                    className={`rounded-md px-3 py-1.5 font-mono text-[13px] transition-colors ${
-                      active ? "bg-ink text-cream" : "text-ink-soft hover:bg-ink/5 hover:text-ink"
-                    }`}
-                  >
-                    {t.label}
-                  </Link>
-                );
-              })}
-            </nav>
-          </div>
+    <AppDataProvider owner={address!}>
+      <div className="app-root h-dvh overflow-hidden bg-cream text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
+        <Suspense fallback={<aside className="hidden lg:block" />}>
+          <Sidebar pathname={pathname} address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} />
+        </Suspense>
 
-          <div className="flex items-center gap-2">
-            <Link
-              href="/app/new"
-              className="btn-hard hidden rounded-md border-2 border-ink bg-gold px-3.5 py-1.5 font-mono text-[13px] font-medium text-midnight sm:inline-flex"
-            >
-              ＋ Launch a moonlet
+        <div className="flex h-full min-h-0 min-w-0 flex-col">
+          <header className="z-30 flex h-14 shrink-0 items-center justify-between border-b border-ink/10 bg-cream px-4 lg:hidden">
+            <Link href="/app" className="inline-flex items-center gap-2">
+              <MoonletMark size={28} face="var(--cream)" />
+              <Wordmark className="text-[1.2rem] text-ink" />
             </Link>
-            <button
-              onClick={() => {
-                disconnect();
-                router.push("/");
-              }}
-              className="inline-flex items-center gap-2 rounded-md border border-ink/15 bg-white px-2.5 py-1.5 font-mono text-[12.5px] text-ink-soft hover:border-ink/40 hover:text-ink"
-              title="Disconnect"
-            >
-              <span className="h-2 w-2 rounded-full bg-moss" />
-              {shortAddr(address)}
-            </button>
-          </div>
+            <Suspense><PhoneAccount address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} /></Suspense>
+          </header>
+          <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-16 lg:pb-0 [scrollbar-width:thin]">{children}</main>
+          <MobileTabs pathname={pathname} />
         </div>
-      </header>
-      <main className="mx-auto w-full max-w-[1280px] flex-1 px-4 py-6 pb-24 sm:px-6 sm:pb-6 xl:max-w-[1400px]">
-        {children}
-      </main>
-      <PoweredBy />
-      <MobileTabs pathname={pathname} />
-    </div>
+      </div>
+    </AppDataProvider>
   );
+}
+
+function Sidebar({ pathname, address, onDisconnect }: { pathname: string; address: string; onDisconnect: () => void }) {
+  const { moonlets, status } = useAppData();
+  const params = useSearchParams();
+  const selected = pathname === "/app" ? (params.get("m") ?? moonlets?.[0]?.id ?? null) : null;
+  const groups = groupMoonlets(moonlets ?? []);
+  const launching = pathname.startsWith("/app/new");
+  return (
+    <aside className="hidden min-h-0 lg:flex lg:h-full lg:flex-col lg:border-r lg:border-ink/[0.07] lg:bg-paper">
+      <div className="flex h-14 items-center px-4">
+        <Link href="/app" className="inline-flex items-center gap-2">
+          <MoonletMark size={24} face="var(--cream)" />
+          <Wordmark className="text-[1.05rem] text-ink" />
+        </Link>
+      </div>
+
+      <div className="px-3">
+        <Link
+          href="/app/new"
+          className={`flex h-8 items-center gap-2 rounded-lg border px-2 text-[13px] font-medium transition-colors ${launching ? "border-ink bg-ink text-cream" : "border-ink/[0.12] bg-white text-ink shadow-[0_1px_1px_rgba(21,22,29,0.04)] hover:border-ink/[0.28]"}`}
+        >
+          <Plus size={15} strokeWidth={2} />
+          New moonlet
+        </Link>
+      </div>
+
+      <nav className="mt-3 px-3">
+        {NAV.map((t) => {
+          const active = t.match(pathname);
+          return (
+            <Link key={t.href} href={t.href} className={`flex h-8 items-center gap-2.5 rounded-lg px-2 text-[13px] transition-colors ${active ? "bg-ink/[0.06] font-medium text-ink" : "text-ink-soft hover:bg-ink/[0.04] hover:text-ink"}`}>
+              <t.icon size={16} strokeWidth={1.75} className={active ? "text-ink" : "text-ink-faint"} />
+              {t.label}
+            </Link>
+          );
+        })}
+      </nav>
+
+      <div className="relative mt-5 min-h-0 flex-1">
+        <div className="h-full overflow-y-auto px-3 pb-6 [scrollbar-width:thin] [mask-image:linear-gradient(to_bottom,black_calc(100%-24px),transparent)]">
+          {moonlets && moonlets.length === 0 && <p className="px-2 py-1.5 text-[12.5px] leading-[1.5] text-ink-faint">Nothing in orbit yet.</p>}
+          {groups.map(([label, items], gi) => (
+            <div key={label} className={gi === 0 ? "" : "mt-3"}>
+              <p className="flex h-7 items-center justify-between px-2 font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">
+                <span>{groups.length > 1 || label !== "Scheduled" ? label : "Moonlets"}</span>
+                <span className="tabular-nums">{items.length}</span>
+              </p>
+              <ul>
+                {items.map((m) => (
+                  <li key={m.id}>
+                    <MoonletRow m={m} active={m.id === selected} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-ink/[0.07] p-2">
+        <AccountMenu address={address} status={status} onDisconnect={onDisconnect} />
+      </div>
+    </aside>
+  );
+}
+
+function groupMoonlets(all: ApiMoonlet[]): Array<[string, ApiMoonlet[]]> {
+  const by = (f: (m: ApiMoonlet) => boolean) => all.filter(f);
+  return (
+    [
+      ["Working", by((m) => m.status === "running")],
+      ["Scheduled", by((m) => m.status === "idle")],
+      ["Paused", by((m) => m.status === "paused")],
+      ["Quiet", by((m) => m.status === "quiet")],
+    ] as Array<[string, ApiMoonlet[]]>
+  ).filter(([, items]) => items.length > 0);
 }
 
 /** Bottom tab bar for phones; the header tabs are hidden there. Also used on public pages when signed in. */
 export function MobileTabs({ pathname }: { pathname: string }) {
-  const items = [
-    {
-      href: "/app",
-      label: "Moonlets",
-      icon: (
-        <>
-          <circle cx="12" cy="12" r="7.25" />
-          <path d="M9.4 13.2c.8 1 1.7 1.5 2.6 1.5s1.8-.5 2.6-1.5" />
-          <circle cx="9.6" cy="10.2" r=".6" fill="currentColor" stroke="none" />
-          <circle cx="14.4" cy="10.2" r=".6" fill="currentColor" stroke="none" />
-          <path d="M16.8 6.6l2.6-2.6" />
-          <circle cx="20" cy="3.4" r="1.1" fill="currentColor" stroke="none" />
-        </>
-      ),
-      match: (p: string) => p.startsWith("/app") && !p.startsWith("/app/connections") && !p.startsWith("/app/new"),
-    },
-    {
-      href: "/app/new",
-      label: "Launch",
-      icon: (
-        <>
-          <path d="M12 3.5c2.6 1.9 4 4.6 4 8.1v3.4H8v-3.4c0-3.5 1.4-6.2 4-8.1z" />
-          <path d="M8 12.5l-2.6 2.2V18l2.6-1.3M16 12.5l2.6 2.2V18L16 16.7" />
-          <path d="M10.6 17.4L12 20.5l1.4-3.1" />
-          <circle cx="12" cy="10" r="1.3" />
-        </>
-      ),
-      match: (p: string) => p.startsWith("/app/new"),
-    },
-    {
-      href: "/app/connections",
-      label: "Connections",
-      icon: (
-        <>
-          <circle cx="6" cy="12" r="2.6" />
-          <circle cx="18" cy="6.5" r="2.6" />
-          <circle cx="18" cy="17.5" r="2.6" />
-          <path d="M8.3 10.9l7.4-3.3M8.3 13.1l7.4 3.3" />
-        </>
-      ),
-      match: (p: string) => p.startsWith("/app/connections"),
-    },
-    {
-      href: "/sky",
-      label: "The sky",
-      icon: (
-        <>
-          <path d="M3.5 18.5c2.2-4.4 5-6.6 8.5-6.6s6.3 2.2 8.5 6.6" />
-          <path d="M3 21h18" />
-          <circle cx="7" cy="6" r=".7" fill="currentColor" stroke="none" />
-          <circle cx="12.5" cy="4" r=".7" fill="currentColor" stroke="none" />
-          <circle cx="17.5" cy="7.5" r=".7" fill="currentColor" stroke="none" />
-        </>
-      ),
-      match: (p: string) => p.startsWith("/sky"),
-    },
-  ];
   return (
-    <nav aria-label="App" className="fixed inset-x-0 bottom-0 z-30 border-t border-ink/10 bg-cream/95 pb-[env(safe-area-inset-bottom)] backdrop-blur sm:hidden">
-      <ul className="grid grid-cols-4">
-        {items.map((it) => {
-          const active = it.match(pathname);
+    <nav aria-label="App" className="fixed inset-x-0 bottom-0 z-30 border-t border-ink/10 bg-cream/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
+      <ul className="mx-auto grid max-w-[640px] grid-cols-4">
+        {MOBILE_NAV.map((t) => {
+          const active = t.href === "/app" ? pathname.startsWith("/app") && !pathname.startsWith("/app/connections") && !pathname.startsWith("/app/new") : t.match(pathname);
           return (
-            <li key={it.href}>
-              <Link href={it.href} aria-current={active ? "page" : undefined} className={`relative flex flex-col items-center gap-1 py-2.5 font-mono text-[10.5px] ${active ? "text-ink" : "text-ink-soft"}`}>
-                {active && <span className="absolute top-0 h-0.5 w-8 rounded-full bg-ink" />}
-                <svg viewBox="0 0 24 24" className={`h-[22px] w-[22px] transition-colors ${active ? "text-ink" : "text-ink-soft"}`} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">{it.icon}</svg>
-                {it.label}
+            <li key={t.href}>
+              <Link href={t.href} className={`flex flex-col items-center gap-1 py-2.5 text-[10.5px] font-medium ${active ? "text-ink" : "text-ink-soft"}`}>
+                <t.icon size={21} strokeWidth={active ? 2 : 1.6} />
+                {t.label}
               </Link>
             </li>
           );
@@ -199,6 +193,167 @@ export function PublicMobileTabs() {
     <>
       <div className="h-16 sm:hidden" />
       <MobileTabs pathname={pathname} />
+    </>
+  );
+}
+
+/** The wallet's profile picture: one of ten gradients, drawn once per wallet. */
+export function Profile({ n, size = 28 }: { n: number | undefined; size?: number }) {
+  return n ? (
+    <Image src={`/profiles/${n}.png`} alt="" width={size} height={size} className="shrink-0 rounded-full ring-1 ring-ink/[0.08]" />
+  ) : (
+    <span className="inline-block shrink-0 rounded-full bg-ink/[0.08]" style={{ width: size, height: size }} />
+  );
+}
+
+export function Avatar({ n, size = 28, className = "" }: { n: number | undefined; size?: number; className?: string }) {
+  return n ? (
+    <Image src={`/avatars/v2/${n}.png`} alt="" width={size} height={size} className={`shrink-0 rounded-full ${className}`} />
+  ) : (
+    <span className={`inline-block shrink-0 rounded-full bg-ink/[0.08] ${className}`} style={{ width: size, height: size }} />
+  );
+}
+
+/** The account block at the bottom of the sidebar: press it for a small menu (copy address, the sky, disconnect). */
+function AccountMenu({ address, status, onDisconnect }: { address: string; status: OrbioStatus | null; onDisconnect: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", onDoc); document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", onDoc); document.removeEventListener("keydown", onKey); };
+  }, [open]);
+  const copy = async () => { try { await navigator.clipboard.writeText(address); setCopied(true); setTimeout(() => setCopied(false), 1400); } catch {} };
+  return (
+    <div ref={ref} className="relative">
+      {open && (
+        <div role="menu" className="ui-in absolute bottom-[calc(100%+6px)] left-0 right-0 z-40 rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]">
+          <div className="flex items-center gap-2.5 px-2.5 py-2">
+            <Profile n={status?.avatar} size={32} />
+            <div className="min-w-0">
+              <p className="truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</p>
+              <p className="truncate text-[11.5px] text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}` : "…"}</p>
+            </div>
+          </div>
+          <div className="my-1 h-px bg-ink/[0.06]" />
+          <button role="menuitem" type="button" onClick={copy} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">
+            <span className="text-ink-soft">{copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.75} />}</span>{copied ? "Copied" : "Copy address"}
+          </button>
+          <Link role="menuitem" href="/sky" onClick={() => setOpen(false)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">
+            <span className="text-ink-soft"><Globe size={14} strokeWidth={1.75} /></span>The sky
+          </Link>
+          <div className="my-1 h-px bg-ink/[0.06]" />
+          <button role="menuitem" type="button" onClick={onDisconnect} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">
+            <span className="text-ink-soft"><LogOut size={14} strokeWidth={1.75} /></span>Disconnect wallet
+          </button>
+        </div>
+      )}
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        className={`flex h-9 w-full items-center gap-2 rounded-lg px-2 text-left transition-colors ${open ? "bg-ink/[0.06]" : "hover:bg-ink/[0.05]"}`}
+      >
+        <span className="relative shrink-0">
+          <Profile n={status?.avatar} size={22} />
+          <span className={`absolute -bottom-px -right-px h-2 w-2 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
+        </span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</span>
+        {status && <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">{fmtBag(status.bag)}</span>}
+        <ChevronsUpDown size={13} strokeWidth={1.75} className="shrink-0 text-ink-faint" />
+      </button>
+    </div>
+  );
+}
+
+function PhoneAccount({ address, onDisconnect }: { address: string; onDisconnect: () => void }) {
+  const { status } = useAppData();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} className="inline-flex items-center gap-2 rounded-full border border-ink/[0.1] bg-white py-1 pl-1 pr-2.5">
+        <Profile n={status?.avatar} size={24} />
+        <span className="font-mono text-[12px] text-ink">{shortAddr(address)}</span>
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
+          <div role="menu" className="ui-in absolute right-0 top-[calc(100%+6px)] z-40 min-w-[200px] rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18)]">
+            <button role="menuitem" type="button" onClick={() => { navigator.clipboard?.writeText(address).catch(() => undefined); setOpen(false); }} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><Copy size={14} strokeWidth={1.75} className="text-ink-soft" /> Copy address</button>
+            <button role="menuitem" type="button" onClick={onDisconnect} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><LogOut size={14} strokeWidth={1.75} className="text-ink-soft" /> Disconnect wallet</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Where a moonlet's link lives. */
+export const publicUrl = (id: string) => `${typeof window !== "undefined" ? window.location.origin : "https://moonlet.16labs.xyz"}/s/${id}`;
+
+/** One row in the sidebar list: face, name, template · when. Right-click (or the ··· on hover) for Share and Public page. */
+function MoonletRow({ m, active }: { m: ApiMoonlet; active: boolean }) {
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [copied, setCopied] = useState<"link" | "id" | null>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    document.addEventListener("mousedown", close); document.addEventListener("keydown", onKey); document.addEventListener("scroll", close, true);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", onKey); document.removeEventListener("scroll", close, true); };
+  }, [menu]);
+  const copy = async (what: "link" | "id") => {
+    try { await navigator.clipboard.writeText(what === "link" ? publicUrl(m.id) : m.id); } catch {}
+    setCopied(what); setTimeout(() => { setCopied(null); setMenu(null); }, 900);
+  };
+  const share = async () => {
+    if (typeof navigator !== "undefined" && navigator.share) { try { await navigator.share({ title: `${m.name} · moonlet`, url: publicUrl(m.id) }); setMenu(null); return; } catch {} }
+    void copy("link");
+  };
+  return (
+    <>
+      <Link
+        href={`/app?m=${m.id}`}
+        onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
+        className={`group flex h-8 items-center gap-2 rounded-lg px-2 text-[13px] ${active ? "bg-ink/[0.06] text-ink" : "text-ink-soft hover:bg-ink/[0.04] hover:text-ink"}`}
+      >
+        <Avatar n={m.avatar} size={20} className={active ? "" : "opacity-90"} />
+        <span className={`min-w-0 flex-1 truncate ${active ? "font-medium" : ""}`}>{m.name}</span>
+        <span className="relative flex h-5 w-8 shrink-0 items-center justify-end">
+          <span className={`font-mono text-[10.5px] tabular-nums text-ink-faint transition-opacity ${menu ? "opacity-0" : "group-hover:opacity-0"}`}>
+            {m.status === "running" ? <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-gold" /> : m.status === "idle" ? timeUntil(m.nextRunAt).replace(/^in /, "") : m.status === "quiet" ? <span className="inline-block h-1.5 w-1.5 rounded-full border border-gold" /> : <span className="inline-block h-1.5 w-1.5 rounded-full border border-ink-faint" />}
+          </span>
+          <button
+            type="button"
+            aria-label="More"
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); const r = (e.currentTarget as HTMLElement).getBoundingClientRect(); setMenu({ x: r.right, y: r.bottom + 4 }); }}
+            className={`absolute right-0 inline-flex h-6 w-6 items-center justify-center rounded-md text-ink-faint transition-opacity hover:bg-ink/[0.06] hover:text-ink ${menu ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+          >
+            <Ellipsis size={14} strokeWidth={1.75} />
+          </button>
+        </span>
+      </Link>
+      {menu && (
+        <div role="menu" onMouseDown={(e) => e.stopPropagation()} className="ui-in fixed z-50 min-w-[200px] rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]" style={{ left: Math.min(menu.x, window.innerWidth - 216), top: Math.min(menu.y, window.innerHeight - 200) }}>
+          <div className="flex items-center gap-2.5 px-2.5 py-2">
+            <Avatar n={m.avatar} size={28} />
+            <div className="min-w-0">
+              <p className="truncate text-[13px] font-medium text-ink">{m.name}</p>
+              <p className="truncate font-mono text-[11px] text-ink-faint">{m.id}</p>
+            </div>
+          </div>
+          <div className="my-1 h-px bg-ink/[0.06]" />
+          <button role="menuitem" type="button" onClick={share} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><Share2 size={14} strokeWidth={1.75} className="text-ink-soft" /> Share</button>
+          <button role="menuitem" type="button" onClick={() => copy("link")} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">{copied === "link" ? <Check size={14} strokeWidth={2} className="text-moss" /> : <LinkIcon size={14} strokeWidth={1.75} className="text-ink-soft" />} {copied === "link" ? "Link copied" : "Copy link"}</button>
+          <button role="menuitem" type="button" onClick={() => copy("id")} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">{copied === "id" ? <Check size={14} strokeWidth={2} className="text-moss" /> : <Hash size={14} strokeWidth={1.75} className="text-ink-soft" />} {copied === "id" ? "ID copied" : "Copy ID"}</button>
+          <div className="my-1 h-px bg-ink/[0.06]" />
+          <Link role="menuitem" href={`/s/${m.id}`} onClick={() => setMenu(null)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><ExternalLink size={14} strokeWidth={1.75} className="text-ink-soft" /> Public page</Link>
+        </div>
+      )}
     </>
   );
 }

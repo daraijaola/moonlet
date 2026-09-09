@@ -40,7 +40,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
         </div>
         <div style={{ display: "flex", justifyContent: "space-between", fontSize: 24, color: "#66635b" }}>
           <div style={{ display: "flex" }}>{meta}</div>
-          <div style={{ display: "flex" }}>every run anchored on Robinhood Chain</div>
+          <div style={{ display: "flex" }}>every run hashed and public</div>
         </div>
       </div>
     ),

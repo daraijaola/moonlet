@@ -103,6 +103,28 @@ describe("scheduler", () => {
     expect((await store.getMoonlet(m.id))?.status).toBe("quiet");
   });
 
+  it("14. deleted while running → stays deleted, no key, no delivery, drafts withdrawn", async () => {
+    const m = (await store.listMoonlets(owners[3]))[0];
+    await store.updateMoonlet(m.id, { nextRunAt: Date.now() - 1 });
+    await store.claimForRun(m.id);
+    let delivered = 0;
+    const r = await runOne(m.id, {
+      orbioFor: async (o) => orbios.get(o)!.client, bagOf: async () => 1_250_000, anchor: null,
+      deliver: async () => { delivered++; return { ok: true }; },
+      run: async (mm) => {
+        // The owner presses Delete mid-run and the run leaves a draft behind.
+        await store.updateMoonlet(mm.id, { status: "deleted", key: null, nextRunAt: Number.MAX_SAFE_INTEGER });
+        await store.insertProposal({ id: store.newId("p"), owner: mm.owner, moonletId: mm.id, runId: null, kind: "email_send", payload: { to: "a@b.c", subject: "x", body: "y" } });
+        return { ok: true, status: "done", output: { title: "t", summary: "s", body: "b", sections: [] } as never, outputHash: "0x" + "ab".repeat(32), costUsd: 0.001, model: "m", modelCalls: 1, durationMs: 5, plan: plan(spec, 1_250_000), keyEvents: [], trace: [], key: { kind: "account", hash: "h" } as never, private: false };
+      },
+    });
+    expect(r.status).toBe("deleted");
+    expect(await store.getMoonlet(m.id)).toBeNull();
+    expect(delivered).toBe(0);
+    expect((await store.listProposals(owners[3], "pending")).filter((p) => p.moonletId === m.id)).toHaveLength(0);
+    expect((await store.listRuns(m.id)).length).toBeGreaterThan(0);
+  });
+
   it("12. a second moonlet on a wallet borrows the wallet's account key instead of minting another", async () => {
     const owner = "0x0000000000000000000000000000000000000c0d";
     const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 6 });

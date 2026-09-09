@@ -182,8 +182,8 @@ describe("connections + proposals", () => {
     expect(p?.status).toBe("executed");
     expect((p?.result as { url: string }).url).toBe("https://x.com/dara/status/777");
     expect(t.edited.at(-1)?.text).toContain("Done");
-    // one approval is consent: the moonlet is on autopilot from here
-    expect((await store.getMoonlet("m1"))?.autopilot).toBe(true);
+    // approval covers this one action only; autopilot stays where the owner left it
+    expect((await store.getMoonlet("m1"))?.autopilot).toBe(false);
     expect((await decide(pid, "approve", xFetch)).ok).toBe(false);
 
     // a second tap on the same button does nothing

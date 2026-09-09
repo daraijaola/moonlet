@@ -1,9 +1,12 @@
 import { Nav } from "@/components/nav";
 import { Hero } from "@/components/hero";
 import { How } from "@/components/how";
-import { Session } from "@/components/session";
+import { UseCases } from "@/components/usecases";
 import { Rails } from "@/components/rails";
+import { Faces } from "@/components/faces";
 import { SiteFooter } from "@/components/site-footer";
+
+export const dynamic = "force-dynamic";
 
 export default function Home() {
   return (
@@ -12,8 +15,9 @@ export default function Home() {
       <main className="flex-1">
         <Hero />
         <How />
-        <Session />
+        <UseCases />
         <Rails />
+        <Faces />
       </main>
       <SiteFooter />
     </div>

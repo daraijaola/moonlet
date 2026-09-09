@@ -22,12 +22,15 @@ export type OwnerRow = {
   bagCheckedAt: number;
 };
 
+export const AVATAR_COUNT = 10;
+
 export type MoonletRow = {
   id: string;
   owner: string;
   name: string;
   spec: JobSpec;
   status: "running" | "idle" | "paused" | "quiet" | "deleted";
+  avatar: number;
   delivery: { telegram?: string; x?: string; discord?: string; email?: string };
   autopilot: boolean;
   /** Compact notes the moonlet carries between runs (last values, seen ids). */
@@ -78,6 +81,8 @@ export type RunRow = {
   calls?: Array<{ claim: string; check: string }>;
   scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }>;
   error: string | null;
+  /** The run touched the owner's mailbox or a private repo: public surfaces show its receipt only. Fixed at write time. */
+  private: boolean;
 };
 
 let client: Client | null = null;
@@ -146,11 +151,22 @@ export function migrate() {
       "write",
     );
     await c.execute(`ALTER TABLE moonlets ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
+    await c.execute(`ALTER TABLE owners ADD COLUMN avatar INTEGER`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN avatar INTEGER`).catch(() => undefined);
+    // Every moonlet wears one of ten faces; older rows draw theirs once here.
+    await c.execute(`UPDATE moonlets SET avatar = 1 + (abs(random()) % ${AVATAR_COUNT}) WHERE avatar IS NULL`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN memory TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN calls TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN scored TEXT`).catch(() => undefined);
+    // Privacy is a property of the run, decided when it happened, never of the job as it is edited later.
+    // Runs from before this column existed are marked private conservatively: anything whose trace or job touched mail or GitHub.
+    const hadPrivate = ((await c.execute(`PRAGMA table_info(runs)`)).rows as unknown as Array<{ name: string }>).some((r) => r.name === "private");
+    if (!hadPrivate) {
+      await c.execute(`ALTER TABLE runs ADD COLUMN private INTEGER NOT NULL DEFAULT 0`);
+      await c.execute(`UPDATE runs SET private = 1 WHERE trace LIKE '%"tool":"gmail_%' OR trace LIKE '%"tool":"github_read"%' OR moonlet_id IN (SELECT id FROM moonlets WHERE spec LIKE '%gmail_%' OR spec LIKE '%github_read%')`);
+    }
     await c.execute(`ALTER TABLE moonlets ADD COLUMN open_calls TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN hits INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN misses INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
@@ -172,6 +188,18 @@ export const newId = (prefix: string) => `${prefix}_${randomBytes(6).toString("b
 export async function upsertOwner(address: string) {
   await migrate();
   await db().execute({ sql: `INSERT INTO owners(address) VALUES(?) ON CONFLICT(address) DO NOTHING`, args: [address.toLowerCase()] });
+}
+
+/** Ten faces. Wallets and moonlets each draw one and keep it. */
+export async function avatarOf(address: string): Promise<number> {
+  await upsertOwner(address);
+  const r = await db().execute({ sql: `SELECT avatar FROM owners WHERE address=?`, args: [address.toLowerCase()] });
+  const have = r.rows[0]?.avatar;
+  if (have != null) return Number(have);
+  const pick = 1 + Math.floor(Math.random() * AVATAR_COUNT);
+  await db().execute({ sql: `UPDATE owners SET avatar=? WHERE address=? AND avatar IS NULL`, args: [pick, address.toLowerCase()] });
+  const again = await db().execute({ sql: `SELECT avatar FROM owners WHERE address=?`, args: [address.toLowerCase()] });
+  return Number(again.rows[0]?.avatar ?? pick);
 }
 
 export async function getOwner(address: string): Promise<OwnerRow | null> {
@@ -251,6 +279,7 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
     name: row.name as string,
     spec: JSON.parse(row.spec as string),
     status: row.status as MoonletRow["status"],
+    avatar: Number(row.avatar ?? 1),
     delivery: JSON.parse(row.delivery as string),
     autopilot: !!row.autopilot,
     memory: (row.memory as string | null) ?? null,
@@ -274,14 +303,15 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
   };
 }
 
-export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses" | "watch"> & { autopilot?: boolean; parentId?: string | null }) {
+export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses" | "watch" | "avatar"> & { autopilot?: boolean; parentId?: string | null; avatar?: number }) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id,avatar)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
       m.id, m.owner.toLowerCase(), m.name, JSON.stringify(m.spec), m.status, JSON.stringify(m.delivery), m.autopilot ? 1 : 0,
       m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt, m.parentId ?? null,
+      m.avatar ?? 1 + Math.floor(Math.random() * AVATAR_COUNT),
     ],
   });
 }
@@ -348,7 +378,8 @@ export async function updateMoonlet(id: string, patch: Partial<MoonletRow>) {
   }
   if (!sets.length) return;
   args.push(id);
-  await db().execute({ sql: `UPDATE moonlets SET ${sets.join(",")} WHERE id=?`, args });
+  // A moonlet deleted while its run was in flight stays deleted: the run's finish must not bring it back with a key and a next run.
+  await db().execute({ sql: `UPDATE moonlets SET ${sets.join(",")} WHERE id=? AND (status != 'deleted' OR ? = 'deleted')`, args: [...args, patch.status ?? ""] });
 }
 
 /** Pause / resume, refused while a run is in flight (the run's own finish would otherwise overwrite or be overwritten). */
@@ -386,15 +417,15 @@ export async function claimForRun(id: string, now = Date.now()) {
 
 // ---- runs ------------------------------------------------------------------
 
-export async function insertRun(r: RunRow) {
+export async function insertRun(r: Omit<RunRow, "private"> & { private?: boolean }) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace,sections,calls,scored)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace,sections,calls,scored,private)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
       r.id, r.moonletId, r.at, r.status, r.title, r.summary, r.body, JSON.stringify(r.sources), r.signal, r.nothingHappened ? 1 : 0,
       r.costUsd, r.model, r.modelCalls, r.durationMs, r.outputHash, r.txHash, JSON.stringify(r.keyEvents), r.error, JSON.stringify(r.trace ?? []), JSON.stringify(r.sections ?? []),
-      JSON.stringify(r.calls ?? []), JSON.stringify(r.scored ?? []),
+      JSON.stringify(r.calls ?? []), JSON.stringify(r.scored ?? []), r.private ? 1 : 0,
     ],
   });
 }
@@ -410,6 +441,7 @@ function rowToRun(row: Record<string, unknown>): RunRow {
     moonletId: row.moonlet_id as string,
     at: Number(row.at),
     status: row.status as RunRow["status"],
+    private: Number(row.private ?? 0) === 1,
     title: row.title as string,
     summary: row.summary as string,
     body: row.body as string,
@@ -500,6 +532,14 @@ export async function setConnection(owner: string, kind: ConnectionKind, label: 
     sql: `INSERT OR REPLACE INTO connections(owner,kind,label,data,created_at) VALUES(?,?,?,?,?)`,
     args: [owner.toLowerCase(), kind, label, seal(JSON.stringify(data)), Date.now()],
   });
+  // A moonlet parked because this connection was missing gets its next run now instead of waiting out the hour.
+  if (kind === "github" || kind === "gmail") {
+    for (const m of await listMoonlets(owner)) {
+      if (m.status !== "quiet" || !m.spec.tools.some((t) => (kind === "gmail" ? t.startsWith("gmail_") : t === "github_read" || t === "open_pull_request" || t === "comment_on_issue" || t === "open_issue"))) continue;
+      const last = (await listRuns(m.id, 1))[0];
+      if (last?.status === "quiet" && /isn't connected/.test(last.error ?? "")) await updateMoonlet(m.id, { status: "idle", nextRunAt: Date.now() });
+    }
+  }
 }
 
 export async function getConnection<T = Record<string, unknown>>(owner: string, kind: ConnectionKind): Promise<ConnectionRow<T> | null> {

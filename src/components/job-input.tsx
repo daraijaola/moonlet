@@ -65,7 +65,7 @@ export function JobInput({ id = "job" }: { id?: string } = {}) {
           </div>
         )}
       </div>
-      <button type="submit" className="btn-press shrink-0 rounded-full bg-ink px-5 py-2.5 text-[14px] font-medium text-cream">
+      <button type="submit" className="lp-btn lp-btn-primary shrink-0 !h-10 !rounded-full !px-5 sm:!h-10">
         Launch
       </button>
     </form>

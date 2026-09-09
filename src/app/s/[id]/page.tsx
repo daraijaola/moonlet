@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
+import Link from "next/link";
+import { Copy } from "lucide-react";
 import { PublicHeader } from "@/components/public-header";
 import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
@@ -9,32 +12,30 @@ import { CADENCE_LABEL, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
 import { explorerTx } from "@/moonlet/anchor";
 import type { Cadence } from "@/moonlet/spec";
 import * as store from "@/moonlet/store";
+import { isPrivateSpec, redactMoonlet, redactRun } from "@/moonlet/privacy";
+import { COOKIE, openSession } from "@/moonlet/session";
 import { fmtBag, fmtUsd, shortAddr, shortenHexes, timeAgo, timeUntil } from "@/lib/api";
 
 export const dynamic = "force-dynamic";
 
-const MASCOT: Record<string, string> = {
-  running: "/mascot/moonlet-work.png",
-  idle: "/mascot/moonlet-rest.png",
-  paused: "/mascot/moonlet-doze.png",
-  quiet: "/mascot/moonlet-doze.png",
-  deleted: "/mascot/moonlet-doze.png",
-};
-
 export async function generateMetadata({ params }: PageProps<"/s/[id]">): Promise<Metadata> {
   const { id } = await params;
-  const m = await store.getMoonlet(id);
+  const m = (await store.getMoonlet(id).then((x) => x && redactMoonlet(x)));
   return {
     title: m ? `${m.name} · a moonlet` : "moonlet",
-    description: m ? `“${m.spec.objective}” — running on ${shortAddr(m.owner)}'s bag, every run anchored on Robinhood Chain.` : undefined,
+    description: m ? `“${m.spec.objective}” — running on ${shortAddr(m.owner)}'s bag, every run hashed and public.` : undefined,
   };
 }
 
 export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">) {
   const { id } = await params;
-  const m = await store.getMoonlet(id);
-  if (!m) notFound();
-  const runs = (await store.listRuns(m.id)).map((r) => ({ ...r, explorerUrl: r.txHash ? explorerTx(r.txHash) : null }));
+  const stored = await store.getMoonlet(id);
+  if (!stored) notFound();
+  // The owner sees their own inbox moonlet in full here; everyone else gets the receipts.
+  const mine = openSession((await cookies()).get(COOKIE)?.value) === stored.owner;
+  const hidden = !mine && isPrivateSpec(stored.spec);
+  const m = hidden ? redactMoonlet(stored) : stored;
+  const runs = (await store.listRuns(m.id)).map((r) => ({ ...(!mine && r.private ? redactRun(r) : r), explorerUrl: r.txHash ? explorerTx(r.txHash) : null }));
   const owner = await store.getOwner(m.owner);
   const quiet = m.status === "quiet" || m.status === "paused";
   const tone = fuelTone(m.earnPerDayUsd, m.burnPerDayUsd, quiet);
@@ -59,15 +60,23 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
               <h1 className="mt-2 font-display text-[3.4rem] leading-[0.9] text-ink sm:text-[4.2rem]">{m.name}</h1>
               <p className="mt-3 max-w-[34rem] text-[15px] leading-[1.55] text-ink [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
               <p className="mt-3 font-mono text-[12px] text-ink-soft">
-                {TEMPLATE_LABEL[m.spec.template]} · orbits {shortAddr(m.owner)} · {owner ? `${fmtBag(owner.bag)} $ORBIO` : ""}
+                {m.id} · {TEMPLATE_LABEL[m.spec.template]} · orbits {shortAddr(m.owner)} · {owner ? `${fmtBag(owner.bag)} $ORBIO` : ""}
               </p>
               <p className="mt-1 font-mono text-[12px] text-ink-faint">tools: {m.spec.tools.map((t) => TOOL_LABEL[t]).join(", ")}</p>
+              {!hidden && (
+                <div className="mt-5 flex flex-wrap items-center gap-2">
+                  <Link href={`/app/new?fork=${m.id}`} className="btn-hard inline-flex items-center gap-2 rounded-md border-2 border-ink bg-gold px-3.5 py-2 font-mono text-[13px] font-medium text-midnight">
+                    <Copy size={14} strokeWidth={2} /> Use this job for my bag
+                  </Link>
+                  <span className="text-[12px] text-ink-faint">Same checks and tools, on your own key.</span>
+                </div>
+              )}
             </div>
-            <Image src={MASCOT[m.status]} alt="" width={520} height={357} className={`pointer-events-none mx-auto w-[200px] select-none ${m.status === "running" ? "animate-drift" : ""}`} priority />
+            <Image src={`/avatars/v2/${m.avatar}.png`} alt="" width={256} height={256} className={`pointer-events-none mx-auto h-[168px] w-[168px] select-none rounded-full shadow-[0_18px_40px_-20px_rgba(21,22,29,0.45)] ${m.status === "running" ? "animate-drift" : ""}`} priority />
           </div>
         </section>
 
-        <section className="mt-4 grid gap-3 sm:grid-cols-[auto_1fr]">
+        <section className="mt-4 grid gap-3 lg:grid-cols-[auto_1fr]">
           <div className="rounded-lg border border-ink/10 bg-white p-5">
             <FuelGauge earnPerDay={m.earnPerDayUsd} burnPerDay={m.burnPerDayUsd} balance={keyRemaining} quiet={quiet} size="lg" />
           </div>

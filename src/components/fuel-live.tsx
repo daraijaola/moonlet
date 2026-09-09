@@ -42,9 +42,9 @@ export function FuelLive() {
   const burnedSince = s.burnPerDay * elapsed;
 
   return (
-    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 font-mono text-[12px] text-ink-soft">
-      <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-moss animate-pulse" />earning <b className="tabular-nums text-ink">{fmt(earnedSince, 6)}</b> since you opened this</span>
-      <span>put to work <b className="tabular-nums text-ink">{fmt(burnedSince, 6)}</b></span>
+    <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-[12.5px] text-ink-soft">
+      <span className="inline-flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-moss animate-pulse" />earning <b className="font-mono font-medium tabular-nums text-ink">{fmt(earnedSince, 6)}</b> since you opened this</span>
+      <span>put to work <b className="font-mono font-medium tabular-nums text-ink">{fmt(burnedSince, 6)}</b></span>
       <span>{compact(s.tokens)} $ORBIO behind {s.alive} moonlet{s.alive === 1 ? "" : "s"}</span>
     </div>
   );
