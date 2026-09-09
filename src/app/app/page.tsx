@@ -12,6 +12,8 @@ import { FuelGauge } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
 import { MicButton, VoiceRecorder, useVoiceSupported } from "@/components/voice-button";
 import { TEMPLATE_LABEL } from "@/components/labels";
+import { ModelPicker } from "@/components/model-picker";
+import { recommendedCapUsd } from "@/moonlet/spec";
 import { DitherField } from "@/components/dither-field";
 import { Avatar, publicUrl } from "@/components/app-shell";
 import { Play, Pause, PanelRight, ExternalLink, Paperclip, Trash2, Check, X, ArrowUp, ArrowDown, ChevronUp, Plus, Download, Ellipsis, Pencil, KeyRound, Share2 } from "lucide-react";
@@ -293,7 +295,7 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
   const askBox = runs !== null && (
     <div>
       <form
-        className="flex items-center gap-1.5 rounded-xl border border-ink/12 bg-white p-1.5 pl-3.5 shadow-[0_1px_2px_rgba(21,22,29,0.04)] transition-[border-color,box-shadow] focus-within:border-ink/30 focus-within:shadow-[0_0_0_3px_rgba(233,182,76,0.22)]"
+        className="rounded-2xl border border-ink/12 bg-white shadow-[0_1px_2px_rgba(21,22,29,0.04),0_8px_24px_-16px_rgba(21,22,29,0.2)] transition-[border-color,box-shadow] focus-within:border-ink/30 focus-within:shadow-[0_0_0_3px_rgba(233,182,76,0.22)]"
         onSubmit={async (e) => {
           e.preventDefault();
           const q = question.trim();
@@ -314,26 +316,45 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         }}
       >
         {recording ? (
-          <VoiceRecorder
-            transcribe={(blob) => api.transcribe(owner, m.id, blob)}
-            onLive={(t) => setQuestion(spokenBase ? `${spokenBase} ${t}` : t)}
-            onDone={(t) => { setQuestion(spokenBase ? `${spokenBase} ${t}` : t); setRecording(false); }}
-            onCancel={() => { setQuestion(spokenBase); setRecording(false); }}
-          />
-        ) : (
-          <>
-            <input
-              value={question}
-              onChange={(e) => setQuestion(e.target.value)}
-              placeholder={runs.length ? `Ask ${m.name} anything, or tell it what to do…` : `Ask ${m.name} anything about its job…`}
-              className="min-w-0 flex-1 bg-transparent py-2 text-[14px] text-ink outline-none placeholder:text-ink-faint"
+          <div className="px-3 pt-3">
+            <VoiceRecorder
+              transcribe={(blob) => api.transcribe(owner, m.id, blob)}
+              onLive={(t) => setQuestion(spokenBase ? `${spokenBase} ${t}` : t)}
+              onDone={(t) => { setQuestion(spokenBase ? `${spokenBase} ${t}` : t); setRecording(false); }}
+              onCancel={() => { setQuestion(spokenBase); setRecording(false); }}
             />
-            {voiceOk && <MicButton disabled={asking} onClick={() => { setSpokenBase(question.trim()); setRecording(true); }} />}
-            <button type="submit" disabled={asking || !question.trim()} className="ui-btn ui-btn-primary ui-btn-icon h-8 w-8 rounded-lg disabled:opacity-100 disabled:bg-ink/10 disabled:border-transparent disabled:text-ink-faint" aria-label="Ask">
-              {asking ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-cream border-t-transparent" /> : <ArrowUp size={15} strokeWidth={2.4} />}
-            </button>
-          </>
+          </div>
+        ) : (
+          <textarea
+            value={question}
+            onChange={(e) => setQuestion(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                e.currentTarget.form?.requestSubmit();
+              }
+            }}
+            rows={1}
+            placeholder={runs.length ? `Ask ${m.name} anything, or tell it what to do…` : `Ask ${m.name} anything about its job…`}
+            className="block max-h-40 min-h-[44px] w-full resize-none bg-transparent px-4 pt-3 pb-1 text-[15px] leading-[1.5] text-ink outline-none placeholder:text-ink-faint"
+            style={{ fieldSizing: "content" } as React.CSSProperties}
+          />
         )}
+        <div className="flex items-center gap-1 px-2 pb-2 pt-1">
+          <Link href={`/app/new?job=${encodeURIComponent(`Like ${m.name}, but `)}`} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg text-ink-soft" aria-label="New moonlet" title="New moonlet"><Plus size={16} strokeWidth={2} /></Link>
+          <ModelPicker
+            value={m.spec.model ?? "auto"}
+            onChange={async (model) => {
+              await api.patch(owner, m.id, { action: "edit", spec: { ...m.spec, model, spendCapUsd: Math.max(m.spec.spendCapUsd, recommendedCapUsd(m.spec.template, model)) } });
+              await onChange();
+            }}
+          />
+          <span className="flex-1" />
+          {voiceOk && !recording && <MicButton disabled={asking} onClick={() => { setSpokenBase(question.trim()); setRecording(true); }} />}
+          <button type="submit" disabled={asking || !question.trim()} className="ui-btn ui-btn-primary ui-btn-icon h-8 w-8 rounded-lg disabled:opacity-100 disabled:bg-ink/10 disabled:border-transparent disabled:text-ink-faint" aria-label="Ask">
+            {asking ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-cream border-t-transparent" /> : <ArrowUp size={15} strokeWidth={2.4} />}
+          </button>
+        </div>
       </form>
       <p className="mt-2 px-1 text-[11.5px] text-ink-faint">Billed to its key. {voiceOk ? "Tap the mic to speak. " : ""}{tg ? "You can also reply on Telegram." : ""}</p>
     </div>
