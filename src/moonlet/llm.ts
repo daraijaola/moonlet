@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { safeFetchText, type SafeFetchResult } from "./safe-fetch";
 
 /**
  * The model layer, on Orbio's gateway.
@@ -188,19 +189,22 @@ function safeJson(s: string) {
   }
 }
 
-/** A plain fetch-and-read tool for pages; replaces OpenRouter's server-side web_fetch. */
+/** A plain fetch-and-read tool for pages; replaces OpenRouter's server-side web_fetch. Goes through the egress guard: public hosts only, redirects re-checked, body capped. */
 export function webFetchTool(f: typeof fetch = fetch): LocalTool {
   return {
     name: "web_fetch",
-    description: "Fetch a web page or JSON API by URL and return its readable text (HTML tags stripped, capped at ~12k chars). Use for pages you already know the address of.",
+    description: "Fetch a public web page or JSON API by URL and return its readable text (HTML tags stripped, capped at ~12k chars). Use for pages you already know the address of.",
     schema: z.object({ url: z.string().url(), maxChars: z.number().int().min(500).max(20_000).default(12_000) }),
     execute: (async ({ url, maxChars }: { url: string; maxChars: number }) => {
-      const r = await f(url, { headers: { "user-agent": "Mozilla/5.0 (compatible; moonlet/1.0; +https://moonlet.16labs.xyz)", accept: "text/html,application/json,text/plain,*/*" }, redirect: "follow", signal: AbortSignal.timeout(15_000) });
-      const ct = r.headers.get("content-type") ?? "";
-      const raw = await r.text();
-      const text = /json/.test(ct)
-        ? raw
-        : raw
+      let r: SafeFetchResult;
+      try {
+        r = await safeFetchText(url, { fetch: f, maxBytes: 600 * 1024, headers: { "user-agent": "Mozilla/5.0 (compatible; moonlet/1.0; +https://moonlet.16labs.xyz)", accept: "text/html,application/json,text/plain,*/*" } });
+      } catch (e) {
+        return { url, error: (e as Error).message };
+      }
+      const text = /json/.test(r.contentType)
+        ? r.text
+        : r.text
             .replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<noscript[\s\S]*?<\/noscript>/gi, " ")
             .replace(/<br\s*\/?>|<\/(p|div|li|h[1-6]|tr|section|article)>/gi, "\n")
             .replace(/<[^>]+>/g, " ")
@@ -213,7 +217,7 @@ export function webFetchTool(f: typeof fetch = fetch): LocalTool {
             .replace(/[ \t]+/g, " ")
             .replace(/\n\s*\n+/g, "\n")
             .trim();
-      return { url, status: r.status, contentType: ct.split(";")[0], text: text.slice(0, maxChars), truncated: text.length > maxChars };
+      return { url: r.url, status: r.status, contentType: r.contentType, text: text.slice(0, maxChars), truncated: r.truncated || text.length > maxChars };
     }) as never,
   };
 }
