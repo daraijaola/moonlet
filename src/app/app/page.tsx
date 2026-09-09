@@ -13,6 +13,7 @@ import { MicButton, VoiceRecorder, useVoiceSupported } from "@/components/voice-
 import { TEMPLATE_LABEL } from "@/components/labels";
 import { ModelPicker } from "@/components/model-picker";
 import { OverviewPanel } from "@/components/overview-panel";
+import { ThinkingDots, ThinkingMark } from "@/components/thinking-mark";
 import { recommendedCapUsd } from "@/moonlet/spec";
 import { DitherField } from "@/components/dither-field";
 import { Avatar, publicUrl } from "@/components/app-shell";
@@ -276,7 +277,15 @@ function Detail({ m, all, owner, onChange, conns, launched, status }: { m: ApiMo
         {visibleThread.map((t, i) => (
           <li key={i} className="space-y-1.5">
             <p className="ml-auto w-fit max-w-[90%] rounded-2xl rounded-br-md bg-ink px-3.5 py-2 text-[13.5px] leading-[1.5] text-cream">{t.q}</p>
-            <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md border border-ink/[0.07] bg-white px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a ?? <span className="text-ink-faint">thinking…</span>}</p>
+            {t.a ? (
+              <p className="w-fit max-w-[92%] whitespace-pre-wrap rounded-2xl rounded-bl-md border border-ink/[0.07] bg-white px-3.5 py-2 text-[13.5px] leading-[1.55] text-ink">{t.a}</p>
+            ) : (
+              <p role="status" aria-live="polite" className="inline-flex w-fit items-center gap-2 rounded-2xl rounded-bl-md border border-ink/[0.07] bg-white py-1.5 pl-2 pr-3.5 text-[13.5px] text-ink-soft">
+                <ThinkingMark size={40} className="shrink-0" />
+                <span className="sr-only">{m.name} is thinking</span>
+                <span aria-hidden className="inline-flex items-center gap-1.5">thinking <ThinkingDots /></span>
+              </p>
+            )}
           </li>
         ))}
       </ul>
