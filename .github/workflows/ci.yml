@@ -1,0 +1,64 @@
+name: ci
+
+on:
+  push:
+    branches: [main, capy/onboarding]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      real_models:
+        description: "Also run the suites that call real models through the Orbio gateway (spends credits)"
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - name: typecheck
+        run: pnpm exec tsc --noEmit 2>&1 | grep -v 'LayoutProps\|PageProps\|validator.ts\|AppRoutes' | tee tsc.log; test ! -s tsc.log
+      - name: lint
+        run: pnpm lint
+      - name: build
+        run: pnpm build
+        env:
+          SECRET_KEY: ci-only
+      # Deterministic suites: fakes for every third party, no network, no credits. The acceptance file is the index.
+      - name: tests (deterministic)
+        run: >-
+          pnpm exec vitest run --no-file-parallelism
+          tests/acceptance.test.ts tests/anchor.test.ts tests/budget-reply.test.ts tests/cap.test.ts tests/compile-fallback.test.ts
+          tests/connections.test.ts tests/discord.test.ts tests/documents.test.ts tests/fallback.test.ts tests/gmail.test.ts
+          tests/privacy.test.ts tests/safe-fetch.test.ts tests/session.test.ts tests/spawn.test.ts tests/tripwire.test.ts tests/wallet.test.ts
+
+  real-models:
+    if: github.event_name == 'workflow_dispatch' && inputs.real_models
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with: { version: 11 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      # Real runs against the Orbio gateway with fakes for Telegram/GitHub/Google/Orbio. About $1 per run.
+      - name: tests (real models)
+        run: >-
+          pnpm exec vitest run --no-file-parallelism
+          tests/runtime.test.ts tests/scheduler.test.ts tests/checks.test.ts tests/prove.test.ts tests/concierge.test.ts
+          tests/followup.test.ts tests/gateway.test.ts tests/gmail-live.test.ts tests/transcribe.test.ts
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.ORBIO_GATEWAY_KEY }}
+          ORBIO_GATEWAY_KEY: ${{ secrets.ORBIO_GATEWAY_KEY }}

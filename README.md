@@ -4,7 +4,8 @@
 
 <p align="center">
   <a href="https://moonlet.16labs.xyz"><img alt="live" src="https://img.shields.io/badge/live-moonlet.16labs.xyz-15161d?style=flat-square"></a>
-  <img alt="tests" src="https://img.shields.io/badge/tests-153%20passing-4f7a5a?style=flat-square">
+  <a href="https://github.com/daraijaola/moonlet/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/daraijaola/moonlet/actions/workflows/ci.yml/badge.svg?branch=capy/onboarding"></a>
+  <img alt="tests" src="https://img.shields.io/badge/tests-169-4f7a5a?style=flat-square">
   <img alt="stack" src="https://img.shields.io/badge/Next.js%2016-TypeScript-15161d?style=flat-square">
   <a href="https://www.orbio.so/build"><img alt="Orbio Build Week" src="https://img.shields.io/badge/Orbio-Build%20Week%202026-e6b64a?style=flat-square"></a>
 </p>
@@ -200,8 +201,11 @@ docs/                   banner, branding (mascot logo, thinking animation source
 ## Tests
 
 ```bash
+pnpm exec vitest run --no-file-parallelism                        # everything, real models included (needs the key below)
 OPENROUTER_API_KEY=sk-… pnpm exec vitest run --no-file-parallelism
 ```
+
+`tests/acceptance.test.ts` is the index: sixteen named cases, one per promise the README makes (foreign report ids denied, rejected approvals have no effect, approvals act once, provider timeouts are *uncertain*, read-back mismatches are flagged, email text cannot widen recipients or repos, header injection refused, private content never public, foreign-site signatures refused, no fetching the box, quiet runs cost nothing, failed runs still report spend, launch cap holds under a race, spawns always ask, delete withdraws every draft). CI runs the deterministic suites (fakes, no credits) on every push; the real-model suites run on manual dispatch.
 
 23 files, 137 tests. Fakes for Telegram, Discord, GitHub, Google/Gmail and Orbio; real models for the parts that matter: compiling sentences, running market-watch and inbox moonlets end to end, the concierge reading a fake inbox and queuing a reply for approval, spend-cap cut-offs, key rotation, model fallback, tripwire cooldown, twenty concurrent runs. Run sequentially: the gateway rate-limits bursts. About $1 and ten minutes for a full run.
 
