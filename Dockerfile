@@ -9,7 +9,9 @@ RUN pnpm install --frozen-lockfile
 FROM base AS build
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-ENV NEXT_TELEMETRY_DISABLED=1
+# Public ids are inlined at build time (NEXT_PUBLIC_*), so they arrive as build args, not runtime env.
+ARG NEXT_PUBLIC_WC_PROJECT_ID=
+ENV NEXT_TELEMETRY_DISABLED=1 NEXT_PUBLIC_WC_PROJECT_ID=$NEXT_PUBLIC_WC_PROJECT_ID
 RUN pnpm build
 
 FROM node:22-alpine AS run
