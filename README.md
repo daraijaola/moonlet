@@ -4,7 +4,7 @@
 
 <p align="center">
   <a href="https://moonlet.16labs.xyz"><img alt="live" src="https://img.shields.io/badge/live-moonlet.16labs.xyz-15161d?style=flat-square"></a>
-  <img alt="tests" src="https://img.shields.io/badge/tests-152%20passing-4f7a5a?style=flat-square">
+  <img alt="tests" src="https://img.shields.io/badge/tests-153%20passing-4f7a5a?style=flat-square">
   <img alt="stack" src="https://img.shields.io/badge/Next.js%2016-TypeScript-15161d?style=flat-square">
   <a href="https://www.orbio.so/build"><img alt="Orbio Build Week" src="https://img.shields.io/badge/Orbio-Build%20Week%202026-e6b64a?style=flat-square"></a>
 </p>
@@ -119,6 +119,7 @@ Gmail is a workspace, not a mailbox to post into. An inbox moonlet reads what ca
 - What you approve is what runs. The draft stored at proposal time is the exact payload executed later: every recipient (To and Cc) is parsed and listed on the card, a forward's subject and attachments are read from the real source message, a bulk tidy is pinned to the messages it matched when drafted, PR cards carry the file contents. Header values are refused if they contain line breaks or control characters.
 - Fences live in code, not in the prompt: GitHub writes only to a repository named in the job; new emails and forwards only to addresses named in the job (replies may go to people already on the thread); at most 100 emails per approval. Text inside an email, page or repo cannot widen them.
 - An approval executes once (an execution lease is taken before any effect). If a provider stops answering after the request, the draft is marked *uncertain* and never retried on its own.
+- **Verified receipts.** After an action executes, Moonlet reads the result back from the provider by id (the GitHub issue, PR or comment; the Gmail message; the labels on tidied mail; the spawned moonlet) and compares it field by field with what was approved. Each action on the moonlet page and its public page is stamped *verified*, *mismatch* (with the field that differs) or *not checked* (with why). This is code comparing records, not the model describing its own success. It proves the object exists as approved; it does not prove a bug is real or a fix works.
 - `web_fetch` only reaches public hosts: loopback, private, link-local and IPv6 equivalents are refused, redirects are re-checked, bodies are capped while streaming.
 - Sign-in accepts only the exact message the server minted (domain, URI, nonce, time), once. OAuth links for Gmail, GitHub and Orbio are single-use, expire in ten minutes, and only complete in the browser session that started them.
 - [Privacy](https://moonlet.16labs.xyz/privacy) · [Terms](https://moonlet.16labs.xyz/terms)
@@ -135,7 +136,7 @@ Built during Orbio Build Week 2026, live at [moonlet.16labs.xyz](https://moonlet
 - Model loop on Orbio's gateway with in-process fallbacks; receipts record the model that answered.
 - Hashing on every run. Anchoring on Robinhood Chain is implemented and tested; the live deployment runs without an anchoring key, so its receipts are hashed, not anchored, and the copy says so.
 - Tripwire: a free 15-minute probe of one metric (price, liquidity, volume, wallet balance, repo activity) pulls a run forward when it moves past your line, at most once every three hours, and re-baselines after each run so a moonlet's own actions don't wake it.
-- Prove: each watch run makes one checkable call, the next scores it hit or miss, both inside the hash; a lifetime record per moonlet.
+- Prove: each watch run makes one checkable call, the next scores it hit or miss, both inside the hash; a lifetime record per moonlet, labelled self-graded. Income figures are labelled as estimates.
 - Privacy: each run carries its own private flag (mailbox or private-repo access); public pages, previews, the sky and the JSON feed redact by run, receipts stay public. A report id from a client is honoured only if it belongs to the moonlet being asked.
 - Consent: acting tools create a draft; approving executes that one action; Autopilot is an explicit switch; spawning a moonlet always asks.
 
