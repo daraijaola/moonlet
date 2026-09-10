@@ -20,7 +20,7 @@
 
 ---
 
-**Moonlet turns an $ORBIO bag into a worker.** A holder connects a wallet, approves Orbio once, and types a job in one sentence. About a minute later a small agent, a *moonlet*, is running on the schedule they set, paid by the inference credits that bag earns. It reads the chain, the web, GitHub and Gmail; it briefs you in Telegram, Discord or on its page; anything it wants to *do* on your behalf waits for your OK. Every finished run is hashed (and anchored on Robinhood Chain when the deployment has an anchoring key). Sell the bag and it goes quiet.
+**Moonlet turns an $ORBIO bag into a worker.** A holder connects a wallet, approves Orbio once, and types a job in one sentence. About a minute later a small agent, a *moonlet*, is running on the schedule they set, paid by the inference credits that bag earns. It reads the chain, the web, GitHub and Gmail; it briefs you in Telegram, Discord or on its page; anything it wants to *do* on your behalf waits for your OK, and after it acts, Moonlet reads the result back from the provider and shows you a receipt that says *verified*, not just *done*. Every finished run is hashed (and anchored on Robinhood Chain when the deployment has an anchoring key). Sell the bag and it goes quiet.
 
 No card. No API key to copy. No dashboard to babysit.
 
@@ -45,7 +45,7 @@ No card. No API key to copy. No dashboard to babysit.
 | **Fund** | Your $ORBIO earns Orbio credits. A moonlet mints one inference key from them and runs on the schedule you set, up to the cap you set. When the credits can't pay for a run it goes quiet and wakes as the bag earns. Below 1,000 $ORBIO it stays quiet. |
 | **Work** | Five job shapes: market watch (tokens, pools, whales on Robinhood Chain), repo mechanic (read repos, open PRs and issues), **inbox** (work in your Gmail), digest (read pages you name), custom. One sentence becomes a plan you can edit before launch. |
 | **Report** | Readable reports with a link to every source. Delivered to Telegram, Discord, the moonlet's page, and as PDF/DOCX files when asked. |
-| **Prove** | Every run: cost, model, duration, tool trace, and a sha256 of the output, anchored on Robinhood Chain when anchoring is enabled. Watch jobs end each run with one checkable call about the next and score it hit or miss when it comes; the call and the score are inside the hash, so the receipt holds the call before the outcome. Lifetime record on every moonlet. |
+| **Prove** | Every run: cost, model, duration, tool trace, and a sha256 of the output, anchored on Robinhood Chain when anchoring is enabled. Every action: read back from GitHub or Gmail by id and compared field by field with what you approved, stamped *verified*, *mismatch* or *not checked*. Watch jobs end each run with one checkable call about the next and grade it hit or miss when it comes (self-graded, and labelled so). |
 | **Watch cheaply** | Alert jobs get a tripwire: one number read for free every 15 minutes; the model wakes only when it moves past your line, at most once every three hours. |
 | **Ask** | Draft → approve → act. A moonlet that wants to send an email, open a PR, post, archive or spawn another moonlet puts a card in your queue (and Telegram). Each approval covers that one action; Autopilot is a separate switch on the moonlet. Spawns always ask. |
 | **Talk** | Reply to any report in Telegram or on the page. It answers from the run, reaches for its tools when it must, and can act (through the same approval cards). |
