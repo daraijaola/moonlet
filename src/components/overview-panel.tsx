@@ -66,7 +66,7 @@ export function OverviewPanel({ m, runs, status, running, earnAll, burnAll, sett
           <div className="flex items-baseline justify-between gap-2 py-1"><dt className="text-ink-soft">Cap</dt><dd className="font-mono font-medium tabular-nums text-ink">{m.perRunCapUsd > 0 ? `${fmtUsd(m.perRunCapUsd, 3)}/run` : "—"}</dd></div>
           <div className="flex items-baseline justify-between gap-2 py-1"><dt className="text-ink-soft">Model</dt><dd className="truncate font-mono text-[12px] text-ink">{modelName}</dd></div>
           {(m.hits + m.misses > 0 || m.openCalls.length > 0) && (
-            <div className="flex items-baseline justify-between gap-2 py-1"><dt className="text-ink-soft">Calls</dt><dd className="tabular-nums text-ink"><span className="font-medium text-moss">{m.hits} hit{m.hits === 1 ? "" : "s"}</span> · {m.misses} miss{m.misses === 1 ? "" : "es"}{m.openCalls.length > 0 && <span className="text-ink-faint"> · {m.openCalls.length} open</span>}</dd></div>
+            <div className="flex items-baseline justify-between gap-2 py-1"><dt className="text-ink-soft" title="The moonlet grades its own calls on the next run; this is its assessment, not an audited score.">Calls <span className="text-ink-faint">(self-graded)</span></dt><dd className="tabular-nums text-ink"><span className="font-medium text-moss">{m.hits} hit{m.hits === 1 ? "" : "s"}</span> · {m.misses} miss{m.misses === 1 ? "" : "es"}{m.openCalls.length > 0 && <span className="text-ink-faint"> · {m.openCalls.length} open</span>}</dd></div>
           )}
         </dl>
       </section>
@@ -115,7 +115,7 @@ export function OverviewPanel({ m, runs, status, running, earnAll, burnAll, sett
         {earnAll > 0 ? (
           <>
             <div className="mt-2 flex items-baseline justify-between">
-              <span className="text-[12.5px] text-ink-soft">Earns</span>
+              <span className="text-[12.5px] text-ink-soft">Earns <span className="text-ink-faint" title="Estimated from the bag size at a fixed rate per token per day; Orbio's actual accrual is not read yet.">(estimate)</span></span>
               <span className="font-mono text-[15px] font-semibold tabular-nums text-ink">{fmtUsd(earnAll)}<span className="ml-1 text-[11px] font-normal text-ink-faint">/ day</span></span>
             </div>
             <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-ink/[0.07]">

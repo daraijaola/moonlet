@@ -272,7 +272,7 @@ const PANELS: { key: string; eyebrow: string; title: string; body: string; facts
     facts: [
       { label: "runs", value: "every 12h" },
       { label: "cost", value: "2¢ a run" },
-      { label: "last call", value: "hit" },
+      { label: "last call (self-graded)", value: "hit" },
     ],
     link: { href: "/s/m_bTOzzzOR", label: "Open Sentry's page" },
     Scene: WatchScene,
