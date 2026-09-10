@@ -8,6 +8,7 @@ import { PublicHeader } from "@/components/public-header";
 import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { RunCard } from "@/components/run-card";
+import { Receipts } from "@/components/receipts";
 import { CADENCE_LABEL, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
 import { explorerTx } from "@/moonlet/anchor";
 import type { Cadence } from "@/moonlet/spec";
@@ -91,6 +92,8 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
             <Stat label="spent" value={fmtUsd(m.spentTotalUsd, 3)} hint="all time" />
           </div>
         </section>
+
+        <Receipts moonletId={m.id} />
 
         <section className="mt-8">
           <div className="mb-3 flex items-center justify-between">

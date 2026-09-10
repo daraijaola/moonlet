@@ -1,4 +1,5 @@
 import * as store from "./store";
+import { verifyAndRecord } from "./verify";
 import * as tg from "./connections/telegram";
 import * as gh from "./connections/github";
 import * as x from "./connections/x";
@@ -231,7 +232,9 @@ async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ s
       result = await gh.commentOnIssue(c.data.token, repo, number, body, fetchImpl);
     }
     await store.finishProposal(id, "executed", result);
-    return { status: "executed", result };
+    // The receipt is the read-back, not the 201: check what now exists against what was approved.
+    const verification = await verifyAndRecord(id, fetchImpl).catch(() => null);
+    return { status: "executed", result: verification ? { ...result, verification } : result };
   } catch (e) {
     if (maybeHappened(e)) {
       const result = { error: `${(e as Error).message}. The request may have reached the provider; check there before asking again. Nothing was retried.` };
@@ -254,13 +257,14 @@ export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   if (!r.ok) return `<b>${tg.esc(d.title)}</b>\n\n${tg.esc(r.error)}.`;
   if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : p.kind === "email_send" || p.kind === "email_forward" ? "was sent" : p.kind === "email_organize" ? "changed in your inbox" : "was posted"}.`;
   if (r.status === "executed") {
-    const { url, name, familyNote } = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string };
+    const { url, name, familyNote, verification } = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string; verification?: { status: string; checks: Array<{ ok: boolean }> } };
+    const proof = verification ? (verification.status === "verified" ? `\n<i>Read back and checked: ${verification.checks.length} field${verification.checks.length === 1 ? "" : "s"} match.</i>` : verification.status === "mismatch" ? `\n<b>⚠ Read back, but it differs from what you approved.</b> Check it at the link.` : "") : "";
     if (p.kind === "spawn_moonlet") return `<b>${tg.esc(d.title)}</b>\n\n✓ <b>${tg.esc(name ?? "")}</b> is live and running its first check now; its reports will land here too.${familyNote ? `\n\n${tg.esc(familyNote)}` : ""}\n${tg.esc(url ?? "")}`;
     const m = await store.getMoonlet(p.moonletId);
     const note = m && !m.autopilot ? `\n\n<i>It will ask again next time. To let ${tg.esc(m.name)} act on its own, turn on Autopilot on its page.</i>` : "";
-    if (p.kind === "email_send" || p.kind === "email_forward") return `<b>${tg.esc(d.title)}</b>\n\n✓ Sent from your Gmail.${url ? ` ${tg.esc(url)}` : ""}${note}`;
-    if (p.kind === "email_organize") return `<b>${tg.esc(d.title)}</b>\n\n✓ Done in your Gmail.${note}`;
-    return `<b>${tg.esc(d.title)}</b>\n\n✓ Done.${url ? ` ${tg.esc(url)}` : ""}${note}`;
+    if (p.kind === "email_send" || p.kind === "email_forward") return `<b>${tg.esc(d.title)}</b>\n\n✓ Sent from your Gmail.${url ? ` ${tg.esc(url)}` : ""}${proof}${note}`;
+    if (p.kind === "email_organize") return `<b>${tg.esc(d.title)}</b>\n\n✓ Done in your Gmail.${proof}${note}`;
+    return `<b>${tg.esc(d.title)}</b>\n\n✓ Done.${url ? ` ${tg.esc(url)}` : ""}${proof}${note}`;
   }
   if (r.status === "uncertain") return `<b>${tg.esc(d.title)}</b>\n\n⚠ Approved, but the provider didn't answer in time. It may have gone through; check there before approving again. ${tg.esc(String((r.result as { error?: string })?.error ?? ""))}`;
   return `<b>${tg.esc(d.title)}</b>\n\n⚠ Approved, but it failed: ${tg.esc(String((r.result as { error?: string })?.error ?? "unknown"))}`;

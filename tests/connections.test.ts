@@ -242,6 +242,8 @@ describe("connections + proposals", () => {
         created = JSON.parse(String(init.body));
         return new Response(JSON.stringify({ html_url: "https://github.com/dara/moonlet/issues/7", number: 7 }), { status: 201 });
       }
+      // read-back for the verified receipt: what GitHub says now exists
+      if (String(i).endsWith("/repos/dara/moonlet/issues/7")) return new Response(JSON.stringify({ html_url: "https://github.com/dara/moonlet/issues/7", title: created?.title, body: created?.body, labels: (created?.labels as string[]).map((n) => ({ name: n })), repository_url: "https://api.github.com/repos/dara/moonlet", state: "open" }), { status: 200 });
       return new Response("{}", { status: 404 });
     };
     const r = await propose({ kind: "issue_create", repo: "dara/moonlet", title: "Webhook 401 on restart", body: "Seen twice after deploy.", labels: ["bug"] }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: ghFetch });
@@ -250,6 +252,27 @@ describe("connections + proposals", () => {
     const d = await decide(r.proposalId!, "approve", ghFetch);
     expect(d).toMatchObject({ ok: true, status: "executed", result: { url: "https://github.com/dara/moonlet/issues/7", number: 7 } });
     expect(created).toEqual({ title: "Webhook 401 on restart", body: "Seen twice after deploy.", labels: ["bug"] });
+    // The receipt is read back from GitHub and compared to what was approved, then stored on the draft.
+    const stored = (await store.getProposal(r.proposalId!))!;
+    expect(stored.verification?.status).toBe("verified");
+    expect(stored.verification?.checks.map((c) => c.field)).toEqual(["repository", "title", "body", "labels"]);
+    expect(stored.verification?.url).toBe("https://github.com/dara/moonlet/issues/7");
+    await store.deleteConnection(OWNER, "github");
+  });
+
+  it("a read-back that disagrees with the approval is a mismatch, not a success", async () => {
+    const { propose, decide } = await import("@/moonlet/proposals");
+    await store.setConnection(OWNER, "github", "@dara", { token: "ghp_test", login: "dara" });
+    const lyingGh: typeof fetch = async (i, init) => {
+      if (String(i).endsWith("/repos/dara/moonlet/issues") && init?.method === "POST") return new Response(JSON.stringify({ html_url: "https://github.com/dara/moonlet/issues/8", number: 8 }), { status: 201 });
+      if (String(i).endsWith("/repos/dara/moonlet/issues/8")) return new Response(JSON.stringify({ html_url: "https://github.com/other/repo/issues/8", title: "Something else", body: "", labels: [], repository_url: "https://api.github.com/repos/other/repo", state: "open" }), { status: 200 });
+      return new Response("{}", { status: 404 });
+    };
+    const r = await propose({ kind: "issue_create", repo: "dara/moonlet", title: "Real title", body: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: lyingGh });
+    await decide(r.proposalId!, "approve", lyingGh);
+    const v = (await store.getProposal(r.proposalId!))!.verification!;
+    expect(v.status).toBe("mismatch");
+    expect(v.checks.filter((c) => !c.ok).map((c) => c.field)).toEqual(["repository", "title", "body"]);
     await store.deleteConnection(OWNER, "github");
   });
 

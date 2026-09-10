@@ -156,6 +156,7 @@ export function migrate() {
     await c.execute(`ALTER TABLE moonlets ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE owners ADD COLUMN avatar INTEGER`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN avatar INTEGER`).catch(() => undefined);
+    await c.execute(`ALTER TABLE proposals ADD COLUMN verification TEXT`).catch(() => undefined);
     await c.execute(`UPDATE moonlets SET runs_total = (SELECT COUNT(*) FROM runs WHERE runs.moonlet_id = moonlets.id)`).catch(() => undefined);
     // Every moonlet wears one of ten faces; older rows draw theirs once here.
     await c.execute(`UPDATE moonlets SET avatar = 1 + (abs(random()) % ${AVATAR_COUNT}) WHERE avatar IS NULL`).catch(() => undefined);
@@ -636,6 +637,8 @@ export type ProposalRow = {
   payload: Record<string, unknown>;
   status: ProposalStatus;
   result: Record<string, unknown> | null;
+  /** Read-back of the executed action against the approved payload (see verify.ts). */
+  verification: { status: "verified" | "mismatch" | "unchecked"; url?: string; checks: Array<{ field: string; expected: string; actual: string; ok: boolean }>; reason?: string; at: number } | null;
   telegramMsg: { chatId: string; messageId: number } | null;
   createdAt: number;
   decidedAt: number | null;
@@ -651,6 +654,7 @@ function rowToProposal(row: Record<string, unknown>): ProposalRow {
     payload: JSON.parse(row.payload as string),
     status: row.status as ProposalStatus,
     result: row.result ? JSON.parse(row.result as string) : null,
+    verification: row.verification ? JSON.parse(row.verification as string) : null,
     telegramMsg: row.telegram_msg ? JSON.parse(row.telegram_msg as string) : null,
     createdAt: Number(row.created_at),
     decidedAt: row.decided_at === null ? null : Number(row.decided_at),
@@ -678,6 +682,13 @@ export async function rejectPendingProposals(moonletId: string) {
   return r.rowsAffected;
 }
 
+/** Actions a moonlet has taken (or tried), newest first, for the receipts list. */
+export async function listActions(moonletId: string, limit = 20) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM proposals WHERE moonlet_id=? AND status IN ('executed','failed','uncertain') ORDER BY decided_at DESC, created_at DESC LIMIT ?`, args: [moonletId, limit] });
+  return r.rows.map((x) => rowToProposal(x as Record<string, unknown>));
+}
+
 export async function listProposals(owner: string, status?: ProposalStatus, limit = 50) {
   await migrate();
   const r = status
@@ -696,6 +707,10 @@ export async function decideProposal(id: string, status: "approved" | "rejected"
 export async function leaseProposal(id: string) {
   const r = await db().execute({ sql: `UPDATE proposals SET status='executing' WHERE id=? AND status='approved'`, args: [id] });
   return r.rowsAffected === 1;
+}
+
+export async function setProposalVerification(id: string, v: ProposalRow["verification"]) {
+  await db().execute({ sql: `UPDATE proposals SET verification=? WHERE id=?`, args: [JSON.stringify(v), id] });
 }
 
 export async function finishProposal(id: string, status: "executed" | "failed" | "uncertain", result: Record<string, unknown>) {

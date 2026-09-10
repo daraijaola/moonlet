@@ -134,6 +134,7 @@ const summarise = (m: Message) => ({
   date: m.internalDate ? new Date(Number(m.internalDate)).toISOString() : header(m.payload, "Date"),
   unread: !!m.labelIds?.includes("UNREAD"),
   labels: (m.labelIds ?? []).filter((l) => !["UNREAD", "CATEGORY_PERSONAL"].includes(l)),
+  labelIds: m.labelIds ?? [],
   snippet: (m.snippet ?? "").slice(0, 200),
   url: `https://mail.google.com/mail/u/0/#all/${m.threadId}`,
 });

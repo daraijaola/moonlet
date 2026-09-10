@@ -14,6 +14,7 @@ import { TEMPLATE_LABEL } from "@/components/labels";
 import { ModelPicker } from "@/components/model-picker";
 import { OverviewPanel } from "@/components/overview-panel";
 import { ThinkingDots, ThinkingMark } from "@/components/thinking-mark";
+import { Receipts } from "@/components/receipts";
 import { recommendedCapUsd } from "@/moonlet/spec";
 import { DitherField } from "@/components/dither-field";
 import { Avatar, publicUrl } from "@/components/app-shell";
@@ -478,6 +479,7 @@ function Detail({ m, all, owner, onChange, conns, launched, askDelete, status }:
             </header>
 
             <div className="mt-6"><Queue owner={owner} /></div>
+            <div className="mb-8"><Receipts moonletId={m.id} /></div>
 
             <div>
               <div className="mb-3 flex items-center justify-between">

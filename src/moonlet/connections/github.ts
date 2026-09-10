@@ -174,6 +174,24 @@ export async function openIssue(token: string, repo: string, title: string, body
   return { url: c.html_url, number: c.number };
 }
 
+/** Read-back for verified receipts: what actually exists, by id, in the repository we were told. */
+export async function readIssue(token: string, repo: string, number: number, fetchImpl?: typeof fetch) {
+  const [o, r] = repo.split("/");
+  const i = await gh<{ html_url: string; title: string; body: string | null; labels: Array<{ name: string }>; repository_url: string; state: string }>(token, `/repos/${o}/${r}/issues/${number}`, {}, fetchImpl);
+  return { url: i.html_url, title: i.title, body: i.body ?? "", labels: (i.labels ?? []).map((l) => l.name), repo: i.repository_url.replace(/^.*\/repos\//, ""), state: i.state };
+}
+export async function readPull(token: string, repo: string, number: number, fetchImpl?: typeof fetch) {
+  const [o, r] = repo.split("/");
+  const p = await gh<{ html_url: string; title: string; state: string; merged: boolean; base: { repo: { full_name: string } } }>(token, `/repos/${o}/${r}/pulls/${number}`, {}, fetchImpl);
+  const files = await gh<Array<{ filename: string }>>(token, `/repos/${o}/${r}/pulls/${number}/files?per_page=100`, {}, fetchImpl);
+  return { url: p.html_url, title: p.title, state: p.state, merged: p.merged, repo: p.base.repo.full_name, files: files.map((f) => f.filename) };
+}
+export async function readComment(token: string, repo: string, commentId: number, fetchImpl?: typeof fetch) {
+  const [o, r] = repo.split("/");
+  const c = await gh<{ html_url: string; body: string; issue_url: string }>(token, `/repos/${o}/${r}/issues/comments/${commentId}`, {}, fetchImpl);
+  return { url: c.html_url, body: c.body, repo: c.issue_url.replace(/^.*\/repos\//, "").replace(/\/issues\/\d+$/, ""), issueNumber: Number(c.issue_url.match(/\/issues\/(\d+)$/)?.[1]) };
+}
+
 export async function commentOnIssue(token: string, repo: string, number: number, body: string, fetchImpl?: typeof fetch) {
   const [o, r] = repo.split("/");
   const c = await gh<{ html_url: string }>(token, `/repos/${o}/${r}/issues/${number}/comments`, { method: "POST", body: JSON.stringify({ body }) }, fetchImpl);
