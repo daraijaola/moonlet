@@ -77,6 +77,7 @@ export async function orbioFor(owner: string, fetchImpl: typeof fetch = fetch): 
 export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = Number(process.env.TICK_CONCURRENCY ?? 4)) {
   const now = deps.now ?? Date.now;
   await store.releaseStale(now() - 10 * 60_000);
+  await store.reconcileStuckActions(now() - 5 * 60_000).catch(() => undefined);
   await probeTripwires(now(), deps.fetch).catch((e) => console.error("tripwire probe", (e as Error).message));
   const due = await store.listDue(now(), limit);
   const results: Array<{ id: string; status: string; error?: string }> = [];
@@ -301,7 +302,6 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     nextRunAt,
     lastRunAt: now(),
     keysRotated: m.keysRotated + rotated,
-    runsFailed: m.runsFailed + (result.status === "failed" ? 1 : 0),
     spentTotalUsd: m.spentTotalUsd + result.costUsd,
   });
 

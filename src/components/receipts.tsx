@@ -37,7 +37,7 @@ function Row({ a }: { a: ApiAction }) {
   const v = a.verification;
   const tone = a.status !== "executed" ? (a.status === "uncertain" ? "uncertain" : "failed") : v?.status ?? "unchecked";
   const badge = {
-    verified: { cls: "bg-moss/10 text-moss", icon: <Check size={11} strokeWidth={2.5} />, label: "verified" },
+    verified: { cls: "bg-moss/10 text-moss", icon: <Check size={11} strokeWidth={2.5} />, label: v?.scope === "sample" ? "sample checked" : "verified" },
     mismatch: { cls: "bg-red-50 text-red-700", icon: <CircleAlert size={11} strokeWidth={2.2} />, label: "mismatch" },
     unchecked: { cls: "bg-ink/[0.05] text-ink-soft", icon: <CircleDashed size={11} strokeWidth={2} />, label: "not checked" },
     uncertain: { cls: "bg-gold/20 text-ink", icon: <CircleAlert size={11} strokeWidth={2.2} />, label: "uncertain" },

@@ -158,7 +158,7 @@ export async function readMessage(token: string, id: string, fetchImpl?: typeof 
   const m = await api<Message>(token, `/messages/${id}?format=full`, {}, fetchImpl);
   const { text, attachments } = bodyOf(m.payload);
   const unsubscribe = header(m.payload, "List-Unsubscribe");
-  return { ...summarise(m), cc: header(m.payload, "Cc"), replyTo: header(m.payload, "Reply-To"), messageIdHeader: header(m.payload, "Message-ID"), body: text.slice(0, 12_000), truncated: text.length > 12_000, attachments, ...(unsubscribe ? { unsubscribe: unsubscribe.match(/<(https?:[^>]+)>/)?.[1] ?? unsubscribe } : {}) };
+  return { ...summarise(m), cc: header(m.payload, "Cc"), bcc: header(m.payload, "Bcc"), replyTo: header(m.payload, "Reply-To"), messageIdHeader: header(m.payload, "Message-ID"), body: text.slice(0, 12_000), truncated: text.length > 12_000, attachments, ...(unsubscribe ? { unsubscribe: unsubscribe.match(/<(https?:[^>]+)>/)?.[1] ?? unsubscribe } : {}) };
 }
 
 /** One attachment's bytes, for saving as a file or forwarding. Gmail caps single attachments at 25 MB; we stop at 10. */
@@ -180,6 +180,12 @@ export async function listDrafts(token: string, limit = 15, fetchImpl?: typeof f
 export async function deleteDraft(token: string, draftId: string, fetchImpl?: typeof fetch) {
   await api(token, `/drafts/${draftId}`, { method: "DELETE" }, fetchImpl);
   return { deleted: true, draftId };
+}
+
+/** Labels only (format=minimal), cheap enough to check every message of a bulk tidy. */
+export async function readMessageLabels(token: string, id: string, fetchImpl?: typeof fetch) {
+  const m = await api<{ labelIds?: string[] }>(token, `/messages/${id}?format=minimal`, {}, fetchImpl);
+  return m.labelIds ?? [];
 }
 
 export async function readThread(token: string, id: string, fetchImpl?: typeof fetch) {
@@ -305,9 +311,9 @@ export async function resolveQuery(token: string, q: string, limit = 500, fetchI
 
 /** Tidy up, by explicit ids or by a Gmail search (up to 500 at a time). Labels resolve (and are created) by name; archive is "remove INBOX"; trash is reversible for 30 days. */
 export async function organize(token: string, o: Organize, fetchImpl?: typeof fetch) {
-  if (!o.messageIds?.length && !o.q) throw new Error("messageIds or q required");
-  let ids = (o.messageIds ?? []).slice(0, 500);
-  if (!ids.length && o.q) ids = await resolveQuery(token, o.q, 500, fetchImpl);
+  if (!o.messageIds && !o.q) throw new Error("messageIds or q required");
+  // An explicit id list, even an empty one, is the approved set; only a bare query (no list at all) resolves here.
+  const ids = o.messageIds ? o.messageIds.slice(0, 500) : await resolveQuery(token, o.q!, 500, fetchImpl);
   if (!ids.length) return { changed: 0, action: o.action, q: o.q };
   if (o.action === "trash" || o.action === "untrash") {
     for (let i = 0; i < ids.length; i += 10) await Promise.all(ids.slice(i, i + 10).map((id) => api(token, `/messages/${id}/${o.action}`, { method: "POST" }, fetchImpl)));

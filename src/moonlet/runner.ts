@@ -155,7 +155,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       const bal = await deps.orbio.getBalance();
       if (bal.availableUsd < p.perRunCapUsd) {
         keyEvents.push({ kind: "quiet", detail: "key rejected and the balance can't fund a run" });
-        return { ok: true, status: "quiet", costUsd: 0, model, modelCalls: 0, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key: null, private: isPrivate };
+        return { ok: true, status: "quiet", costUsd: spentSoFar, model, modelCalls: callsSoFar, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key: null, private: isPrivate };
       }
       const minted = await deps.orbio.createKey("moonlet");
       key = { key: minted.key, limitUsd: bal.availableUsd, spentUsd: 0 };

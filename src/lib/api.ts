@@ -76,7 +76,7 @@ export type ApiAction = {
   body: string;
   url: string | null;
   error: string | null;
-  verification: { status: "verified" | "mismatch" | "unchecked"; at: number; reason?: string; checks: Array<{ field: string; expected: string; actual: string; ok: boolean }> } | null;
+  verification: { status: "verified" | "mismatch" | "unchecked"; scope: "complete" | "sample"; at: number; reason?: string; checks: Array<{ field: string; expected: string; actual: string; ok: boolean }> } | null;
 };
 
 export type Proposal = {

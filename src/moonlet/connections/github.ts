@@ -182,9 +182,15 @@ export async function readIssue(token: string, repo: string, number: number, fet
 }
 export async function readPull(token: string, repo: string, number: number, fetchImpl?: typeof fetch) {
   const [o, r] = repo.split("/");
-  const p = await gh<{ html_url: string; title: string; state: string; merged: boolean; base: { repo: { full_name: string } } }>(token, `/repos/${o}/${r}/pulls/${number}`, {}, fetchImpl);
-  const files = await gh<Array<{ filename: string }>>(token, `/repos/${o}/${r}/pulls/${number}/files?per_page=100`, {}, fetchImpl);
-  return { url: p.html_url, title: p.title, state: p.state, merged: p.merged, repo: p.base.repo.full_name, files: files.map((f) => f.filename) };
+  const p = await gh<{ html_url: string; title: string; state: string; merged: boolean; base: { repo: { full_name: string } }; head: { ref: string; sha: string } }>(token, `/repos/${o}/${r}/pulls/${number}`, {}, fetchImpl);
+  const files = await gh<Array<{ filename: string; sha: string }>>(token, `/repos/${o}/${r}/pulls/${number}/files?per_page=100`, {}, fetchImpl);
+  return { url: p.html_url, title: p.title, state: p.state, merged: p.merged, repo: p.base.repo.full_name, headRef: p.head.sha, files };
+}
+/** The exact text of a file at a ref, for comparing approved content with what landed on the branch. */
+export async function readFileAt(token: string, repo: string, ref: string, path: string, fetchImpl?: typeof fetch) {
+  const [o, r] = repo.split("/");
+  const f = await gh<{ content?: string; encoding?: string }>(token, `/repos/${o}/${r}/contents/${path}?ref=${encodeURIComponent(ref)}`, {}, fetchImpl);
+  return f.content ? Buffer.from(f.content.replace(/\n/g, ""), "base64").toString("utf8") : "";
 }
 export async function readComment(token: string, repo: string, commentId: number, fetchImpl?: typeof fetch) {
   const [o, r] = repo.split("/");

@@ -157,7 +157,9 @@ export function migrate() {
     await c.execute(`ALTER TABLE owners ADD COLUMN avatar INTEGER`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN avatar INTEGER`).catch(() => undefined);
     await c.execute(`ALTER TABLE proposals ADD COLUMN verification TEXT`).catch(() => undefined);
-    await c.execute(`UPDATE moonlets SET runs_total = (SELECT COUNT(*) FROM runs WHERE runs.moonlet_id = moonlets.id)`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN claimed_at INTEGER`).catch(() => undefined);
+    await c.execute(`ALTER TABLE proposals ADD COLUMN executing_since INTEGER`).catch(() => undefined);
+    await c.execute(`UPDATE moonlets SET runs_total = (SELECT COUNT(*) FROM runs WHERE runs.moonlet_id = moonlets.id), runs_failed = (SELECT COUNT(*) FROM runs WHERE runs.moonlet_id = moonlets.id AND runs.status = 'failed')`).catch(() => undefined);
     // Every moonlet wears one of ten faces; older rows draw theirs once here.
     await c.execute(`UPDATE moonlets SET avatar = 1 + (abs(random()) % ${AVATAR_COUNT}) WHERE avatar IS NULL`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
@@ -440,21 +442,32 @@ export async function claimNow(id: string, now = Date.now()) {
 }
 
 /** A moonlet left in "running" for too long (crashed worker) goes back to idle. */
+/** A run that has held its claim longer than `olderThan` is presumed dead (process restart); release it. Judged by the claim's own timestamp, never by the previous run's. */
 export async function releaseStale(olderThan: number) {
   await migrate();
   await db().execute({
-    sql: `UPDATE moonlets SET status='idle' WHERE status='running' AND COALESCE(last_run_at, created_at) < ? AND next_run_at <= ?`,
-    args: [olderThan, Date.now()],
+    sql: `UPDATE moonlets SET status='idle', claimed_at=NULL WHERE status='running' AND claimed_at IS NOT NULL AND claimed_at < ?`,
+    args: [olderThan],
   });
 }
 
-/** Atomically claim a due moonlet for a run so two cron ticks can't double-run it. */
+/** Atomically claim a due moonlet for a run so two cron ticks can't double-run it. Stamps the claim so staleness is measured from it. */
 export async function claimForRun(id: string, now = Date.now()) {
   const r = await db().execute({
-    sql: `UPDATE moonlets SET status='running' WHERE id=? AND status IN ('idle','quiet') AND next_run_at <= ?`,
-    args: [id, now],
+    sql: `UPDATE moonlets SET status='running', claimed_at=? WHERE id=? AND status IN ('idle','quiet') AND next_run_at <= ?`,
+    args: [now, id, now],
   });
   return r.rowsAffected === 1;
+}
+
+/** Actions left in 'executing' longer than `olderThan` (process died mid-action) become 'uncertain' for the owner to check; nothing is retried. */
+export async function reconcileStuckActions(olderThan: number) {
+  await migrate();
+  const r = await db().execute({
+    sql: `UPDATE proposals SET status='uncertain', result=json_object('error','the process stopped while this was executing; it may or may not have gone through. Check at the provider before approving again. Nothing was retried.') WHERE status='executing' AND executing_since IS NOT NULL AND executing_since < ?`,
+    args: [olderThan],
+  });
+  return r.rowsAffected;
 }
 
 // ---- runs ------------------------------------------------------------------
@@ -471,7 +484,7 @@ export async function insertRun(r: Omit<RunRow, "private"> & { private?: boolean
     ],
   });
   // The counter on the moonlet is the number of run rows, whichever path wrote them, so no two surfaces can disagree.
-  await db().execute({ sql: `UPDATE moonlets SET runs_total = (SELECT COUNT(*) FROM runs WHERE moonlet_id = ?) WHERE id = ?`, args: [r.moonletId, r.moonletId] });
+  await db().execute({ sql: `UPDATE moonlets SET runs_total = (SELECT COUNT(*) FROM runs WHERE moonlet_id = ?), runs_failed = (SELECT COUNT(*) FROM runs WHERE moonlet_id = ? AND status = 'failed') WHERE id = ?`, args: [r.moonletId, r.moonletId, r.moonletId] });
 }
 
 export async function setRunTx(id: string, txHash: string) {
@@ -638,7 +651,7 @@ export type ProposalRow = {
   status: ProposalStatus;
   result: Record<string, unknown> | null;
   /** Read-back of the executed action against the approved payload (see verify.ts). */
-  verification: { status: "verified" | "mismatch" | "unchecked"; url?: string; checks: Array<{ field: string; expected: string; actual: string; ok: boolean }>; reason?: string; at: number } | null;
+  verification: { status: "verified" | "mismatch" | "unchecked"; scope: "complete" | "sample"; url?: string; checks: Array<{ field: string; expected: string; actual: string; ok: boolean }>; reason?: string; at: number } | null;
   telegramMsg: { chatId: string; messageId: number } | null;
   createdAt: number;
   decidedAt: number | null;
@@ -705,7 +718,7 @@ export async function decideProposal(id: string, status: "approved" | "rejected"
 
 /** Take the execution lease: only one caller moves approved → executing, so a double tap or two ticks cannot act twice. */
 export async function leaseProposal(id: string) {
-  const r = await db().execute({ sql: `UPDATE proposals SET status='executing' WHERE id=? AND status='approved'`, args: [id] });
+  const r = await db().execute({ sql: `UPDATE proposals SET status='executing', executing_since=? WHERE id=? AND status='approved'`, args: [Date.now(), id] });
   return r.rowsAffected === 1;
 }
 

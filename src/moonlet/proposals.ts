@@ -89,12 +89,13 @@ async function canonical(input: ProposalInput, owner: string, moonletId: string,
   }
   if (input.kind === "email_organize") {
     const o = input.organize;
-    if (!o.messageIds?.length && o.q) {
+    if (!o.messageIds && o.q) {
       const { token } = await gmail.accessToken(owner, fetchImpl);
       const ids = await gmail.resolveQuery(token, o.q, BULK_LIMIT, fetchImpl);
+      // Pinned: the card shows this count, the executor touches exactly these ids, and an empty match stays empty forever.
       return { organize: { ...o, messageIds: ids }, why: input.why, matched: ids.length };
     }
-    return { organize: o, why: input.why };
+    return { organize: { ...o, messageIds: (o.messageIds ?? []).slice(0, BULK_LIMIT) }, why: input.why };
   }
   return input.kind === "tweet" ? { text: input.text }
     : input.kind === "pull_request" ? { plan: input.plan }
@@ -214,8 +215,12 @@ async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ s
       const f = p.payload as { messageId: string; to: string; note: string };
       result = await gmail.forwardMessage(token, email, f.messageId, f.to, f.note, fetchImpl);
     } else if (p.kind === "email_organize") {
-      const { token } = await gmail.accessToken(p.owner, fetchImpl);
-      result = await gmail.organize(token, p.payload.organize as gmail.Organize, fetchImpl);
+      const o = p.payload.organize as gmail.Organize;
+      if (!o.messageIds?.length) result = { changed: 0, action: o.action, q: o.q, note: "nothing matched when this was drafted; nothing was touched" };
+      else {
+        const { token } = await gmail.accessToken(p.owner, fetchImpl);
+        result = await gmail.organize(token, { ...o, q: undefined }, fetchImpl);
+      }
     } else if (p.kind === "issue_create") {
       const c = await gh.connectionFor(p.owner);
       if (!c) throw new Error("GitHub not connected");
@@ -257,8 +262,13 @@ export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   if (!r.ok) return `<b>${tg.esc(d.title)}</b>\n\n${tg.esc(r.error)}.`;
   if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : p.kind === "email_send" || p.kind === "email_forward" ? "was sent" : p.kind === "email_organize" ? "changed in your inbox" : "was posted"}.`;
   if (r.status === "executed") {
-    const { url, name, familyNote, verification } = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string; verification?: { status: string; checks: Array<{ ok: boolean }> } };
-    const proof = verification ? (verification.status === "verified" ? `\n<i>Read back and checked: ${verification.checks.length} field${verification.checks.length === 1 ? "" : "s"} match.</i>` : verification.status === "mismatch" ? `\n<b>⚠ Read back, but it differs from what you approved.</b> Check it at the link.` : "") : "";
+    const { url, name, familyNote, verification } = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string; verification?: { status: string; scope?: string; checks: Array<{ ok: boolean; field: string }> } };
+    const scopeNote = verification?.scope === "sample" ? " (sample)" : "";
+    const proof = verification ? (verification.status === "verified" ? `\n<i>Read back and checked${scopeNote}: ${verification.checks.length} field${verification.checks.length === 1 ? "" : "s"} match.</i>` : verification.status === "mismatch" ? `` : `\n<i>Could not be read back to check.</i>`) : "";
+    if (verification?.status === "mismatch") {
+      const bad = verification.checks.filter((c) => !c.ok).map((c) => c.field).join(", ");
+      return `<b>${tg.esc(d.title)}</b>\n\n⚠ <b>Happened, but not as approved.</b> Read back from the provider, these differ: ${tg.esc(bad)}. Check it${url ? ` at ${tg.esc(url)}` : ""} before relying on it.`;
+    }
     if (p.kind === "spawn_moonlet") return `<b>${tg.esc(d.title)}</b>\n\n✓ <b>${tg.esc(name ?? "")}</b> is live and running its first check now; its reports will land here too.${familyNote ? `\n\n${tg.esc(familyNote)}` : ""}\n${tg.esc(url ?? "")}`;
     const m = await store.getMoonlet(p.moonletId);
     const note = m && !m.autopilot ? `\n\n<i>It will ask again next time. To let ${tg.esc(m.name)} act on its own, turn on Autopilot on its page.</i>` : "";
