@@ -70,11 +70,11 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
             </ul>
           )}
           {((run.scored?.length ?? 0) > 0 || (run.calls?.length ?? 0) > 0) && (
-            <ul className="mt-3 space-y-1.5">
+            <ul className="mt-3 space-y-1.5" title="Calls are made by the moonlet and graded by the moonlet on its next run against the data it reads; they are its own assessment.">
               {run.scored?.map((s, i) => (
                 <li key={`s${i}`} className="flex items-start gap-2 text-[12.5px] leading-[1.5]">
                   <span className={`mt-0.5 shrink-0 rounded-full px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] ${s.result === "hit" ? "bg-moss/15 text-moss" : s.result === "miss" ? "bg-red-700/10 text-red-800" : "bg-ink/5 text-ink-soft"}`}>{s.result}</span>
-                  <span className="min-w-0 break-words text-ink"><span className="text-ink-soft">called: </span>{s.claim}{s.evidence ? <span className="text-ink-soft"> · {s.evidence}</span> : null}</span>
+                  <span className="min-w-0 break-words text-ink"><span className="text-ink-soft">called: </span>{s.claim}{s.evidence ? <span className="text-ink-soft"> · {s.evidence}</span> : null}<span className="text-ink-faint"> · self-graded</span></span>
                 </li>
               ))}
               {run.calls?.map((c, i) => (

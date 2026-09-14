@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { publicOrigin } from "@/moonlet/http";
+import { ownerFrom, publicOrigin } from "@/moonlet/http";
 import { finishOAuth } from "@/moonlet/connections/gmail";
 
 export async function GET(req: Request) {
@@ -8,7 +8,7 @@ export async function GET(req: Request) {
   const code = u.searchParams.get("code"), state = u.searchParams.get("state");
   if (!code || !state) return NextResponse.redirect(`${base}/app/connections?gmail=denied`);
   try {
-    const r = await finishOAuth(code, state);
+    const r = await finishOAuth(code, state, ownerFrom(req));
     return NextResponse.redirect(`${base}${r.redirectTo}?gmail=ok`);
   } catch (e) {
     console.error("gmail oauth", (e as Error).message);

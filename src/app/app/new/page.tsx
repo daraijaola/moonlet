@@ -299,7 +299,7 @@ function NewInner() {
         {step === 3 && spec && p && !launching && (
           <>
             <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">The honest math</h1>
-            <p className="mt-1 text-[13.5px] text-ink-soft">This is what your bag can afford. Buy more and it runs more. Sell and it goes quiet.</p>
+            <p className="mt-1 text-[13.5px] text-ink-soft">It runs on the schedule you set, up to the cap you set, billed to your Orbio credits. When the credits run out it goes quiet and wakes as the bag earns.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
               <div className="rounded-lg border border-ink/10 bg-paper p-4">
                 <FuelGauge earnPerDay={p.earnPerDayUsd} burnPerDay={p.burnPerDayUsd} quiet={p.quiet} size="md" />
@@ -308,8 +308,8 @@ function NewInner() {
                 <dt className="text-ink-soft">your bag</dt><dd className="text-ink">{status ? `${fmtBag(bag)} $ORBIO` : "reading…"}</dd>
                 <dt className="text-ink-soft">earns</dt><dd className="text-ink">~{fmtUsd(p.earnPerDayUsd)} / day</dd>
                 <dt className="text-ink-soft">cap per run</dt><dd className="text-ink">{fmtUsd(p.perRunCapUsd, 3)}</dd>
-                <dt className="text-ink-soft">so it runs</dt><dd className="text-ink">{p.quiet ? "not yet" : `${CADENCE_LABEL[p.cadence]}${p.cadence !== spec.cadence ? ` (slowed from ${CADENCE_LABEL[spec.cadence]})` : ""}`}</dd>
-                <dt className="text-ink-soft">burns</dt><dd className="text-ink">~{fmtUsd(p.burnPerDayUsd)} / day</dd>
+                <dt className="text-ink-soft">runs</dt><dd className="text-ink">{p.quiet ? "not yet" : CADENCE_LABEL[p.cadence]}</dd>
+                <dt className="text-ink-soft">can spend</dt><dd className="text-ink">up to {fmtUsd(p.burnPerDayUsd)} / day</dd>
                 {status?.idleCreditsUsd !== null && status?.idleCreditsUsd !== undefined && (<><dt className="text-ink-soft">idle credit now</dt><dd className="text-ink">{fmtUsd(status.idleCreditsUsd)}</dd></>)}
               </dl>
             </div>

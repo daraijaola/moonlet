@@ -37,7 +37,7 @@ export function Hero() {
             an agent.
           </motion.h1>
           <motion.p {...up(0.12)} className="mt-6 max-w-[30rem] text-[17px] leading-[1.55] text-ink-soft">
-            Type one sentence. A moonlet works around the clock, paid only by the credits your $ORBIO earns. No card, no key to copy. Sell the bag and it sleeps.
+            Type one sentence. A moonlet works on your schedule, paid by the credits your $ORBIO earns. No card, no key to copy. Sell the bag and it sleeps.
           </motion.p>
           <motion.div {...up(0.18)} className="mt-9 max-w-[32rem]">
             <JobInput />

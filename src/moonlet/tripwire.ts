@@ -12,6 +12,8 @@ import type { Tripwire } from "./spec";
  */
 
 export const PROBE_EVERY_MS = 15 * 60_000;
+/** A trip pulls a run forward; the next trip waits this long after that run, so a busy metric can't turn an alert into a 15-minute loop. */
+export const TRIP_COOLDOWN_MS = 3 * 60 * 60_000;
 const DEXSCREENER = "https://api.dexscreener.com";
 
 /** Repo activity as one number: the newest of (last push, last issue/PR update), in ms. Public repos need no token; a connected owner's token covers private ones. */
@@ -42,15 +44,19 @@ export async function readMetric(t: Tripwire, fetchImpl: typeof fetch = fetch, t
   const pairs = (j.pairs ?? []).filter((p) => p.chainId === "robinhood");
   const pool = pairs.sort((a, b) => Number((b.liquidity as { usd?: number })?.usd ?? 0) - Number((a.liquidity as { usd?: number })?.usd ?? 0))[0];
   if (!pool) return null;
-  if (t.metric === "price") return Number(pool.priceUsd) || null;
-  if (t.metric === "liquidity") return pairs.reduce((s, p) => s + Number((p.liquidity as { usd?: number })?.usd ?? 0), 0) || null;
-  return pairs.reduce((s, p) => s + Number((p.volume as { h24?: number })?.h24 ?? 0), 0) || null;
+  // Zero is a reading (a drained pool is exactly the alert), missing data is null.
+  const num = (v: unknown) => (v == null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
+  if (t.metric === "price") return num(pool.priceUsd);
+  if (t.metric === "liquidity") return pairs.every((p) => (p.liquidity as { usd?: number })?.usd == null) ? null : pairs.reduce((s, p) => s + Number((p.liquidity as { usd?: number })?.usd ?? 0), 0);
+  return pairs.every((p) => (p.volume as { h24?: number })?.h24 == null) ? null : pairs.reduce((s, p) => s + Number((p.volume as { h24?: number })?.h24 ?? 0), 0);
 }
 
 export const describeTrip = (t: Tripwire, from: number, to: number) => {
   if (t.metric === "repo_activity") return `${t.target} has new activity (a push, issue or pull request at ${new Date(to).toISOString().slice(0, 16).replace("T", " ")} UTC)`;
-  const pct = ((to - from) / from) * 100;
   const fmt = (v: number) => (t.metric === "price" ? `$${v.toPrecision(4)}` : t.metric === "wallet_balance" ? `${v.toFixed(4)} ETH` : `$${Math.round(v).toLocaleString()}`);
+  if (from === 0) return `${t.metric.replace("_", " ")} of ${t.target} went from zero to ${fmt(to)}`;
+  if (to === 0) return `${t.metric.replace("_", " ")} of ${t.target} went to zero (was ${fmt(from)})`;
+  const pct = ((to - from) / from) * 100;
   return `${t.metric.replace("_", " ")} of ${t.target} moved ${pct > 0 ? "+" : ""}${pct.toFixed(1)}% (${fmt(from)} → ${fmt(to)}), past your ${t.thresholdPct}% line`;
 };
 
@@ -61,6 +67,7 @@ export async function probeTripwires(now = Date.now(), fetchImpl: typeof fetch =
     const t = m.spec.tripwire;
     if (!t || m.status !== "idle" || m.nextRunAt <= now) continue;
     if (m.watch && now - m.watch.at < PROBE_EVERY_MS) continue;
+    if (m.lastRunAt && now - m.lastRunAt < TRIP_COOLDOWN_MS) continue;
     const gh = t.metric === "repo_activity" ? await store.getConnection<{ token: string }>(m.owner, "github") : null;
     const value = await readMetric(t, fetchImpl, gh?.data.token).catch(() => null);
     if (value == null) continue;
@@ -69,7 +76,8 @@ export async function probeTripwires(now = Date.now(), fetchImpl: typeof fetch =
       await store.updateMoonlet(m.id, { watch: { value, at: now } });
       continue;
     }
-    const moved = t.metric === "repo_activity" ? value > m.watch.value : Math.abs((value - m.watch.value) / m.watch.value) * 100 >= t.thresholdPct;
+    // From a zero baseline any non-zero reading is a move; from a non-zero baseline the usual percentage.
+    const moved = t.metric === "repo_activity" ? value > m.watch.value : m.watch.value === 0 ? value !== 0 : Math.abs((value - m.watch.value) / m.watch.value) * 100 >= t.thresholdPct;
     if (!moved) {
       await store.updateMoonlet(m.id, { watch: { value: m.watch.value, at: now } });
       continue;

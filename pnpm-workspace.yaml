@@ -1,5 +1,4 @@
 allowBuilds:
-  '@openrouter/sdk': false
   '@reown/appkit': false
   bufferutil: false
   sharp: false

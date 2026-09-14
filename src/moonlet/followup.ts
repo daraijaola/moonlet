@@ -40,8 +40,8 @@ function parseCadence(text: string): Cadence | null {
   if (/every\s*15\s*min|quarter/.test(t)) return "15m";
   if (/hourly|every\s*hour|each\s*hour|every\s*1\s*h/.test(t)) return "1h";
   if (/every\s*4\s*h/.test(t)) return "4h";
-  if (/every\s*6\s*h|twice a day|twice daily|four times/.test(t)) return "6h";
-  if (/every\s*12\s*h|twice a day/.test(t)) return "12h";
+  if (/every\s*6\s*h|four times/.test(t)) return "6h";
+  if (/every\s*12\s*h|twice a day|twice daily/.test(t)) return "12h";
   if (/daily|every\s*day|each\s*day|every\s*24\s*h|every morning|every night|once a day/.test(t)) return "24h";
   if (/weekly|every\s*week|once a week|every\s*7\s*d/.test(t)) return "7d";
   return null;
@@ -62,7 +62,10 @@ export async function followup(input: FollowupInput): Promise<string> {
   if (!key) return `${m.name} hasn't claimed a key yet, so I can't dig in until its first run. Ask again after that.`;
 
   const runs = await store.listRuns(m.id, 3);
-  const run = (input.runId && runs.find((r) => r.id === input.runId)) ?? (input.runId ? await store.getRun(input.runId) : null) ?? runs[0] ?? null;
+  // A run id from the client is only honoured if it belongs to this moonlet; anything else falls back to the latest run rather than
+  // loading someone else's report into the model's context.
+  const requested = input.runId ? (runs.find((r) => r.id === input.runId) ?? (await store.getRun(input.runId))) : null;
+  const run = (requested && requested.moonletId === m.id ? requested : null) ?? runs[0] ?? null;
   const gh = await store.getConnection<GitHubConn>(m.owner, "github");
   const usable = m.spec.tools.filter((t) => !["deliver", "spawn_moonlet"].includes(t));
   const [tgConn, gmConn] = await Promise.all([store.getConnection<TelegramConn>(m.owner, "telegram"), store.getConnection<GmailConn>(m.owner, "gmail")]);

@@ -1,4 +1,4 @@
-import { CADENCE_MS, type Cadence, type JobSpec, recommendedCapUsd } from "./spec";
+import { CADENCE_MS, type Cadence, type JobSpec } from "./spec";
 
 /**
  * Budgeting to income. A moonlet may only spend what its owner's bag earns,
@@ -33,46 +33,17 @@ export type Plan = {
 };
 
 /**
- * Given a spec and the owner's bag, decide how often and how expensively the
- * moonlet may run. Slows the cadence before cutting the cap, because a run that
- * can't afford its tools is worse than a run that happens less often.
+ * The rule is one line: a moonlet runs on the cadence its owner set, spending up to the cap its owner set, and goes quiet
+ * only when the wallet's Orbio balance can't pay for a run (that check happens at run time, in the runner). Nothing here
+ * slows a schedule or splits income; the earn figure is shown so the owner can see whether the bag keeps up.
  */
-export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPerDay(bag), siblings = 0): Plan {
+export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPerDay(bag)): Plan {
   if (bag < HOLDER_FLOOR) {
     return { cadence: spec.cadence, perRunCapUsd: 0, burnPerDayUsd: 0, earnPerDayUsd, quiet: true, reason: `bag below ${HOLDER_FLOOR}` };
   }
-  // One wallet, one income, split evenly between the moonlets on it. Splitting (rather than letting earlier launches claim
-  // what they planned for) means a job that ran once last week cannot starve the ones that run every day; the slice slows
-  // cadence, and a moonlet only goes quiet when its slice can't pay for one run even weekly.
-  const shares = 1 + Math.max(0, siblings);
-  const spendable = spendablePerDay(earnPerDayUsd) / shares;
-  // Templates were costed on Flash; a heavier model needs a bigger cap to finish, so slow the cadence before starving the run.
-  const floorCap = Math.min(recommendedCapUsd(spec.template, spec.model ?? "auto"), spec.spendCapUsd);
-  const order: Cadence[] = ["15m", "1h", "4h", "6h", "12h", "24h", "7d"];
-  let cadence = spec.cadence;
-  for (let i = order.indexOf(spec.cadence); i < order.length; i++) {
-    cadence = order[i];
-    const cap = Math.min(spec.spendCapUsd, spendable / runsPerDay(cadence));
-    if (cap >= floorCap) {
-      return { cadence, perRunCapUsd: round(cap), burnPerDayUsd: round(cap * runsPerDay(cadence)), earnPerDayUsd, quiet: false };
-    }
-  }
-  return {
-    cadence: "7d",
-    perRunCapUsd: 0,
-    burnPerDayUsd: 0,
-    earnPerDayUsd,
-    quiet: true,
-    reason: shares > 1
-      ? `the bag earns $${earnPerDayUsd.toFixed(3)}/day shared by ${shares} moonlets; this one's slice can't cover a ${spec.template} run ($${floorCap}) even weekly. Pause one of the others to free it`
-      : `earns $${earnPerDayUsd.toFixed(3)}/day, below the $${floorCap} a ${spec.template} run needs`,
-  };
+  return { cadence: spec.cadence, perRunCapUsd: round(spec.spendCapUsd), burnPerDayUsd: round(spec.spendCapUsd * runsPerDay(spec.cadence)), earnPerDayUsd, quiet: false };
 }
 
-/** The wallet's other moonlets that share its income: everything the owner hasn't paused or deleted. Quiet ones count; they're waiting on money. */
-export function activeSiblings(siblings: Array<{ id: string; status: string }>, exceptId?: string) {
-  return siblings.filter((m) => m.id !== exceptId && m.status !== "paused" && m.status !== "deleted").length;
-}
 
 /** How much to ask Orbio for on a fresh key: about three days of burn, clamped to Orbio's $200 ceiling. */
 export function keyClaimAmount(p: Plan) {
@@ -88,12 +59,9 @@ const round = (n: number) => Math.round(n * 1000) / 1000;
 
 export const CADENCE_WORDS: Record<Cadence, string> = { "15m": "every 15 minutes", "1h": "hourly", "4h": "every 4 hours", "6h": "every 6 hours", "12h": "every 12 hours", "24h": "daily", "7d": "weekly" };
 
-/**
- * What to tell an owner who asked for a cadence: the plan slows a cadence the
- * bag's income can't afford, so "every 6 hours" may really run every 12.
- */
+/** What to tell an owner who asked for a cadence: it's set, plus a plain warning when the cap outruns what the bag earns. */
 export function cadenceReply(name: string, spec: JobSpec, cadence: Cadence, earnPerDayUsd: number) {
-  const p = plan({ ...spec, cadence }, HOLDER_FLOOR, earnPerDayUsd);
-  if (p.quiet || p.cadence === cadence) return `Done. ${name} now reports ${CADENCE_WORDS[cadence]}.`;
-  return `Done. ${name} is set to ${CADENCE_WORDS[cadence]}, but your bag earns about $${earnPerDayUsd.toFixed(2)}/day, which only pays for a run ${CADENCE_WORDS[p.cadence]}. It will run ${CADENCE_WORDS[p.cadence]} until the bag grows.`;
+  const burn = spec.spendCapUsd * runsPerDay(cadence);
+  if (burn <= spendablePerDay(earnPerDayUsd)) return `Done. ${name} now reports ${CADENCE_WORDS[cadence]}.`;
+  return `Done. ${name} now reports ${CADENCE_WORDS[cadence]}. Heads up: at up to $${spec.spendCapUsd.toFixed(3)} a run that's about $${burn.toFixed(2)}/day, and your bag earns about $${earnPerDayUsd.toFixed(2)}/day, so it will draw the balance down and go quiet when the credits run out.`;
 }

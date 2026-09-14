@@ -1,6 +1,6 @@
 import type { Hex } from "viem";
 import { makeAnchorer, type Anchorer } from "./anchor";
-import { activeSiblings, estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
+import { estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
 import { makeOrbioClient, OrbioAuthError, refreshOrbioToken, type OrbioClient } from "./orbio";
 import { devOrbio } from "./orbio-dev";
 import { runMoonlet } from "./runner";
@@ -15,7 +15,7 @@ import type { GitHubConn } from "./connections/github";
 import * as discord from "./connections/discord";
 import type { DiscordConn } from "./connections/discord";
 import * as gmail from "./connections/gmail";
-import { probeTripwires } from "./tripwire";
+import { probeTripwires, readMetric } from "./tripwire";
 import type { GmailConn } from "./connections/gmail";
 import { telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
@@ -77,6 +77,7 @@ export async function orbioFor(owner: string, fetchImpl: typeof fetch = fetch): 
 export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = Number(process.env.TICK_CONCURRENCY ?? 4)) {
   const now = deps.now ?? Date.now;
   await store.releaseStale(now() - 10 * 60_000);
+  await store.reconcileStuckActions(now() - 5 * 60_000).catch(() => undefined);
   await probeTripwires(now(), deps.fetch).catch((e) => console.error("tripwire probe", (e as Error).message));
   const due = await store.listDue(now(), limit);
   const results: Array<{ id: string; status: string; error?: string }> = [];
@@ -250,7 +251,6 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const result = await run(
     {
       id: m.id, owner: m.owner, bag, spec: m.spec, key: startKey, autopilot: m.autopilot, runId, memory: m.memory, parentId: m.parentId,
-      siblings: activeSiblings(await store.listMoonlets(m.owner), m.id),
       openCalls: m.openCalls, record: { hits: m.hits, misses: m.misses }, tripped: m.watch?.tripped,
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: gmConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
@@ -259,8 +259,10 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;
-  // Failures retry within the hour; a moonlet quiet for money checks back daily (the bag grows, a sibling gets paused) rather than sleeping a week.
-  const nextRunAt = now() + (result.status === "failed" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : result.status === "quiet" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["24h"]) : CADENCE_MS[cadence]);
+  // One failure retries within the hour; a second in a row waits for the cadence, so a broken job can't bill an attempt every hour all day.
+  // A moonlet quiet for money checks back daily rather than sleeping a week.
+  const failedTwice = result.status === "failed" && (await store.listRuns(m.id, 1))[0]?.status === "failed";
+  const nextRunAt = now() + (result.status === "failed" && !failedTwice ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : result.status === "quiet" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["24h"]) : CADENCE_MS[cadence]);
   const rotated = result.keyEvents.filter((e) => e.kind === "rotated").length;
   if (m.watch?.tripped) result.keyEvents.unshift({ kind: "tripwire", detail: `woke early: ${m.watch.tripped}` });
 
@@ -283,7 +285,8 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     status: result.status === "quiet" ? "quiet" : "idle",
     key: result.key,
     ...(result.status === "done" && result.output ? { memory: result.output.remember?.slice(0, 1200) || m.memory } : {}),
-    ...(m.watch?.tripped ? { watch: { value: m.watch.value, at: now(), tripped: undefined } } : {}),
+    // After a run the watch re-baselines to a fresh reading, so what the moonlet itself just did (a PR it opened, a comment) is not the "activity" that wakes it next.
+    ...(m.spec.tripwire ? { watch: { value: (await readMetric(m.spec.tripwire, deps.fetch, ghConn?.data.token).catch(() => null)) ?? m.watch?.value ?? 0, at: now(), tripped: undefined } } : {}),
     ...(result.status === "done" && result.output
       ? {
           // Calls made this run wait for the next; the ones just scored are settled into the record.
@@ -299,8 +302,6 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     nextRunAt,
     lastRunAt: now(),
     keysRotated: m.keysRotated + rotated,
-    runsTotal: m.runsTotal + 1,
-    runsFailed: m.runsFailed + (result.status === "failed" ? 1 : 0),
     spentTotalUsd: m.spentTotalUsd + result.costUsd,
   });
 

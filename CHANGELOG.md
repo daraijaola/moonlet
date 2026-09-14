@@ -1,10 +1,34 @@
 # Changelog
 
-## 2026-09-07 · Build Week day 3
+## 2026-09-10 · Build Week day 9
+
+- Verified receipts: after an approved action executes, the result is read back from GitHub or Gmail by id and compared field by field with the approved payload (PR file contents, email body, no unexpected Cc, every message of a tidy up to the bulk limit). Stamped *verified*, *sample checked*, *mismatch* or *not checked* on the moonlet page, the public page (redacted for strangers) and in Telegram. A mismatch reads "happened, but not as approved", never Done.
+- Honest labels: income marked as an estimate everywhere, spend ceilings read "can spend", hit/miss calls marked self-graded, the sky says "hashed" when nothing is anchored.
+- Proof pack: `tests/acceptance.test.ts` indexes twenty-four promises as named deterministic cases; GitHub Actions runs typecheck, lint, build and the deterministic suites on every push, the real-model suites on dispatch. 177 tests.
+- Stuck `executing` actions become *uncertain* on the next tick; an approved empty bulk set stays empty; the exhausted-key quiet path reports spend so far; a zero reading trips a tripwire while missing data does not.
+- WalletConnect compiled into the live build; phone wallets can sign in.
+
+## 2026-09-09 · Build Week day 8
+
+- Security pass. Sign-in accepts only the exact server-minted message, once. OAuth states are single-use, ten minutes, bound to the browser session that started them. Outgoing mail headers checked for control characters, recipients parsed to plain addresses; the stored draft is what executes and what the card shows. `web_fetch` refuses loopback, private, link-local and IPv6 equivalents, re-vets redirects, caps bodies while streaming. Fences in code: GitHub writes only to repositories named in the job, new mail only to addresses named in the job, at most 100 messages per approval.
+- Every paid model call is counted the moment it happens; an approval takes an execution lease before any effect; the six-moonlet cap holds under racing launches.
+- Budget is one rule: the owner's cadence, the owner's cap; quiet only when the balance can't pay for a run. Tripwire trips at most once every three hours and re-baselines after each run.
+- App: sidebar on one 32px rhythm, overview panel rebuilt as a usage page, capy-style composer with a model picker, the approved mascot's thinking animation as an inline SVG.
+
+## 2026-09-08 · Build Week days 6–7
+
+- Audit fixes: each run carries its own private flag; approving a draft executes that one action only; autopilot is an explicit switch; a run is anchored only when the chain confirms.
+- Faces: ten moonlet avatars and ten owner profile pictures; IDs visible and copyable; share menus; "Use this job" forks any public moonlet; the sky gets a search page.
+- Landing: "Three jobs, running right now", three scripted scenes on real data replacing the WebGL replay; the approved mascot logo everywhere.
+- App fits the viewport: fixed shell, scrolling report column under a pinned composer, wizard prompts for missing connections and resumes the draft.
+
+## 2026-09-07 · Build Week days 3–5
 
 - The loop, live: credits earned vs put to work, ticking on the landing and the sky.
 - Prove: watch jobs end each run with one checkable call and score it next run; calls and scores are in the hashed output; record on the moonlet and public pages, hits and misses in Telegram.
-- Tripwire: alert jobs watch one number for free every 15 minutes and wake the model only past the threshold; compiler sets it from the sentence.
+- Tripwire: alert jobs watch one number for free every 15 minutes and wake the model only past the threshold; repo watches wake on a new push, issue or PR.
+- Voice in the composer; conversations kept per moonlet; Run now, pause and resume atomic; spend cap sized from the model's real per-token price.
+- App shell rebuilt around one sidebar and one main pane.
 
 ## 2026-09-07 · Build Week day 2
 

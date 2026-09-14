@@ -46,9 +46,9 @@ export default async function SkyPage() {
 
         <dl className="mt-8 grid grid-cols-2 divide-ink/[0.08] rounded-2xl border border-ink/[0.08] bg-white/80 backdrop-blur sm:grid-cols-4 sm:divide-x">
           <Big label="Alive" value={`${stats.alive}`} hint={`of ${stats.total}`} />
-          <Big label="Credits / day" value={fmtUsd(stats.creditsPerDay, 0)} hint="earned by bags" />
-          <Big label="Put to work" value={fmtUsd(stats.burnPerDay)} hint="per day" />
-          <Big label="Runs · 24h" value={`${stats.runsToday}`} hint={`${stats.anchoredToday} anchored`} />
+          <Big label="Credits / day" value={fmtUsd(stats.creditsPerDay, 0)} hint="estimated from bag sizes" />
+          <Big label="Can spend" value={fmtUsd(stats.burnPerDay)} hint="per day at full caps" />
+          <Big label="Runs · 24h" value={`${stats.runsToday}`} hint={stats.anchoredToday > 0 ? `${stats.anchoredToday} anchored` : "hashed"} />
         </dl>
 
         {items.length ? <Orbits items={items} /> : (

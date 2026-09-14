@@ -35,8 +35,6 @@ export type MoonletState = {
   runId?: string | null;
   /** Set when this moonlet was itself spawned; children do not spawn (no chain reactions). */
   parentId?: string | null;
-  /** The wallet's other moonlets sharing its income; this one plans against its even slice. */
-  siblings?: number;
   openCalls?: Array<{ claim: string; check: string; madeAt: number }>;
   record?: { hits: number; misses: number };
   /** Set when the free tripwire probe pulled this run forward: what moved. */
@@ -81,7 +79,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   // Set by the tools the moment they touch mail or a private repo; inbox jobs are private from the start.
   let isPrivate = m.spec.tools.some((t) => t.startsWith("gmail_"));
   const bag = deps.bagOf ? await deps.bagOf(m.owner) : m.bag;
-  const p = plan(m.spec, bag, undefined, m.siblings ?? 0);
+  const p = plan(m.spec, bag);
   const askedModel = m.spec.model && m.spec.model !== "auto" ? m.spec.model : pickModel(p.earnPerDayUsd, m.spec.template === "repo-mechanic" ? "code" : "run");
   // The receipt names the model that answered, which after a fallback is not the one we asked for.
   let model = askedModel;
@@ -102,6 +100,8 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
     return { ok: true, status: "quiet", costUsd: 0, model, modelCalls: 0, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key, private: isPrivate };
   }
 
+  // Every paid call is counted the moment it happens, so a run that fails after three model calls still reports what they cost.
+  let spentSoFar = 0, callsSoFar = 0;
   const attempt = async (k: NonNullable<KeyState>) => {
     const built = buildTools([...m.spec.tools, "write_document", ...(m.parentId ? [] : ["spawn_moonlet" as const])], {
       fetch: deps.fetch,
@@ -126,6 +126,7 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       maxCostUsd: p.perRunCapUsd,
       maxSteps: 8,
       fetch: deps.fetch,
+      onSpend: (c) => { spentSoFar += c; callsSoFar++; },
     });
     if (r.stoppedForBudget) keyEvents.push({ kind: "budget", detail: `stopped early: the $${p.perRunCapUsd.toFixed(3)} cap ran out before the job was finished. Raise the cap on the moonlet page or pick a cheaper model`, amountUsd: r.costUsd });
     return { text: r.text, cost: r.costUsd, calls: r.modelCalls, model: r.model };
@@ -149,36 +150,37 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   try {
     ({ text, cost, calls, model } = await attemptWithBackoff(key));
   } catch (e) {
-    if (!isKeyExhausted(e)) return fail(e, "run", { t0, model, p, keyEvents, trace, key, isPrivate });
+    if (!isKeyExhausted(e)) return fail(e, "run", { t0, model, p, keyEvents, trace, key, cost: spentSoFar, calls: callsSoFar, isPrivate });
     try {
       const bal = await deps.orbio.getBalance();
       if (bal.availableUsd < p.perRunCapUsd) {
         keyEvents.push({ kind: "quiet", detail: "key rejected and the balance can't fund a run" });
-        return { ok: true, status: "quiet", costUsd: 0, model, modelCalls: 0, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key: null, private: isPrivate };
+        return { ok: true, status: "quiet", costUsd: spentSoFar, model, modelCalls: callsSoFar, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key: null, private: isPrivate };
       }
       const minted = await deps.orbio.createKey("moonlet");
       key = { key: minted.key, limitUsd: bal.availableUsd, spentUsd: 0 };
       keyEvents.push({ kind: "rotated", detail: "key rejected mid-run; re-minted the Orbio key and retried", amountUsd: bal.availableUsd });
       ({ text, cost, calls, model } = await attemptWithBackoff(key));
     } catch (e2) {
-      return fail(e2, "run-after-rotate", { t0, model, p, keyEvents, trace, key, isPrivate });
+      return fail(e2, "run-after-rotate", { t0, model, p, keyEvents, trace, key, cost: spentSoFar, calls: callsSoFar, isPrivate });
     }
   }
 
   const parsed = safeParseOutput(text) ?? salvageOutput(text, m.spec.name);
-  if (!parsed) return fail(new Error("model did not return valid RunOutput"), "output", { t0, model, p, keyEvents, trace, key, cost, calls, isPrivate });
+  if (!parsed) return fail(new Error("model did not return valid RunOutput"), "output", { t0, model, p, keyEvents, trace, key, cost: spentSoFar, calls: callsSoFar, isPrivate });
   // Scores refer to the open calls in order; models sometimes leave the claim blank, so fill it from the call being scored.
   parsed.scored = parsed.scored.map((s, i) => ({ ...s, claim: s.claim.trim() || m.openCalls?.[i]?.claim || "" })).filter((s) => s.claim);
 
-  key = { ...key, spentUsd: key.spentUsd + cost };
+  void cost; void calls;
+  key = { ...key, spentUsd: key.spentUsd + spentSoFar };
   return {
     ok: true,
     status: "done",
     output: parsed,
     outputHash: hashOutput(parsed),
-    costUsd: cost,
+    costUsd: spentSoFar,
     model,
-    modelCalls: calls,
+    modelCalls: callsSoFar,
     durationMs: Date.now() - t0,
     plan: p,
     keyEvents,

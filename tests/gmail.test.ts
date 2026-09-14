@@ -32,7 +32,7 @@ describe("gmail connection", () => {
     expect(url.searchParams.get("scope")).toContain("gmail.modify");
     expect(url.searchParams.get("access_type")).toBe("offline");
     expect(url.searchParams.get("prompt")).toBe("consent");
-    const r = await gmail.finishOAuth("code123", url.searchParams.get("state")!, g.fetchImpl);
+    const r = await gmail.finishOAuth("code123", url.searchParams.get("state")!, OWNER, g.fetchImpl);
     expect(r).toMatchObject({ owner: OWNER, email: "micheal@gmail.com", redirectTo: "/app/connections" });
     const conn = await store.getConnection<gmail.GmailConn>(OWNER, "gmail");
     expect(conn?.label).toBe("micheal@gmail.com");
@@ -43,7 +43,7 @@ describe("gmail connection", () => {
   it("a consent without the Gmail box ticked is refused with advice", async () => {
     const g = fakeGoogle();
     const url = new URL(await gmail.beginOAuth("0x00000000000000000000000000000000000000f2", "https://moonlet.16labs.xyz/cb", "/app"));
-    await expect(gmail.finishOAuth("nogmail", url.searchParams.get("state")!, g.fetchImpl)).rejects.toThrow(/Tick the Gmail box/);
+    await expect(gmail.finishOAuth("nogmail", url.searchParams.get("state")!, "0x00000000000000000000000000000000000000f2", g.fetchImpl)).rejects.toThrow(/Tick the Gmail box/);
     expect(await store.getConnection("0x00000000000000000000000000000000000000f2", "gmail")).toBeNull();
   });
 
@@ -161,6 +161,8 @@ describe("gmail connection", () => {
 
   it("attachments come out as files; forwarding re-attaches them and quotes the original", async () => {
     const g = fakeGoogle();
+    // The job names the accountant, so forwarding there is inside the fence.
+    await store.insertMoonlet({ id: "m_inbox", owner: OWNER, name: "Postie", spec: { name: "Postie", template: "inbox", objective: "Forward the weekly digest to accountant@firm.com", cadence: "24h", sources: [], checks: [], tools: ["gmail_read", "gmail_forward"], output: { kind: "digest", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto", tripwire: null }, status: "idle", delivery: {}, key: null, cadence: "24h", perRunCapUsd: 0.02, earnPerDayUsd: 1, burnPerDayUsd: 0.02, nextRunAt: Date.now(), createdAt: Date.now() }).catch(() => undefined);
     const saved: Array<{ name: string; mime: string; size: number; caption: string }> = [];
     const built = buildTools(["gmail_read", "gmail_forward"], {
       fetch: g.fetchImpl,
@@ -245,5 +247,43 @@ describe("gmail connection", () => {
   it("inbox markdown becomes Telegram HTML: headings bold, links clickable, angle brackets escaped", () => {
     const html = mdToHtml("## Needs you\n- **Yash** <yash@orbio.so> · Demo slot · [open](https://mail.google.com/mail/u/0/#all/t1)\n\n## Done this run\n- Archived 15 newsletters");
     expect(html).toBe('<b>Needs you</b>\n• <b>Yash</b> &lt;yash@orbio.so&gt; · Demo slot · <a href="https://mail.google.com/mail/u/0/#all/t1">open</a>\n\n<b>Done this run</b>\n• Archived 15 newsletters');
+  });
+});
+
+describe("who a job may write to is decided in code", () => {
+  it("a new email to someone the job never named is refused; a reply to a thread participant is allowed", async () => {
+    const g = fakeGoogle();
+    const { propose } = await import("@/moonlet/proposals");
+    await store.insertMoonlet({ id: "m_fence", owner: OWNER, name: "Postie", spec: { name: "Postie", template: "inbox", objective: "Brief me on what needs an answer and draft replies", cadence: "24h", sources: [], checks: [], tools: ["gmail_read", "gmail_send"], output: { kind: "digest", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto", tripwire: null }, status: "idle", delivery: {}, key: null, cadence: "24h", perRunCapUsd: 0.02, earnPerDayUsd: 1, burnPerDayUsd: 0.02, nextRunAt: Date.now(), createdAt: Date.now() }).catch(() => undefined);
+    const ctx = { owner: OWNER, moonletId: "m_fence", moonletName: "Postie", runId: null, autopilot: true, fetch: g.fetchImpl };
+    const cold = await propose({ kind: "email_send", mail: { to: "stranger@evil.io", subject: "hi", body: "x" } }, ctx);
+    expect(cold.status).toBe("failed");
+    expect(String((cold.result as { error?: string }).error)).toMatch(/not on this thread and not named in the job/);
+    const { token } = await gmail.accessToken(OWNER, g.fetchImpl);
+    const t = await gmail.readThread(token, "t1", g.fetchImpl);
+    const someone = t.messages[0].from.match(/[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}/i)![0];
+    const reply = await propose({ kind: "email_send", mail: { to: someone, subject: "Re: hi", body: "Thursday works.", threadId: "t1", inReplyTo: "<x@y>" } }, ctx);
+    expect(["executed", "pending"]).toContain(reply.status);
+    const sneaky = await propose({ kind: "email_send", mail: { to: someone, cc: "stranger@evil.io", subject: "Re: hi", body: "x", threadId: "t1" } }, ctx);
+    expect(sneaky.status).toBe("failed");
+  });
+});
+
+describe("outgoing mail is exactly what the card says", () => {
+  it("a line break in any header is refused, so a reply cannot grow a hidden Bcc", () => {
+    expect(() => gmail.buildRaw("a@b.co", { to: "yash@orbio.so\r\nBcc: thief@evil.io", subject: "Re: demo", body: "x" })).toThrow(/invalid address|line break/);
+    expect(() => gmail.buildRaw("a@b.co", { to: "yash@orbio.so", subject: "Re: demo\nBcc: thief@evil.io", body: "x" })).toThrow(/line break/);
+    expect(() => gmail.buildRaw("a@b.co", { to: "yash@orbio.so", cc: "ok@x.io\r\nBcc: thief@evil.io", subject: "s", body: "x" })).toThrow(/invalid address|line break/);
+    expect(() => gmail.buildRaw("a@b.co", { to: "yash@orbio.so", subject: "s", body: "x", inReplyTo: "<a@b>\r\nBcc: thief@evil.io" })).toThrow(/line break/);
+  });
+  it("recipients are parsed into plain addresses; names are kept out of the envelope and junk is refused", () => {
+    expect(gmail.parseAddresses("Yash <yash@orbio.so>, dara@16labs.xyz; Yash <yash@orbio.so>")).toEqual(["yash@orbio.so", "dara@16labs.xyz"]);
+    expect(() => gmail.parseAddresses("yash at orbio")).toThrow(/invalid address/);
+    expect(() => gmail.parseAddresses("")).toThrow(/no recipient/);
+    expect(() => gmail.parseAddresses("Yash <yash@orbio.so> extra@x.io")).toThrow();
+    const raw = Buffer.from(gmail.buildRaw("a@b.co", { to: "Yash <yash@orbio.so>", cc: "Dara <dara@16labs.xyz>", subject: "s", body: "x" }), "base64url").toString("utf8");
+    expect(raw).toMatch(/^To: yash@orbio.so$/m);
+    expect(raw).toMatch(/^Cc: dara@16labs.xyz$/m);
+    expect(raw.match(/^Bcc:/m)).toBeNull();
   });
 });

@@ -41,7 +41,7 @@ export async function POST(req: Request) {
 
   const verifier = randomBytes(32).toString("base64url");
   const challenge = createHash("sha256").update(verifier).digest("base64url");
-  const state = randomBytes(16).toString("base64url");
+  const state = `ob_${randomBytes(16).toString("base64url")}`;
   await store.saveOauthState({ state, address: owner, verifier, clientId, redirectTo, redirectUri });
 
   const url = new URL(ORBIO.authorize);

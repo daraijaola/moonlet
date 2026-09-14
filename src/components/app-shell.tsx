@@ -8,9 +8,10 @@ import { fmtBag, shortAddr, timeUntil, type ApiMoonlet } from "@/lib/api";
 import { AppDataProvider, useAppData } from "@/lib/app-data";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
-import { Orbit, Rocket, Cable, Telescope, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, Link as LinkIcon, Hash, ExternalLink, type LucideIcon } from "lucide-react";
+import { Orbit, Rocket, Cable, Telescope, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, ExternalLink, Trash2, type LucideIcon } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { OrbioStatus } from "@/lib/api";
 
 const NAV: Array<{ href: string; label: string; icon: LucideIcon; match: (p: string) => boolean }> = [
@@ -63,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
             <Suspense><PhoneAccount address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} /></Suspense>
           </header>
-          <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-16 lg:pb-0 [scrollbar-width:thin]">{children}</main>
+          <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 [scrollbar-width:thin]">{children}</main>
           <MobileTabs pathname={pathname} />
         </div>
       </div>
@@ -298,7 +299,7 @@ export const publicUrl = (id: string) => `${typeof window !== "undefined" ? wind
 /** One row in the sidebar list: face, name, template · when. Right-click (or the ··· on hover) for Share and Public page. */
 function MoonletRow({ m, active }: { m: ApiMoonlet; active: boolean }) {
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
-  const [copied, setCopied] = useState<"link" | "id" | null>(null);
+  const [copied, setCopied] = useState<"link" | null>(null);
   useEffect(() => {
     if (!menu) return;
     const close = () => setMenu(null);
@@ -306,8 +307,8 @@ function MoonletRow({ m, active }: { m: ApiMoonlet; active: boolean }) {
     document.addEventListener("mousedown", close); document.addEventListener("keydown", onKey); document.addEventListener("scroll", close, true);
     return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", onKey); document.removeEventListener("scroll", close, true); };
   }, [menu]);
-  const copy = async (what: "link" | "id") => {
-    try { await navigator.clipboard.writeText(what === "link" ? publicUrl(m.id) : m.id); } catch {}
+  const copy = async (what: "link") => {
+    try { await navigator.clipboard.writeText(publicUrl(m.id)); } catch {}
     setCopied(what); setTimeout(() => { setCopied(null); setMenu(null); }, 900);
   };
   const share = async () => {
@@ -337,8 +338,8 @@ function MoonletRow({ m, active }: { m: ApiMoonlet; active: boolean }) {
           </button>
         </span>
       </Link>
-      {menu && (
-        <div role="menu" onMouseDown={(e) => e.stopPropagation()} className="ui-in fixed z-50 min-w-[200px] rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]" style={{ left: Math.min(menu.x, window.innerWidth - 216), top: Math.min(menu.y, window.innerHeight - 200) }}>
+      {menu && createPortal(
+        <div role="menu" onMouseDown={(e) => e.stopPropagation()} className="ui-in fixed z-[60] min-w-[200px] rounded-xl border border-ink/[0.08] bg-white p-1 shadow-[0_8px_24px_-8px_rgba(21,22,29,0.18),0_2px_6px_rgba(21,22,29,0.06)]" style={{ left: Math.min(menu.x, window.innerWidth - 216), top: Math.min(menu.y, window.innerHeight - 200) }}>
           <div className="flex items-center gap-2.5 px-2.5 py-2">
             <Avatar n={m.avatar} size={28} />
             <div className="min-w-0">
@@ -347,12 +348,12 @@ function MoonletRow({ m, active }: { m: ApiMoonlet; active: boolean }) {
             </div>
           </div>
           <div className="my-1 h-px bg-ink/[0.06]" />
-          <button role="menuitem" type="button" onClick={share} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><Share2 size={14} strokeWidth={1.75} className="text-ink-soft" /> Share</button>
-          <button role="menuitem" type="button" onClick={() => copy("link")} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">{copied === "link" ? <Check size={14} strokeWidth={2} className="text-moss" /> : <LinkIcon size={14} strokeWidth={1.75} className="text-ink-soft" />} {copied === "link" ? "Link copied" : "Copy link"}</button>
-          <button role="menuitem" type="button" onClick={() => copy("id")} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">{copied === "id" ? <Check size={14} strokeWidth={2} className="text-moss" /> : <Hash size={14} strokeWidth={1.75} className="text-ink-soft" />} {copied === "id" ? "ID copied" : "Copy ID"}</button>
-          <div className="my-1 h-px bg-ink/[0.06]" />
+          <button role="menuitem" type="button" onClick={share} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">{copied === "link" ? <Check size={14} strokeWidth={2} className="text-moss" /> : <Share2 size={14} strokeWidth={1.75} className="text-ink-soft" />} {copied === "link" ? "Link copied" : "Share"}</button>
           <Link role="menuitem" href={`/s/${m.id}`} onClick={() => setMenu(null)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><ExternalLink size={14} strokeWidth={1.75} className="text-ink-soft" /> Public page</Link>
-        </div>
+          <div className="my-1 h-px bg-ink/[0.06]" />
+          <Link role="menuitem" href={`/app?m=${m.id}&delete=1`} onClick={() => setMenu(null)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-[#b91c1c] hover:bg-[#b91c1c]/[0.06]"><Trash2 size={14} strokeWidth={1.75} /> Delete</Link>
+        </div>,
+        document.body,
       )}
     </>
   );

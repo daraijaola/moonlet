@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { activeSiblings, plan } from "@/moonlet/budget";
+import { plan } from "@/moonlet/budget";
 import { bad, ownerFrom } from "@/moonlet/http";
 import { bagOf, orbioFor } from "@/moonlet/scheduler";
 import { JobSpec } from "@/moonlet/spec";
@@ -50,7 +50,7 @@ export async function PATCH(req: Request, { params }: Ctx) {
     // Only a changed job re-plans cadence and cap; flipping autopilot or delivery must not touch the schedule or wake a paused moonlet.
     if (body.data.spec) {
       const spec = body.data.spec;
-      const p = plan(spec, await bagOf(owner), undefined, activeSiblings(await store.listMoonlets(owner), id));
+      const p = plan(spec, await bagOf(owner));
       await store.updateMoonlet(id, {
         spec,
         name: spec.name,
@@ -78,8 +78,7 @@ export async function DELETE(req: Request, { params }: Ctx) {
   if (!m || m.owner !== owner) return bad("not found", 404);
   // The key belongs to the wallet, not the moonlet: deleting a moonlet never touches credits.
   // Runs stay (they are public receipts); drafts still waiting for an OK are withdrawn so nothing acts for a moonlet that no longer exists.
-  const pending = (await store.listProposals(owner, "pending")).filter((p) => p.moonletId === id);
-  for (const p of pending) await store.decideProposal(p.id, "rejected");
+  const withdrawn = await store.rejectPendingProposals(id);
   await store.updateMoonlet(id, { status: "deleted", key: null, nextRunAt: Number.MAX_SAFE_INTEGER });
-  return NextResponse.json({ ok: true, withdrawn: pending.length });
+  return NextResponse.json({ ok: true, withdrawn });
 }

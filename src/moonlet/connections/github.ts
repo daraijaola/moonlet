@@ -45,9 +45,9 @@ export async function beginOAuth(owner: string, redirectUri: string, redirectTo:
   return u.toString();
 }
 
-export async function finishOAuth(code: string, state: string, fetchImpl: typeof fetch = fetch) {
-  const saved = await store.takeOauthState(state);
-  if (!saved) throw new Error("state expired");
+export async function finishOAuth(code: string, state: string, sessionOwner: string | null, fetchImpl: typeof fetch = fetch) {
+  const saved = await store.takeOauthState(state, "gh_", sessionOwner);
+  if (!saved) throw new Error("this sign-in link is expired, already used, or was opened in a different browser than the one that started it. Start again from Connections.");
   const res = await fetchImpl("https://github.com/login/oauth/access_token", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json" },
@@ -172,6 +172,30 @@ export async function openIssue(token: string, repo: string, title: string, body
   const [o, r] = repo.split("/");
   const c = await gh<{ html_url: string; number: number }>(token, `/repos/${o}/${r}/issues`, { method: "POST", body: JSON.stringify({ title, body, labels }) }, fetchImpl);
   return { url: c.html_url, number: c.number };
+}
+
+/** Read-back for verified receipts: what actually exists, by id, in the repository we were told. */
+export async function readIssue(token: string, repo: string, number: number, fetchImpl?: typeof fetch) {
+  const [o, r] = repo.split("/");
+  const i = await gh<{ html_url: string; title: string; body: string | null; labels: Array<{ name: string }>; repository_url: string; state: string }>(token, `/repos/${o}/${r}/issues/${number}`, {}, fetchImpl);
+  return { url: i.html_url, title: i.title, body: i.body ?? "", labels: (i.labels ?? []).map((l) => l.name), repo: i.repository_url.replace(/^.*\/repos\//, ""), state: i.state };
+}
+export async function readPull(token: string, repo: string, number: number, fetchImpl?: typeof fetch) {
+  const [o, r] = repo.split("/");
+  const p = await gh<{ html_url: string; title: string; state: string; merged: boolean; base: { repo: { full_name: string } }; head: { ref: string; sha: string } }>(token, `/repos/${o}/${r}/pulls/${number}`, {}, fetchImpl);
+  const files = await gh<Array<{ filename: string; sha: string }>>(token, `/repos/${o}/${r}/pulls/${number}/files?per_page=100`, {}, fetchImpl);
+  return { url: p.html_url, title: p.title, state: p.state, merged: p.merged, repo: p.base.repo.full_name, headRef: p.head.sha, files };
+}
+/** The exact text of a file at a ref, for comparing approved content with what landed on the branch. */
+export async function readFileAt(token: string, repo: string, ref: string, path: string, fetchImpl?: typeof fetch) {
+  const [o, r] = repo.split("/");
+  const f = await gh<{ content?: string; encoding?: string }>(token, `/repos/${o}/${r}/contents/${path}?ref=${encodeURIComponent(ref)}`, {}, fetchImpl);
+  return f.content ? Buffer.from(f.content.replace(/\n/g, ""), "base64").toString("utf8") : "";
+}
+export async function readComment(token: string, repo: string, commentId: number, fetchImpl?: typeof fetch) {
+  const [o, r] = repo.split("/");
+  const c = await gh<{ html_url: string; body: string; issue_url: string }>(token, `/repos/${o}/${r}/issues/comments/${commentId}`, {}, fetchImpl);
+  return { url: c.html_url, body: c.body, repo: c.issue_url.replace(/^.*\/repos\//, "").replace(/\/issues\/\d+$/, ""), issueNumber: Number(c.issue_url.match(/\/issues\/(\d+)$/)?.[1]) };
 }
 
 export async function commentOnIssue(token: string, repo: string, number: number, body: string, fetchImpl?: typeof fetch) {

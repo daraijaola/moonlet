@@ -60,7 +60,8 @@ beforeAll(async () => {
   rmSync("/tmp/moonlet-conn.db", { force: true });
   process.env.DATABASE_URL = "file:/tmp/moonlet-conn.db";
   await store.migrate();
-  const spec = { name: "Lumen", template: "market-watch", objective: "watch", cadence: "6h", sources: [], checks: [], tools: ["token_market", "deliver", "post_tweet"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto" } as unknown as import("@/moonlet/spec").JobSpec;
+  // The job names the repository it may write to; the fence in proposals.ts holds writes to it.
+  const spec = { name: "Lumen", template: "market-watch", objective: "watch", cadence: "6h", sources: ["dara/moonlet"], checks: [], tools: ["token_market", "deliver", "post_tweet"], output: { kind: "brief", maxWords: 100, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto" } as unknown as import("@/moonlet/spec").JobSpec;
   await store.insertMoonlet({ id: "m1", owner: OWNER, name: "Lumen", spec, status: "idle", delivery: {}, key: null, cadence: "6h", perRunCapUsd: 0.02, earnPerDayUsd: 0.05, burnPerDayUsd: 0.02, nextRunAt: Date.now(), createdAt: Date.now() });
 });
 
@@ -225,6 +226,14 @@ describe("connections + proposals", () => {
     expect(String((await store.getProposal(r.proposalId!))?.result?.error)).toMatch(/^X post failed: X refused \(403\): Forbidden/);
   });
 
+  it("a GitHub write to a repository the job does not name is refused in code, whatever the model was told", async () => {
+    await store.setConnection(OWNER, "github", "@dara", { token: "ghp_test", login: "dara" });
+    const r = await propose({ kind: "issue_create", repo: "someone-else/repo", title: "hi", body: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: true });
+    expect(r.status).toBe("failed");
+    expect(String((r.result as { error?: string }).error)).toMatch(/may only write to dara\/moonlet/);
+    expect((await store.listProposals(OWNER)).some((p) => p.kind === "issue_create" && (p.payload as { repo: string }).repo === "someone-else/repo")).toBe(false);
+  });
+
   it("open_issue: proposed, approved, opened on GitHub with title, body and labels", async () => {
     await store.setConnection(OWNER, "github", "@dara", { token: "ghp_test", login: "dara" });
     let created: Record<string, unknown> | null = null;
@@ -233,6 +242,8 @@ describe("connections + proposals", () => {
         created = JSON.parse(String(init.body));
         return new Response(JSON.stringify({ html_url: "https://github.com/dara/moonlet/issues/7", number: 7 }), { status: 201 });
       }
+      // read-back for the verified receipt: what GitHub says now exists
+      if (String(i).endsWith("/repos/dara/moonlet/issues/7")) return new Response(JSON.stringify({ html_url: "https://github.com/dara/moonlet/issues/7", title: created?.title, body: created?.body, labels: (created?.labels as string[]).map((n) => ({ name: n })), repository_url: "https://api.github.com/repos/dara/moonlet", state: "open" }), { status: 200 });
       return new Response("{}", { status: 404 });
     };
     const r = await propose({ kind: "issue_create", repo: "dara/moonlet", title: "Webhook 401 on restart", body: "Seen twice after deploy.", labels: ["bug"] }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: ghFetch });
@@ -241,6 +252,27 @@ describe("connections + proposals", () => {
     const d = await decide(r.proposalId!, "approve", ghFetch);
     expect(d).toMatchObject({ ok: true, status: "executed", result: { url: "https://github.com/dara/moonlet/issues/7", number: 7 } });
     expect(created).toEqual({ title: "Webhook 401 on restart", body: "Seen twice after deploy.", labels: ["bug"] });
+    // The receipt is read back from GitHub and compared to what was approved, then stored on the draft.
+    const stored = (await store.getProposal(r.proposalId!))!;
+    expect(stored.verification?.status).toBe("verified");
+    expect(stored.verification?.checks.map((c) => c.field)).toEqual(["repository", "title", "body", "labels"]);
+    expect(stored.verification?.url).toBe("https://github.com/dara/moonlet/issues/7");
+    await store.deleteConnection(OWNER, "github");
+  });
+
+  it("a read-back that disagrees with the approval is a mismatch, not a success", async () => {
+    const { propose, decide } = await import("@/moonlet/proposals");
+    await store.setConnection(OWNER, "github", "@dara", { token: "ghp_test", login: "dara" });
+    const lyingGh: typeof fetch = async (i, init) => {
+      if (String(i).endsWith("/repos/dara/moonlet/issues") && init?.method === "POST") return new Response(JSON.stringify({ html_url: "https://github.com/dara/moonlet/issues/8", number: 8 }), { status: 201 });
+      if (String(i).endsWith("/repos/dara/moonlet/issues/8")) return new Response(JSON.stringify({ html_url: "https://github.com/other/repo/issues/8", title: "Something else", body: "", labels: [], repository_url: "https://api.github.com/repos/other/repo", state: "open" }), { status: 200 });
+      return new Response("{}", { status: 404 });
+    };
+    const r = await propose({ kind: "issue_create", repo: "dara/moonlet", title: "Real title", body: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: lyingGh });
+    await decide(r.proposalId!, "approve", lyingGh);
+    const v = (await store.getProposal(r.proposalId!))!.verification!;
+    expect(v.status).toBe("mismatch");
+    expect(v.checks.filter((c) => !c.ok).map((c) => c.field)).toEqual(["repository", "title", "body"]);
     await store.deleteConnection(OWNER, "github");
   });
 
@@ -333,13 +365,21 @@ describe("connections + proposals", () => {
       if (url.endsWith("/user")) return new Response(JSON.stringify({ login: "octo" }), { headers: { "content-type": "application/json" } });
       return new Response("nf", { status: 404 });
     };
-    const r = await gh.finishOAuth("thecode", state, f);
+    // The callback must arrive on the browser that started the flow: a forwarded link opened while signed in as someone else is refused.
+    await expect(gh.finishOAuth("thecode", state, "0x00000000000000000000000000000000000000ee", f)).rejects.toThrow(/different browser|expired/);
+    // …and that refusal burns the state, so start again.
+    const url2 = new URL(await gh.beginOAuth(OWNER, "https://moonlet.16labs.xyz/api/connections/github/callback", "/app/connections"));
+    const state2 = url2.searchParams.get("state")!;
+    const r = await gh.finishOAuth("thecode", state2, OWNER, f);
     expect(r.login).toBe("octo");
     const c = await store.getConnection<gh.GitHubConn>(OWNER, "github");
     expect(c?.data.token).toBe("gho_abc");
     expect(c?.label).toBe("@octo");
     // replaying the same state must fail
-    await expect(gh.finishOAuth("thecode", state, f)).rejects.toThrow(/state expired/);
+    await expect(gh.finishOAuth("thecode", state2, OWNER, f)).rejects.toThrow(/expired|already used/);
+    // a GitHub state cannot be redeemed as a Gmail one
+    const url3 = new URL(await gh.beginOAuth(OWNER, "https://moonlet.16labs.xyz/api/connections/github/callback", "/app/connections"));
+    expect(await store.takeOauthState(url3.searchParams.get("state")!, "gm_", OWNER)).toBeNull();
   });
 
   it("acting tools are only offered when the connection exists; deliver refuses unlinked channels", async () => {
@@ -405,5 +445,44 @@ describe("github (live, read-only unless GITHUB_TOKEN can write)", () => {
     expect(closed.ok).toBe(true);
     const del = await fetch(`https://api.github.com/repos/daraijaola/moonlet/git/refs/heads/${pr.branch}`, { method: "DELETE", headers: H });
     expect(del.status).toBe(204);
+  });
+});
+
+describe("approval cards show what will really happen", () => {
+  it("an email card lists every recipient including Cc, and a smuggled header fails the proposal instead of reaching Gmail", async () => {
+    const { describe: describeCard, propose } = await import("@/moonlet/proposals");
+    const card = describeCard("email_send", { mail: { to: "yash@orbio.so", cc: "dara@16labs.xyz", subject: "Re: demo", body: "Thursday works." } });
+    expect(card.body).toMatch(/^To: yash@orbio.so\nCc: dara@16labs.xyz\nSubject: Re: demo/);
+    const O = "0x00000000000000000000000000000000000000cc";
+    await store.setConnection(O, "gmail", "me@gmail.com", { email: "me@gmail.com", refreshToken: "r", accessToken: "a", expiresAt: Date.now() + 3_600_000 });
+    const r = await propose({ kind: "email_send", mail: { to: "yash@orbio.so\r\nBcc: thief@evil.io", subject: "Re: demo", body: "x" } }, { owner: O, moonletId: "m_x", moonletName: "X", runId: null, autopilot: false });
+    expect(r.status).toBe("failed");
+    expect(String((r.result as { error?: string })?.error)).toMatch(/invalid address|line break/);
+    expect(await store.listProposals(O, "pending")).toHaveLength(0);
+  });
+});
+
+describe("an approval acts once, and a provider that goes quiet is reported as uncertain, not retried", () => {
+  it("two approvals of the same draft execute one action; a timeout leaves the draft 'uncertain'", async () => {
+    const { propose, decide } = await import("@/moonlet/proposals");
+    await store.setConnection(OWNER, "github", "@dara", { token: "ghp_test", login: "dara" });
+    let posts = 0;
+    const slowGh: typeof fetch = async (i, init) => {
+      if (String(i).endsWith("/repos/dara/moonlet/issues") && init?.method === "POST") { posts++; await new Promise((r) => setTimeout(r, 150)); return new Response(JSON.stringify({ html_url: "https://github.com/dara/moonlet/issues/9", number: 9 }), { status: 201 }); }
+      return new Response("{}", { status: 404 });
+    };
+    const r = await propose({ kind: "issue_create", repo: "dara/moonlet", title: "Race", body: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: slowGh });
+    const [a, b] = await Promise.all([decide(r.proposalId!, "approve", slowGh), decide(r.proposalId!, "approve", slowGh)]);
+    expect([a, b].filter((x) => x.ok && x.status === "executed")).toHaveLength(1);
+    expect(posts).toBe(1);
+
+    const hang: typeof fetch = async () => { throw new Error("The operation was aborted due to timeout"); };
+    const r2 = await propose({ kind: "issue_create", repo: "dara/moonlet", title: "Hang", body: "x" }, { owner: OWNER, moonletId: "m1", moonletName: "Lumen", runId: null, autopilot: false, fetch: hang });
+    const d = await decide(r2.proposalId!, "approve", hang);
+    expect(d.ok && d.status).toBe("uncertain");
+    expect((await store.getProposal(r2.proposalId!))!.status).toBe("uncertain");
+    // and it cannot be approved again by accident
+    const again = await decide(r2.proposalId!, "approve", hang);
+    expect(again.ok).toBe(false);
   });
 });

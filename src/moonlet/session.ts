@@ -11,7 +11,11 @@ export const COOKIE = "moonlet_session";
 const TTL_MS = 30 * 24 * 3600_000;
 
 function secret() {
-  return process.env.SECRET_KEY ?? "moonlet-dev-only-not-secret";
+  const k = process.env.SECRET_KEY;
+  if (k) return k;
+  // A production process without its signing secret must not mint or accept sessions; a known fallback is for local development only.
+  if (process.env.NODE_ENV === "production") throw new Error("SECRET_KEY is not set");
+  return "moonlet-dev-only-not-secret";
 }
 
 export function newNonce() {
@@ -33,11 +37,32 @@ export function siweMessage(p: { domain: string; address: string; nonce: string;
   ].join("\n");
 }
 
-export async function verifySiwe(p: { message: string; signature: `0x${string}`; address: `0x${string}`; expectedNonce: string }) {
-  if (!p.message.includes(`Nonce: ${p.expectedNonce}`)) return false;
-  if (!p.message.includes(`\n${p.address}\n`) && !p.message.toLowerCase().includes(`\n${p.address.toLowerCase()}\n`)) return false;
-  const issued = p.message.match(/Issued At: (.+)/)?.[1];
-  if (!issued || Math.abs(Date.now() - +new Date(issued)) > 10 * 60_000) return false;
+/**
+ * Strict SIWE check. The message is parsed line by line and every field must be what this server would have written: the
+ * expected domain and URI (so a signature given to another site is useless here), version 1, our chain id, the exact nonce,
+ * the exact address, and an Issued At within ten minutes on either side. Only then is the signature verified.
+ */
+export async function verifySiwe(p: { message: string; signature: `0x${string}`; address: `0x${string}`; expectedNonce: string; expectedDomain?: string; expectedUri?: string }) {
+  const lines = p.message.split("\n");
+  const domainLine = lines[0]?.match(/^(\S+) wants you to sign in with your Ethereum account:$/);
+  if (!domainLine) return false;
+  if (p.expectedDomain && domainLine[1] !== p.expectedDomain) return false;
+  if (!/^0x[0-9a-fA-F]{40}$/.test(lines[1] ?? "") || lines[1].toLowerCase() !== p.address.toLowerCase()) return false;
+  const field = (name: string) => {
+    const hits = lines.filter((l) => l.startsWith(`${name}: `));
+    return hits.length === 1 ? hits[0].slice(name.length + 2) : null;
+  };
+  const uri = field("URI"), version = field("Version"), chain = field("Chain ID"), nonce = field("Nonce"), issued = field("Issued At");
+  if (!uri || !version || !chain || !nonce || !issued) return false;
+  if (p.expectedUri && uri !== p.expectedUri) return false;
+  if (version !== "1" || chain !== "4663") return false;
+  if (nonce !== p.expectedNonce) return false;
+  // The whole message must be exactly what this server writes for those fields: no extra lines, statements or reordering.
+  if (p.message !== siweMessage({ domain: domainLine[1], uri, address: lines[1], nonce, issuedAt: issued })) return false;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/.test(issued)) return false;
+  const t = Date.parse(issued);
+  if (!Number.isFinite(t) || Math.abs(Date.now() - t) > 10 * 60_000) return false;
+  if (!/^0x[0-9a-fA-F]{130}$/.test(p.signature)) return false;
   return verifyMessage({ address: p.address, message: p.message, signature: p.signature });
 }
 

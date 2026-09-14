@@ -86,12 +86,14 @@ describe("a moonlet spawns a moonlet", () => {
     expect(await store.listMoonlets(OWNER)).toHaveLength(2);
   });
 
-  it("autopilot spawns without asking", async () => {
+  it("spawns always ask, even on autopilot (autopilot covers the moonlet's own actions, not new moonlets)", async () => {
     const p = await parent();
     const built = buildTools(["spawn_moonlet"], { delivery: {}, fetch: noNet, propose: { owner: OWNER, moonletId: p.id, moonletName: p.name, runId: null, autopilot: true }, compile: async (i) => fallbackSpec(i) });
     const r = await call(built.tools[0], { sentence: "digest orbio.so/build every morning", template: "digest", name: "Morning", reason: "the owner keeps asking about it in reports" });
-    expect(r.executed).toBe(true);
-    expect((await store.listMoonlets(OWNER)).map((m) => m.name).sort()).toEqual(["Morning", "Sentry", "Shadow"]);
+    expect(r.executed).toBeUndefined();
+    expect(r.proposed).toBe(true);
+    expect((await store.listMoonlets(OWNER)).map((m) => m.name).sort()).toEqual(["Sentry", "Shadow"]);
+    expect((await store.listProposals(OWNER, "pending")).some((x) => x.kind === "spawn_moonlet" && x.moonletId === p.id)).toBe(true);
   });
 
   it("the per-wallet cap holds, with a plain reason", async () => {
@@ -105,6 +107,16 @@ describe("a moonlet spawns a moonlet", () => {
   it("familyNote is silent when the income covers everyone and honest when it does not", () => {
     const sib = (burn: number) => ({ burnPerDayUsd: burn, status: "idle" }) as store.MoonletRow;
     expect(familyNote([sib(0.01)], 0.01, 1)).toBe("");
-    expect(familyNote([sib(0.02), sib(0.02)], 0.02, 0.035)).toMatch(/3 moonlets would burn about \$0\.060\/day against the \$0\.030\/day/);
+    expect(familyNote([sib(0.02), sib(0.02)], 0.02, 0.035)).toMatch(/3 moonlets can spend up to about \$0\.060\/day against the \$0\.030\/day/);
+  });
+});
+
+describe("the per-wallet cap holds under a race", () => {
+  it("six launches at once with room for one create exactly one", async () => {
+    const O = "0x00000000000000000000000000000000000000d7";
+    for (let i = 0; i < MAX_MOONLETS - 1; i++) expect((await launchMoonlet(O, { ...parentSpec, name: `Pre${i}` }, { runNow: false, fetch: noNet })).ok).toBe(true);
+    const results = await Promise.all(Array.from({ length: 6 }, (_, i) => launchMoonlet(O, { ...parentSpec, name: `Race${i}` }, { runNow: false, fetch: noNet })));
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect((await store.listMoonlets(O)).length).toBe(MAX_MOONLETS);
   });
 });

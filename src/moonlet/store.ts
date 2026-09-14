@@ -131,6 +131,9 @@ export function migrate() {
         `CREATE TABLE IF NOT EXISTS oauth_states (
           state TEXT PRIMARY KEY, address TEXT NOT NULL, verifier TEXT NOT NULL, client_id TEXT NOT NULL, redirect_to TEXT NOT NULL, created_at INTEGER NOT NULL
         )`,
+        `CREATE TABLE IF NOT EXISTS nonces (
+          nonce TEXT PRIMARY KEY, address TEXT NOT NULL, message TEXT NOT NULL, expires_at INTEGER NOT NULL
+        )`,
         `CREATE TABLE IF NOT EXISTS oauth_clients (
           redirect_uri TEXT PRIMARY KEY, client_id TEXT NOT NULL, created_at INTEGER NOT NULL
         )`,
@@ -153,6 +156,10 @@ export function migrate() {
     await c.execute(`ALTER TABLE moonlets ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE owners ADD COLUMN avatar INTEGER`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN avatar INTEGER`).catch(() => undefined);
+    await c.execute(`ALTER TABLE proposals ADD COLUMN verification TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE moonlets ADD COLUMN claimed_at INTEGER`).catch(() => undefined);
+    await c.execute(`ALTER TABLE proposals ADD COLUMN executing_since INTEGER`).catch(() => undefined);
+    await c.execute(`UPDATE moonlets SET runs_total = (SELECT COUNT(*) FROM runs WHERE runs.moonlet_id = moonlets.id), runs_failed = (SELECT COUNT(*) FROM runs WHERE runs.moonlet_id = moonlets.id AND runs.status = 'failed')`).catch(() => undefined);
     // Every moonlet wears one of ten faces; older rows draw theirs once here.
     await c.execute(`UPDATE moonlets SET avatar = 1 + (abs(random()) % ${AVATAR_COUNT}) WHERE avatar IS NULL`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
@@ -235,6 +242,23 @@ export async function clearOwnerOrbio(address: string) {
   await db().execute({ sql: `UPDATE owners SET orbio_access_token=NULL, orbio_refresh_token=NULL, orbio_expires_at=NULL WHERE address=?`, args: [address.toLowerCase()] });
 }
 
+// ---- sign-in nonces -------------------------------------------------------
+
+/** A nonce is minted with the exact message the wallet must sign; redeeming it returns that message once, then it is gone. */
+export async function saveNonce(nonce: string, address: string, message: string, ttlMs = 10 * 60_000) {
+  await migrate();
+  await db().execute({ sql: `INSERT INTO nonces(nonce,address,message,expires_at) VALUES(?,?,?,?)`, args: [nonce, address.toLowerCase(), message, Date.now() + ttlMs] });
+  await db().execute({ sql: `DELETE FROM nonces WHERE expires_at < ?`, args: [Date.now()] });
+}
+export async function takeNonce(nonce: string): Promise<{ address: string; message: string } | null> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM nonces WHERE nonce=?`, args: [nonce] });
+  const row = r.rows[0];
+  const del = await db().execute({ sql: `DELETE FROM nonces WHERE nonce=?`, args: [nonce] });
+  if (!row || del.rowsAffected !== 1 || Number(row.expires_at) < Date.now()) return null;
+  return { address: row.address as string, message: row.message as string };
+}
+
 // ---- oauth state -----------------------------------------------------------
 
 export async function saveOauthState(s: { state: string; address: string; verifier: string; clientId: string; redirectTo: string; redirectUri: string }) {
@@ -255,12 +279,25 @@ export async function saveOauthClient(redirectUri: string, clientId: string) {
   await db().execute({ sql: `INSERT OR REPLACE INTO oauth_clients(redirect_uri,client_id,created_at) VALUES(?,?,?)`, args: [redirectUri, clientId, Date.now()] });
 }
 
-export async function takeOauthState(state: string) {
+export const OAUTH_STATE_TTL_MS = 10 * 60_000;
+
+/**
+ * Redeem an OAuth state exactly once. `provider` is the prefix the flow minted (`gm_`, `gh_`, `ob_`), so a Gmail code cannot be
+ * redeemed on the GitHub callback; `sessionOwner` is the wallet signed in on the browser that hit the callback, and it must be
+ * the wallet that started the flow, so a forwarded authorization link cannot attach an account to someone else's wallet.
+ * A stale, replayed, wrong-provider or wrong-session state returns null and is deleted.
+ */
+export async function takeOauthState(state: string, provider: string, sessionOwner: string | null) {
   await migrate();
   const r = await db().execute({ sql: `SELECT * FROM oauth_states WHERE state=?`, args: [state] });
   const row = r.rows[0];
-  if (!row) return null;
-  await db().execute({ sql: `DELETE FROM oauth_states WHERE state=? OR created_at < ?`, args: [state, Date.now() - 15 * 60_000] });
+  // Single use: whoever deletes the row wins; a concurrent second redemption sees rowsAffected 0.
+  const del = await db().execute({ sql: `DELETE FROM oauth_states WHERE state=?`, args: [state] });
+  await db().execute({ sql: `DELETE FROM oauth_states WHERE created_at < ?`, args: [Date.now() - OAUTH_STATE_TTL_MS] });
+  if (!row || del.rowsAffected !== 1) return null;
+  if (!state.startsWith(provider)) return null;
+  if (Date.now() - Number(row.created_at) > OAUTH_STATE_TTL_MS) return null;
+  if (!sessionOwner || sessionOwner.toLowerCase() !== (row.address as string).toLowerCase()) return null;
   let redirectTo = row.redirect_to as string, redirectUri = "";
   try {
     const j = JSON.parse(redirectTo) as { to: string; uri: string };
@@ -303,17 +340,24 @@ function rowToMoonlet(row: Record<string, unknown>): MoonletRow {
   };
 }
 
-export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses" | "watch" | "avatar"> & { autopilot?: boolean; parentId?: string | null; avatar?: number }) {
+/** Insert a moonlet. With `maxPerOwner`, the count check and the insert are one statement, so two launches racing at the cap cannot both land. Returns false when the cap held. */
+export async function insertMoonlet(m: Omit<MoonletRow, "keysRotated" | "runsTotal" | "runsFailed" | "spentTotalUsd" | "lastRunAt" | "autopilot" | "memory" | "parentId" | "openCalls" | "hits" | "misses" | "watch" | "avatar"> & { autopilot?: boolean; parentId?: string | null; avatar?: number }, opts: { maxPerOwner?: number } = {}) {
   await migrate();
-  await db().execute({
-    sql: `INSERT INTO moonlets(id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id,avatar)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    args: [
-      m.id, m.owner.toLowerCase(), m.name, JSON.stringify(m.spec), m.status, JSON.stringify(m.delivery), m.autopilot ? 1 : 0,
-      m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt, m.parentId ?? null,
-      m.avatar ?? 1 + Math.floor(Math.random() * AVATAR_COUNT),
-    ],
+  const args = [
+    m.id, m.owner.toLowerCase(), m.name, JSON.stringify(m.spec), m.status, JSON.stringify(m.delivery), m.autopilot ? 1 : 0,
+    m.key ? seal(JSON.stringify(m.key)) : null, m.cadence, m.perRunCapUsd, m.earnPerDayUsd, m.burnPerDayUsd, m.nextRunAt, m.createdAt, m.parentId ?? null,
+    m.avatar ?? 1 + Math.floor(Math.random() * AVATAR_COUNT),
+  ];
+  const cols = `id,owner,name,spec,status,delivery,autopilot,key,cadence,per_run_cap_usd,earn_per_day_usd,burn_per_day_usd,next_run_at,created_at,parent_id,avatar`;
+  if (opts.maxPerOwner == null) {
+    await db().execute({ sql: `INSERT INTO moonlets(${cols}) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, args });
+    return true;
+  }
+  const r = await db().execute({
+    sql: `INSERT INTO moonlets(${cols}) SELECT ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,? WHERE (SELECT COUNT(*) FROM moonlets WHERE owner=? AND status != 'deleted') < ?`,
+    args: [...args, m.owner.toLowerCase(), opts.maxPerOwner],
   });
+  return r.rowsAffected === 1;
 }
 
 export async function getMoonlet(id: string) {
@@ -398,21 +442,32 @@ export async function claimNow(id: string, now = Date.now()) {
 }
 
 /** A moonlet left in "running" for too long (crashed worker) goes back to idle. */
+/** A run that has held its claim longer than `olderThan` is presumed dead (process restart); release it. Judged by the claim's own timestamp, never by the previous run's. */
 export async function releaseStale(olderThan: number) {
   await migrate();
   await db().execute({
-    sql: `UPDATE moonlets SET status='idle' WHERE status='running' AND COALESCE(last_run_at, created_at) < ? AND next_run_at <= ?`,
-    args: [olderThan, Date.now()],
+    sql: `UPDATE moonlets SET status='idle', claimed_at=NULL WHERE status='running' AND claimed_at IS NOT NULL AND claimed_at < ?`,
+    args: [olderThan],
   });
 }
 
-/** Atomically claim a due moonlet for a run so two cron ticks can't double-run it. */
+/** Atomically claim a due moonlet for a run so two cron ticks can't double-run it. Stamps the claim so staleness is measured from it. */
 export async function claimForRun(id: string, now = Date.now()) {
   const r = await db().execute({
-    sql: `UPDATE moonlets SET status='running' WHERE id=? AND status IN ('idle','quiet') AND next_run_at <= ?`,
-    args: [id, now],
+    sql: `UPDATE moonlets SET status='running', claimed_at=? WHERE id=? AND status IN ('idle','quiet') AND next_run_at <= ?`,
+    args: [now, id, now],
   });
   return r.rowsAffected === 1;
+}
+
+/** Actions left in 'executing' longer than `olderThan` (process died mid-action) become 'uncertain' for the owner to check; nothing is retried. */
+export async function reconcileStuckActions(olderThan: number) {
+  await migrate();
+  const r = await db().execute({
+    sql: `UPDATE proposals SET status='uncertain', result=json_object('error','the process stopped while this was executing; it may or may not have gone through. Check at the provider before approving again. Nothing was retried.') WHERE status='executing' AND executing_since IS NOT NULL AND executing_since < ?`,
+    args: [olderThan],
+  });
+  return r.rowsAffected;
 }
 
 // ---- runs ------------------------------------------------------------------
@@ -428,6 +483,8 @@ export async function insertRun(r: Omit<RunRow, "private"> & { private?: boolean
       JSON.stringify(r.calls ?? []), JSON.stringify(r.scored ?? []), r.private ? 1 : 0,
     ],
   });
+  // The counter on the moonlet is the number of run rows, whichever path wrote them, so no two surfaces can disagree.
+  await db().execute({ sql: `UPDATE moonlets SET runs_total = (SELECT COUNT(*) FROM runs WHERE moonlet_id = ?), runs_failed = (SELECT COUNT(*) FROM runs WHERE moonlet_id = ? AND status = 'failed') WHERE id = ?`, args: [r.moonletId, r.moonletId, r.moonletId] });
 }
 
 export async function setRunTx(id: string, txHash: string) {
@@ -583,7 +640,7 @@ export async function takeLinkCode(code: string) {
 // ---- proposals (draft → approve → act) --------------------------------------
 
 export type ProposalKind = "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create";
-export type ProposalStatus = "pending" | "approved" | "rejected" | "executed" | "failed";
+export type ProposalStatus = "pending" | "approved" | "executing" | "rejected" | "executed" | "failed" | "uncertain";
 export type ProposalRow = {
   id: string;
   owner: string;
@@ -593,6 +650,8 @@ export type ProposalRow = {
   payload: Record<string, unknown>;
   status: ProposalStatus;
   result: Record<string, unknown> | null;
+  /** Read-back of the executed action against the approved payload (see verify.ts). */
+  verification: { status: "verified" | "mismatch" | "unchecked"; scope: "complete" | "sample"; url?: string; checks: Array<{ field: string; expected: string; actual: string; ok: boolean }>; reason?: string; at: number } | null;
   telegramMsg: { chatId: string; messageId: number } | null;
   createdAt: number;
   decidedAt: number | null;
@@ -608,6 +667,7 @@ function rowToProposal(row: Record<string, unknown>): ProposalRow {
     payload: JSON.parse(row.payload as string),
     status: row.status as ProposalStatus,
     result: row.result ? JSON.parse(row.result as string) : null,
+    verification: row.verification ? JSON.parse(row.verification as string) : null,
     telegramMsg: row.telegram_msg ? JSON.parse(row.telegram_msg as string) : null,
     createdAt: Number(row.created_at),
     decidedAt: row.decided_at === null ? null : Number(row.decided_at),
@@ -628,6 +688,20 @@ export async function getProposal(id: string) {
   return r.rows[0] ? rowToProposal(r.rows[0] as Record<string, unknown>) : null;
 }
 
+/** Withdraw every pending draft of one moonlet; returns how many. */
+export async function rejectPendingProposals(moonletId: string) {
+  await migrate();
+  const r = await db().execute({ sql: `UPDATE proposals SET status='rejected', decided_at=? WHERE moonlet_id=? AND status='pending'`, args: [Date.now(), moonletId] });
+  return r.rowsAffected;
+}
+
+/** Actions a moonlet has taken (or tried), newest first, for the receipts list. */
+export async function listActions(moonletId: string, limit = 20) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM proposals WHERE moonlet_id=? AND status IN ('executed','failed','uncertain') ORDER BY decided_at DESC, created_at DESC LIMIT ?`, args: [moonletId, limit] });
+  return r.rows.map((x) => rowToProposal(x as Record<string, unknown>));
+}
+
 export async function listProposals(owner: string, status?: ProposalStatus, limit = 50) {
   await migrate();
   const r = status
@@ -642,8 +716,18 @@ export async function decideProposal(id: string, status: "approved" | "rejected"
   return r.rowsAffected === 1;
 }
 
-export async function finishProposal(id: string, status: "executed" | "failed", result: Record<string, unknown>) {
-  await db().execute({ sql: `UPDATE proposals SET status=?, result=? WHERE id=?`, args: [status, JSON.stringify(result), id] });
+/** Take the execution lease: only one caller moves approved → executing, so a double tap or two ticks cannot act twice. */
+export async function leaseProposal(id: string) {
+  const r = await db().execute({ sql: `UPDATE proposals SET status='executing', executing_since=? WHERE id=? AND status='approved'`, args: [Date.now(), id] });
+  return r.rowsAffected === 1;
+}
+
+export async function setProposalVerification(id: string, v: ProposalRow["verification"]) {
+  await db().execute({ sql: `UPDATE proposals SET verification=? WHERE id=?`, args: [JSON.stringify(v), id] });
+}
+
+export async function finishProposal(id: string, status: "executed" | "failed" | "uncertain", result: Record<string, unknown>) {
+  await db().execute({ sql: `UPDATE proposals SET status=?, result=? WHERE id=? AND status='executing'`, args: [status, JSON.stringify(result), id] });
 }
 
 /** Remember which Telegram message carried which report, so a reply can be routed to it. */

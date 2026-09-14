@@ -66,11 +66,24 @@ export type Connections = {
   connections: Array<{ kind: ConnectionKind; label: string; createdAt: number }>;
   available: { telegram: boolean; telegramBot: string | null; github: boolean; githubOAuth: boolean; x: boolean; discord: boolean; gmailOAuth: boolean };
 };
+export type ApiAction = {
+  id: string;
+  kind: Proposal["kind"];
+  status: "executed" | "failed" | "uncertain";
+  at: number;
+  runId: string | null;
+  title: string;
+  body: string;
+  url: string | null;
+  error: string | null;
+  verification: { status: "verified" | "mismatch" | "unchecked"; scope: "complete" | "sample"; at: number; reason?: string; checks: Array<{ field: string; expected: string; actual: string; ok: boolean }> } | null;
+};
+
 export type Proposal = {
   id: string;
   moonletId: string;
   kind: "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create";
-  status: "pending" | "approved" | "rejected" | "executed" | "failed";
+  status: "pending" | "approved" | "executing" | "rejected" | "executed" | "failed" | "uncertain";
   title: string;
   body: string;
   result: Record<string, unknown> | null;
@@ -128,6 +141,7 @@ export const api = {
     return j as { text: string; costUsd: number };
   },
   ask: (owner: string, id: string, text: string, runId?: string, history?: Array<{ q: string; a: string }>) => req<{ reply: string }>(owner, `/api/moonlets/${id}/ask`, { method: "POST", body: JSON.stringify({ text, runId, history }) }),
+  actions: (id: string) => req<{ actions: ApiAction[] }>(null, `/api/moonlets/${id}/actions`),
   proposals: (owner: string, status?: Proposal["status"]) => req<{ proposals: Proposal[] }>(owner, `/api/proposals${status ? `?status=${status}` : ""}`),
   decide: (owner: string, id: string, action: "approve" | "reject") => req<{ ok: boolean; status: string; result?: Record<string, unknown>; autopilotOn?: boolean }>(owner, `/api/proposals/${id}`, { method: "POST", body: JSON.stringify({ action }) }),
   sky: () => req<{ alive: number; total: number; creditsPerDay: number; burnPerDay: number; spentTotalUsd: number; runsToday: number; anchoredToday: number }>(null, "/api/sky/stats"),

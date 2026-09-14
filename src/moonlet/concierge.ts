@@ -49,7 +49,6 @@ export async function concierge(owner: string, text: string, opts: { appUrl: str
     name: m.name,
     job: m.spec.objective,
     cadence: CADENCE_WORDS[m.cadence as Cadence],
-    ...(m.cadence !== m.spec.cadence ? { cadenceNote: `asked for ${CADENCE_WORDS[m.spec.cadence]}, but the bag's income only pays for ${CADENCE_WORDS[m.cadence as Cadence]}` } : {}),
     status: m.status,
     nextRunInMinutes: m.status === "paused" ? null : Math.max(0, Math.round((m.nextRunAt - Date.now()) / 60_000)),
     runs: m.runsTotal,

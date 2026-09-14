@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { rmSync } from "node:fs";
 import * as store from "@/moonlet/store";
-import { probeTripwires, readMetric, readRepoActivity, PROBE_EVERY_MS } from "@/moonlet/tripwire";
+import { probeTripwires, readMetric, readRepoActivity, PROBE_EVERY_MS, TRIP_COOLDOWN_MS } from "@/moonlet/tripwire";
 import { fallbackSpec } from "@/moonlet/compile";
 import { runOne } from "@/moonlet/scheduler";
 import { buildInstructions } from "@/moonlet/personality";
@@ -91,11 +91,18 @@ describe("tripwire: the cheap alert lane", () => {
     expect(run.keyEvents[0].detail).toMatch(/woke early/);
     m = (await store.getMoonlet("m_tw"))!;
     expect(m.watch!.tripped).toBeUndefined();
+    // The run re-baselined the watch to a fresh reading, so what happened during the run is not "movement".
+    expect(m.watch!.value).toBe(404_800);
+    // Inside the cooldown even a big move does not wake it again: a jumpy metric must not become a 15-minute loop.
     d.state.liquidity = 300_000;
-    await probeTripwires(t0 + 3 * PROBE_EVERY_MS + 1, d.fetchImpl);
+    expect(await probeTripwires(t0 + 3 * PROBE_EVERY_MS + 1, d.fetchImpl)).toEqual([]);
     m = (await store.getMoonlet("m_tw"))!;
-    expect(m.watch!.value).toBe(300_000);
     expect(m.nextRunAt).toBeGreaterThan(t0 + 3 * PROBE_EVERY_MS);
+    // Once the cooldown has passed, the same move trips it.
+    const later = t0 + TRIP_COOLDOWN_MS + PROBE_EVERY_MS;
+    expect(await probeTripwires(later, d.fetchImpl)).toHaveLength(1);
+    m = (await store.getMoonlet("m_tw"))!;
+    expect(m.nextRunAt).toBe(later);
   });
 
   it("the woken run is told what moved", () => {
