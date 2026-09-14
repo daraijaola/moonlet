@@ -131,7 +131,7 @@ Built during Orbio Build Week 2026, live at [moonlet.16labs.xyz](https://moonlet
 
 **Runtime**
 
-- Wallet sign-in with injected wallets (MetaMask, Rabby, Robinhood Wallet; EIP-6963) or a pasted address; Orbio approval on desktop and phone; signed session cookies. WalletConnect is coded but the live deployment has no project id, so that button isn't offered there.
+- Wallet sign-in with injected wallets (MetaMask, Rabby, Robinhood Wallet; EIP-6963), WalletConnect for phone wallets, or a pasted address; Orbio approval on desktop and phone; signed session cookies.
 - Compiler (one sentence → JobSpec with a deterministic fallback), runner, scheduler, memory, per-run spend cap projected from the model's real per-token price.
 - Budget: your cadence, your cap; quiet only when the credits can't pay for a run. Below 1,000 $ORBIO a moonlet stays quiet.
 - Model loop on Orbio's gateway with in-process fallbacks; receipts record the model that answered.
@@ -158,7 +158,7 @@ Built during Orbio Build Week 2026, live at [moonlet.16labs.xyz](https://moonlet
 
 **Landing**: hero with the mascot, How it works, "Three jobs, running right now" (three scripted scenes on real data: Sentry's report, Postie's inbox draft approved by a cursor, Scribe's merged PR #14), the tools panel with draggable tiles, the faces of the moonlets in the sky, footer.
 
-**Operations**: one container behind nginx, a one-minute tick, nightly SQLite backups on the server (`~/backups`), Privacy and Terms pages, 137 tests including real-model runs against fakes for every third party.
+**Operations**: one container behind nginx, a one-minute tick, nightly SQLite backups on the server (`~/backups`), Privacy and Terms pages, GitHub Actions on every push, 177 tests including real-model runs against fakes for every third party.
 
 ## Run it yourself
 
@@ -169,7 +169,7 @@ pnpm dev                          # http://localhost:3000
 curl localhost:3000/api/cron/tick # run due moonlets once (the deploy does this every minute)
 ```
 
-Production is one container behind nginx: `deploy/docker-compose.yml` runs the web app and a one-minute tick; `deploy/.env.example` lists every variable. `ANCHOR_PRIVATE_KEY` (a little ETH on Robinhood Chain) turns anchoring on; without it runs are hashed only and the UI says "hashed". `NEXT_PUBLIC_WC_PROJECT_ID` enables WalletConnect.
+Production is one container behind nginx: `deploy/docker-compose.yml` runs the web app and a one-minute tick; `deploy/.env.example` lists every variable. `ANCHOR_PRIVATE_KEY` (a little ETH on Robinhood Chain) turns anchoring on; without it runs are hashed only and the UI says "hashed". `NEXT_PUBLIC_WC_PROJECT_ID` enables WalletConnect; it is compiled into the client, so `deploy/ship.sh` passes it to the image build from `deploy/.env`.
 
 ## Repository map
 
@@ -195,7 +195,8 @@ src/app/                Next.js app: landing, sign-in, /app, /app/new, /app/conn
 src/components/         UI: landing (hero, how, usecases, rails, faces, footer), app shell, overview panel, composer model picker, thinking mark, run cards, marks
 tests/                  vitest; most suites run real models against fake services
 deploy/                 docker-compose, nginx snippet, ship script
-docs/                   banner, branding (mascot logo, thinking animation source)
+docs/                   README banner
+.github/workflows/      CI: typecheck, lint, build and the deterministic suites on push; real-model suites on dispatch
 ```
 
 ## Tests
@@ -205,9 +206,9 @@ pnpm exec vitest run --no-file-parallelism                        # everything, 
 OPENROUTER_API_KEY=sk-… pnpm exec vitest run --no-file-parallelism
 ```
 
-`tests/acceptance.test.ts` is the index: twenty-four named cases, one per promise the README makes (foreign report ids denied, rejected approvals have no effect, approvals act once, provider timeouts are *uncertain*, read-back mismatches are flagged, email text cannot widen recipients or repos, header injection refused, private content never public, foreign-site signatures refused, no fetching the box, quiet runs cost nothing, failed runs still report spend, launch cap holds under a race, spawns always ask, delete withdraws every draft). CI runs the deterministic suites (fakes, no credits) on every push; the real-model suites run on manual dispatch.
+`tests/acceptance.test.ts` is the index: twenty-four named cases, one per promise the README makes (foreign report ids denied, rejected approvals have no effect, approvals act once, provider timeouts are *uncertain*, read-back mismatches are flagged, empty bulk sets stay empty, email text cannot widen recipients or repos, header injection refused, private content never public, foreign-site signatures refused, no fetching the box, quiet runs cost nothing, failed runs still report spend, launch cap holds under a race, spawns always ask, delete withdraws every draft). CI runs the deterministic suites (fakes, no credits) on every push; the real-model suites run on manual dispatch.
 
-23 files, 137 tests. Fakes for Telegram, Discord, GitHub, Google/Gmail and Orbio; real models for the parts that matter: compiling sentences, running market-watch and inbox moonlets end to end, the concierge reading a fake inbox and queuing a reply for approval, spend-cap cut-offs, key rotation, model fallback, tripwire cooldown, twenty concurrent runs. Run sequentially: the gateway rate-limits bursts. About $1 and ten minutes for a full run.
+25 files, 177 tests. Fakes for Telegram, Discord, GitHub, Google/Gmail and Orbio; real models for the parts that matter: compiling sentences, running market-watch and inbox moonlets end to end, the concierge reading a fake inbox and queuing a reply for approval, spend-cap cut-offs, key rotation, model fallback, tripwire cooldown, twenty concurrent runs. Run sequentially: the gateway rate-limits bursts. About $1 and ten minutes for a full run.
 
 ## Public API
 
@@ -215,4 +216,4 @@ OPENROUTER_API_KEY=sk-… pnpm exec vitest run --no-file-parallelism
 
 ---
 
-<p align="center"><sub>Built for <a href="https://www.orbio.so/build">Orbio Build Week</a> · credits by Orbio · models via OpenRouter · anchored on Robinhood Chain</sub></p>
+<p align="center"><sub>Built for <a href="https://www.orbio.so/build">Orbio Build Week</a> · credits by Orbio · models via OpenRouter · receipts hashed, anchorable on Robinhood Chain</sub></p>

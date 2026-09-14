@@ -14,9 +14,6 @@ importers:
       '@metamask/sdk':
         specifier: ^0.34.0
         version: 0.34.0(bufferutil@4.1.0)(supports-color@7.2.0)(utf-8-validate@5.0.10)
-      '@openrouter/agent':
-        specifier: 0.11.0
-        version: 0.11.0
       '@paper-design/shaders-react':
         specifier: 0.0.80
         version: 0.0.80(@types/react@19.2.18)(react@19.2.8)
@@ -708,17 +705,6 @@ packages:
   '@nolyfill/is-core-module@1.0.39':
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
-
-  '@openrouter/agent@0.11.0':
-    resolution: {integrity: sha512-8idTYNZ4MjQyNJ2HKMTSmocVgQYajB43xG3rqa7ronK8Xfqx6XnIKvfhtqmAeJTPkhYppVuuQ+DKkMXlVEA+SA==}
-    peerDependencies:
-      '@modelcontextprotocol/client': ^2.0.0
-    peerDependenciesMeta:
-      '@modelcontextprotocol/client':
-        optional: true
-
-  '@openrouter/sdk@0.13.67':
-    resolution: {integrity: sha512-kUVaFYA9Xehq67ndTk98i+tRLfYH/F6xSf/WuC8dsukBzcgBvYQydoeKw4Xe+peXG/wOVtDxukWt5SqzhbloKw==}
 
   '@oxc-project/types@0.148.0':
     resolution: {integrity: sha512-Nm4s/jB+4FpFsPhWGEC4h7rzksesmtnMXomo6rCMcg/b8zLQuOziRgkCS1fxDCXOlJB/6Q8oABOZ/OP6RIPj9A==}
@@ -4710,15 +4696,6 @@ snapshots:
       fastq: 1.20.3
 
   '@nolyfill/is-core-module@1.0.39': {}
-
-  '@openrouter/agent@0.11.0':
-    dependencies:
-      '@openrouter/sdk': 0.13.67
-      zod: 4.5.4
-
-  '@openrouter/sdk@0.13.67':
-    dependencies:
-      zod: 4.5.4
 
   '@oxc-project/types@0.148.0': {}
 
