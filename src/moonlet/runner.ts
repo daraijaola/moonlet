@@ -210,6 +210,8 @@ async function ensureFunded(key: KeyState, p: Plan, orbio: OrbioClient, events: 
     events.push({ kind: "quiet", detail: bal.creditTokens && bal.creditTokens >= floor ? `AI balance can't fund a run; $${bal.creditTokens.toFixed(2)} of CREDIT is in the wallet, unactivated` : "AI balance can't fund a run; no credits to activate" });
     return null;
   }
+  // A dashboard-issued account key (sk-orbio-…) spends the same activated balance; if the moonlet already holds one, keep it.
+  if (key?.key.startsWith("sk-orbio-")) return { ...key, limitUsd: bal.availableUsd };
   const signed = await orbio.createKey();
   if (!key || key.key !== signed.key) events.push({ kind: "claimed", detail: key ? "using the wallet's re-signed Orbio key" : "using the wallet's signed Orbio key; it spends the activated balance", amountUsd: bal.availableUsd });
   return { key: signed.key, limitUsd: bal.availableUsd, spentUsd: key?.key === signed.key ? key.spentUsd : 0 };

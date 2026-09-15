@@ -265,6 +265,11 @@ export async function addActivation(a: { txHash: string; activationId: string; o
   return true;
 }
 
+/** Money arrived: quiet moonlets of this wallet run on the next tick instead of waiting out their cadence. */
+export async function wakeQuietMoonlets(owner: string) {
+  await db().execute({ sql: `UPDATE moonlets SET next_run_at=? WHERE owner=? AND status='quiet'`, args: [Date.now(), owner.toLowerCase()] });
+}
+
 export async function listActivations(owner: string, limit = 20) {
   await migrate();
   const r = await db().execute({ sql: `SELECT * FROM activations WHERE owner=? ORDER BY block_number DESC, at DESC LIMIT ?`, args: [owner.toLowerCase(), limit] });
@@ -308,14 +313,6 @@ export async function saveOauthState(s: { state: string; address: string; verifi
 }
 
 /** One Orbio OAuth client per redirect_uri, registered once and reused. */
-export async function getOauthClient(redirectUri: string) {
-  await migrate();
-  const r = await db().execute({ sql: `SELECT client_id FROM oauth_clients WHERE redirect_uri=?`, args: [redirectUri] });
-  return (r.rows[0]?.client_id as string) ?? null;
-}
-export async function saveOauthClient(redirectUri: string, clientId: string) {
-  await db().execute({ sql: `INSERT OR REPLACE INTO oauth_clients(redirect_uri,client_id,created_at) VALUES(?,?,?)`, args: [redirectUri, clientId, Date.now()] });
-}
 
 export const OAUTH_STATE_TTL_MS = 10 * 60_000;
 

@@ -63,7 +63,8 @@ function NewInner() {
   }, [editId, forkId]);
 
   const bag = status?.bag ?? 0;
-  const p = useMemo(() => (spec ? plan(spec, bag) : null), [spec, bag]);
+  const staked = status?.staked ?? 0;
+  const p = useMemo(() => (spec ? plan(spec, staked) : null), [spec, staked]);
   const linked = (k: "telegram" | "x" | "github" | "discord" | "gmail") => conns?.connections.find((c) => c.kind === k) ?? null;
   const resume = params.get("resume") === "1";
   // Connecting a service sends you off-site; the draft waits in this tab and the wizard picks up at the same step on return.
@@ -299,7 +300,7 @@ function NewInner() {
         {step === 3 && spec && p && !launching && (
           <>
             <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">The honest math</h1>
-            <p className="mt-1 text-[13.5px] text-ink-soft">It runs on the schedule you set, up to the cap you set, billed to your Orbio credits. When the credits run out it goes quiet and wakes as the bag earns.</p>
+            <p className="mt-1 text-[13.5px] text-ink-soft">It runs on the schedule you set, up to the cap you set, billed to the CREDIT you activate. When the balance runs out it goes quiet and asks you for more.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
               <div className="rounded-lg border border-ink/10 bg-paper p-4">
                 <FuelGauge earnPerDay={p.earnPerDayUsd} burnPerDay={p.burnPerDayUsd} quiet={p.quiet} size="md" />

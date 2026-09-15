@@ -165,6 +165,7 @@ export async function syncActivations(owner: string, fetchImpl: typeof fetch = f
     const from = known[0] ? Math.max(0, known[0].blockNumber - 1) : 0;
     let credited = 0;
     for (const a of await findActivations(owner, fetchImpl, from)) if (await store.addActivation({ ...a, owner })) credited += a.amountUsd;
+    if (credited > 0) await store.wakeQuietMoonlets(owner);
     return credited;
   } catch {
     return 0;

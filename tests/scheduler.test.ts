@@ -73,18 +73,22 @@ describe("scheduler", () => {
     expect(r.length).toBe(0);
   });
 
-  it("9. owner sells below the floor → next run goes quiet and records why; top-up wakes it", async () => {
+  it("9. activated balance runs out → next run goes quiet and records why; activation wakes it", async () => {
     const m = (await store.listMoonlets(owners[0]))[0];
     await store.updateMoonlet(m.id, { nextRunAt: Date.now() - 1 });
     await store.claimForRun(m.id);
-    const quiet = await runOne(m.id, { orbioFor: async () => orbios.get(owners[0])!.client, bagOf: async () => 500, anchor: null });
+    const dry = orbios.get(owners[0])!;
+    const had = dry.state.balance;
+    dry.state.balance = 0;
+    const quiet = await runOne(m.id, { orbioFor: async () => dry.client, bagOf: async () => 500, anchor: null });
     expect(quiet.status).toBe("quiet");
     const after = await store.getMoonlet(m.id);
     expect(after?.status).toBe("quiet");
     const last = (await store.listRuns(m.id))[0];
     expect(last.status).toBe("quiet");
-    expect(last.summary).toMatch(/below 1000|below 1,000/);
+    expect(last.summary).toMatch(/AI balance can't fund a run/);
     expect(last.costUsd).toBe(0);
+    dry.state.balance = had;
 
     await store.updateMoonlet(m.id, { nextRunAt: Date.now() - 1 });
     await store.claimForRun(m.id);

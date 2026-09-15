@@ -124,7 +124,7 @@ export async function configureBot(fetchImpl: typeof fetch = fetch) {
   }, fetchImpl);
   await call("setMyShortDescription", { short_description: "Your moonlets report here. Approve or reject what they want to do with one tap." }, fetchImpl);
   await call("setMyDescription", {
-    description: "Moonlet runs small AI agents paid for by the credits your $ORBIO earns. Link this chat from Moonlet → Connections and your moonlets will send you briefs, alerts and anything that needs your OK, with Approve / Reject buttons.",
+    description: "Moonlet runs small AI agents paid for by the CREDIT your staked $ORBIO earns. Link this chat from Moonlet → Connections and your moonlets will send you briefs, alerts and anything that needs your OK, with Approve / Reject buttons.",
   }, fetchImpl);
   await store.kvSet("telegram.configured", stamp);
   return true;
@@ -293,7 +293,7 @@ export async function handleUpdate(u: Update, onCallback: CallbackHandler, fetch
       } else {
         const owner = await ownerOfChat(chatId);
         if (!owner) {
-          await sendMessage(chatId, `Moonlet runs small AI agents paid for by the credits your $ORBIO earns.\n\nTo link this chat: open ${esc(APP())}/app/connections, tap <b>Link Telegram</b>, then press Start here.`, { fetch: fetchImpl });
+          await sendMessage(chatId, `Moonlet runs small AI agents paid for by the CREDIT your staked $ORBIO earns.\n\nTo link this chat: open ${esc(APP())}/app/connections, tap <b>Link Telegram</b>, then press Start here.`, { fetch: fetchImpl });
         } else if (command === "/help" || command === "/start" || !chatHandler) {
           await sendMessage(
             chatId,

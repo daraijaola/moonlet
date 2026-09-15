@@ -8,7 +8,7 @@ import { CADENCE_MS, type Cadence } from "./spec";
 import * as store from "./store";
 import type { DeliverySink } from "./tools";
 import { fileSink } from "./files";
-import { bagOf } from "./bag";
+import { bagOf, stakedOf } from "./bag";
 export { bagOf } from "./bag";
 import * as tg from "./connections/telegram";
 import type { GitHubConn } from "./connections/github";
@@ -44,8 +44,10 @@ export async function orbioFor(owner: string, fetchImpl: typeof fetch = fetch): 
   const dev = devOrbio();
   if (dev) return dev;
   const o = await store.getOwner(owner);
-  if (!o?.orbioKey) return null;
-  return makeCreditClient(owner, fetchImpl);
+  if (o?.orbioKey) return makeCreditClient(owner, fetchImpl);
+  // A wallet that never signed can still run on the account key Orbio's dashboard issued, held by its moonlets.
+  if ((await store.listMoonlets(owner)).some((m) => m.key?.key.startsWith("sk-orbio-"))) return makeCreditClient(owner, fetchImpl);
+  return null;
 }
 
 /** Runs due moonlets with bounded concurrency so a burst never trips a model's per-minute cap. */
@@ -252,7 +254,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
       : {}),
     cadence,
     perRunCapUsd: result.plan.perRunCapUsd,
-    earnPerDayUsd: result.plan.earnPerDayUsd || estimateEarnPerDay(bag),
+    earnPerDayUsd: estimateEarnPerDay(await stakedOf(m.owner, deps.fetch)),
     burnPerDayUsd: result.plan.burnPerDayUsd,
     nextRunAt,
     lastRunAt: now(),

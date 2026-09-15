@@ -170,8 +170,11 @@ describe("CREDIT protocol", () => {
     const before = (await store.getOwner(OWNER))!.orbioBalanceUsd;
     const tx = `0x${"77".repeat(32)}`;
     receipts.set(tx, { status: "0x1", blockNumber: "0x30", logs: [activatedLog(11, OWNER, OWNER, 7_500_000n)] });
+    await store.updateMoonlet("m_c1", { status: "quiet", nextRunAt: Date.now() + 86_400_000 });
     expect(await syncActivations(OWNER, chain)).toBe(7.5);
     expect(await syncActivations(OWNER, chain)).toBe(0);
+    // money arrived: the quiet moonlet is due now, not tomorrow
+    expect((await store.getMoonlet("m_c1"))!.nextRunAt).toBeLessThanOrEqual(Date.now());
     expect((await store.getOwner(OWNER))!.orbioBalanceUsd).toBeCloseTo(before + 7.5, 6);
     expect((await makeCreditClient(OWNER, chain).getBalance()).availableUsd).toBeCloseTo(before + 7.5, 6);
   });

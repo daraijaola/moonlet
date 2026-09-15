@@ -7,7 +7,7 @@ export default function Privacy() {
   return (
     <LegalPage title="Privacy" updated="6 September 2026">
       <p>
-        Moonlet (moonlet.16labs.xyz) lets a holder of $ORBIO run small autonomous agents, called moonlets, that work on a schedule and are paid for by the credits the holder&apos;s own tokens earn. This page says what we store, what a moonlet may read or do on your behalf, and how to make it stop. It is written to be read, not skimmed.
+        Moonlet (moonlet.16labs.xyz) lets a holder of $ORBIO run small autonomous agents, called moonlets, that work on a schedule and are paid for by the CREDIT the holder&apos;s staked tokens earn and the holder activates from their own wallet. This page says what we store, what a moonlet may read or do on your behalf, and how to make it stop. It is written to be read, not skimmed.
       </p>
 
       <h2>Who we are</h2>

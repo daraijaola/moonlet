@@ -56,5 +56,5 @@ export const CADENCE_WORDS: Record<Cadence, string> = { "15m": "every 15 minutes
 export function cadenceReply(name: string, spec: JobSpec, cadence: Cadence, earnPerDayUsd: number) {
   const burn = spec.spendCapUsd * runsPerDay(cadence);
   if (burn <= spendablePerDay(earnPerDayUsd)) return `Done. ${name} now reports ${CADENCE_WORDS[cadence]}.`;
-  return `Done. ${name} now reports ${CADENCE_WORDS[cadence]}. Heads up: at up to $${spec.spendCapUsd.toFixed(3)} a run that's about $${burn.toFixed(2)}/day, and your bag earns about $${earnPerDayUsd.toFixed(2)}/day, so it will draw the balance down and go quiet when the credits run out.`;
+  return `Done. ${name} now reports ${CADENCE_WORDS[cadence]}. Heads up: at up to $${spec.spendCapUsd.toFixed(3)} a run that's about $${burn.toFixed(2)}/day, and your bag earns about $${earnPerDayUsd.toFixed(2)}/day, so it will draw the balance down and ask you to activate more CREDIT when it runs out.`;
 }

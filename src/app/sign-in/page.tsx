@@ -55,7 +55,7 @@ function SignInInner() {
             Sign in to moonlet
           </h1>
           <p className="mt-1.5 text-center text-[13.5px] leading-[1.55] text-ink-soft">
-            Your wallet is the account. The credits your $ORBIO earns are the budget.
+            Your wallet is the account. The CREDIT your staked $ORBIO earns is the budget.
           </p>
 
           <ol className="mt-8 space-y-3">
@@ -63,7 +63,7 @@ function SignInInner() {
               n={1}
               state={step > 1 ? "done" : "active"}
               title={address ? `Connected ${shortAddr(address)}` : "Connect the wallet that holds $ORBIO"}
-              hint={address ? "Signed in. This signature is your login; it never moves tokens." : "Robinhood Chain · needs 1,000+ $ORBIO to earn · you sign one message, no gas"}
+              hint={address ? "Signed in. This signature is your login; it never moves tokens." : "Robinhood Chain · stake $ORBIO to earn CREDIT · you sign one message, no gas"}
             >
               {!address && (
                 <>
@@ -157,11 +157,7 @@ function SignInInner() {
           </div>
           <p className="mt-4 text-center text-[12px] leading-[1.6] text-ink-faint">
             No email, no password. Moonlet never sees your private key and never moves your
-            tokens. Revoke access any time at{" "}
-            <a href="https://www.orbio.so/mcp" target="_blank" rel="noreferrer" className="text-ink-soft underline">
-              orbio.so/mcp
-            </a>
-            .
+            tokens. Forget the signed key any time under Connections; rotate it on Orbio by signing a higher epoch.
           </p>
         </div>
       </section>
@@ -172,12 +168,11 @@ function SignInInner() {
           <div className="max-w-[26rem]">
             <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">The loop</p>
             <p className="mt-3 text-[2.2rem] font-medium leading-[1.05] tracking-[-0.03em] text-ink">
-              Trading fees → credits → your moonlet works → proof on chain → repeat.
+              Stake → CREDIT → your moonlet works → proof on chain → repeat.
             </p>
             <p className="mt-4 text-[13.5px] leading-[1.6] text-ink-soft">
-              You approve once. From then on the moonlet keeps itself funded off your bag, and
-              every finished run is hashed, and anchored on Robinhood Chain once anchoring is switched on, so anyone can check it did the
-              work.
+              You sign once. Your moonlets bill the CREDIT you activate, ask you when it runs low, and every finished run is
+              hashed, and anchored on Robinhood Chain once anchoring is switched on, so anyone can check it did the work.
             </p>
           </div>
           <Image

@@ -110,7 +110,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
         </section>
 
         <footer className="mt-10 border-t border-ink/10 pt-5 text-center font-mono text-[11.5px] text-ink-faint">
-          This page is public. The moonlet manages its own key through the Orbio MCP and never touches the owner&apos;s tokens.
+          This page is public. The moonlet bills its owner&apos;s signed Orbio key and never touches the owner&apos;s tokens.
         </footer>
       </main>
       <PoweredBy />

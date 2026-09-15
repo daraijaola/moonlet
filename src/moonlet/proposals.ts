@@ -218,6 +218,7 @@ export async function settleActivation(owner: string, txHash: string, proposalId
   if (!receipts.length) return { ok: false as const, error: "no CREDIT activation for this wallet in that transaction (it may still be pending)" };
   let credited = 0;
   for (const r of receipts) if (await store.addActivation({ ...r, owner, proposalId })) credited += r.amountUsd;
+  if (credited > 0) await store.wakeQuietMoonlets(owner);
   const total = receipts.reduce((a, r) => a + r.amountUsd, 0);
   if (proposalId) {
     const p = await store.getProposal(proposalId);
