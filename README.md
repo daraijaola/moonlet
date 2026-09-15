@@ -198,7 +198,7 @@ src/app/                Next.js app: landing, sign-in, /app, /app/new, /app/conn
 src/components/         UI: landing (hero, how, usecases, rails, faces, footer), app shell, overview panel, composer model picker, thinking mark, run cards, marks
 tests/                  vitest; most suites run real models against fake services
 deploy/                 docker-compose, nginx snippet, ship script
-docs/                   README banner
+docs/                   README banner; STATUS.md, a dated review of where the project stands
 .github/workflows/      CI: typecheck, lint, build and the deterministic suites on push; real-model suites on dispatch
 ```
 
