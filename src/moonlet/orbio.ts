@@ -135,12 +135,49 @@ export async function readActivations(txHash: string, fetchImpl: typeof fetch = 
   return out;
 }
 
+/**
+ * Every Activated event whose beneficiary is this wallet, from the chain's own index. Lets the ledger pick up activations
+ * made anywhere (Orbio's dashboard, a script, another app), not only the ones posted through Moonlet.
+ */
+export async function findActivations(owner: string, fetchImpl: typeof fetch = fetch, fromBlock = 0): Promise<ActivationReceipt[]> {
+  const r = await fetchImpl(RH_RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [{ fromBlock: `0x${fromBlock.toString(16)}`, toBlock: "latest", address: ORBIO.credit, topics: [ORBIO.activatedTopic, null, null, `0x${pad(owner)}`] }] }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  const j = (await r.json()) as { result?: Array<{ transactionHash: string; blockNumber: string; topics: string[]; data: string }>; error?: { message: string } };
+  if (j.error) throw new Error(`rpc: ${j.error.message}`);
+  return (j.result ?? []).map((log) => ({
+    txHash: log.transactionHash,
+    activationId: BigInt(log.topics[1]).toString(),
+    from: `0x${log.topics[2].slice(-40)}`.toLowerCase(),
+    beneficiary: `0x${log.topics[3].slice(-40)}`.toLowerCase(),
+    amountUsd: Number(BigInt(log.data.slice(0, 66))) / 1e6,
+    blockNumber: Number(BigInt(log.blockNumber)),
+  }));
+}
+
+/** Pull any activations the ledger has not seen yet; returns the dollars newly credited. Errors are swallowed: the chain being slow must not stop a run. */
+export async function syncActivations(owner: string, fetchImpl: typeof fetch = fetch) {
+  try {
+    const known = await store.listActivations(owner, 1);
+    const from = known[0] ? Math.max(0, known[0].blockNumber - 1) : 0;
+    let credited = 0;
+    for (const a of await findActivations(owner, fetchImpl, from)) if (await store.addActivation({ ...a, owner })) credited += a.amountUsd;
+    return credited;
+  } catch {
+    return 0;
+  }
+}
+
 // ---- the client ------------------------------------------------------------
 
 /** Client for one owner, backed by the owners table: the sealed signature key and the activated-balance ledger. */
 export function makeCreditClient(owner: string, fetchImpl: typeof fetch = fetch): OrbioClient {
   return {
     async getBalance() {
+      await syncActivations(owner, fetchImpl);
       const [o, creditTokens] = await Promise.all([store.getOwner(owner), creditTokensOf(owner, fetchImpl).catch(() => undefined)]);
       return { availableUsd: Math.max(0, o?.orbioBalanceUsd ?? 0), creditTokens, raw: { ledger: true } };
     },

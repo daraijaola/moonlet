@@ -148,8 +148,21 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   let text: string, cost: number, calls: number;
   try {
     ({ text, cost, calls, model } = await attemptWithBackoff(key));
-  } catch (e) {
+  } catch (e0) {
+    let e: unknown = e0;
     if (!isKeyExhausted(e)) return fail(e, "run", { t0, model, p, keyEvents, trace, key, cost: spentSoFar, calls: callsSoFar, isPrivate });
+    // Orbio's dashboard still issues account keys (sk-orbio-…) that spend the same activated balance. If the signed key is
+    // not recognised yet and this wallet's moonlets already hold a dashboard key, run on that one rather than go quiet.
+    if (isUnknownKey(e) && m.key?.key.startsWith("sk-orbio-") && m.key.key !== key.key) {
+      try {
+        keyEvents.push({ kind: "rotated", detail: "signed key not recognised by Orbio yet; using the wallet's dashboard key" });
+        key = { ...m.key };
+        ({ text, cost, calls, model } = await attemptWithBackoff(key));
+        return await finish();
+      } catch (e2) {
+        e = e2;
+      }
+    }
     // The gateway knows better than our ledger: it refused, so the activated balance is gone. Zero it and go quiet; the
     // owner gets an activation card. A key the gateway does not recognise yet (activation still settling) lands here too.
     await deps.orbio.exhausted().catch(() => undefined);
@@ -157,28 +170,32 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
     return { ok: true, status: "quiet", costUsd: spentSoFar, model, modelCalls: callsSoFar, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key, private: isPrivate };
   }
 
-  const parsed = safeParseOutput(text) ?? salvageOutput(text, m.spec.name);
-  if (!parsed) return fail(new Error("model did not return valid RunOutput"), "output", { t0, model, p, keyEvents, trace, key, cost: spentSoFar, calls: callsSoFar, isPrivate });
-  // Scores refer to the open calls in order; models sometimes leave the claim blank, so fill it from the call being scored.
-  parsed.scored = parsed.scored.map((s, i) => ({ ...s, claim: s.claim.trim() || m.openCalls?.[i]?.claim || "" })).filter((s) => s.claim);
+  return finish();
 
-  void cost; void calls;
-  key = { ...key, spentUsd: key.spentUsd + spentSoFar };
-  return {
-    ok: true,
-    status: "done",
-    output: parsed,
-    outputHash: hashOutput(parsed),
-    costUsd: spentSoFar,
-    model,
-    modelCalls: callsSoFar,
-    durationMs: Date.now() - t0,
-    plan: p,
-    keyEvents,
-    trace,
-    key,
-    private: isPrivate,
-  };
+  async function finish(): Promise<RunResult> {
+    const parsed = safeParseOutput(text) ?? salvageOutput(text, m.spec.name);
+    if (!parsed) return fail(new Error("model did not return valid RunOutput"), "output", { t0, model, p, keyEvents, trace, key, cost: spentSoFar, calls: callsSoFar, isPrivate });
+    // Scores refer to the open calls in order; models sometimes leave the claim blank, so fill it from the call being scored.
+    parsed.scored = parsed.scored.map((s, i) => ({ ...s, claim: s.claim.trim() || m.openCalls?.[i]?.claim || "" })).filter((s) => s.claim);
+
+    void cost; void calls;
+    const spent: KeyState = key ? { ...key, spentUsd: key.spentUsd + spentSoFar } : null;
+    return {
+      ok: true,
+      status: "done",
+      output: parsed,
+      outputHash: hashOutput(parsed),
+      costUsd: spentSoFar,
+      model,
+      modelCalls: callsSoFar,
+      durationMs: Date.now() - t0,
+      plan: p,
+      keyEvents,
+      trace,
+      key: spent,
+      private: isPrivate,
+    };
+  }
 }
 
 /**

@@ -4,13 +4,14 @@ import { renewedCookie, sessionFrom } from "@/moonlet/session";
 import { bagOf, orbioFor } from "@/moonlet/scheduler";
 import { stakedOf } from "@/moonlet/bag";
 import { estimateEarnPerDay } from "@/moonlet/budget";
-import { creditTokensOf, keyMessage } from "@/moonlet/orbio";
+import { creditTokensOf, keyMessage, syncActivations } from "@/moonlet/orbio";
 import * as store from "@/moonlet/store";
 
 /** Has this wallet signed for its Orbio key, and what does its bag and CREDIT look like? */
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
   if (!owner) return bad("sign in with your wallet first", 401);
+  await syncActivations(owner);
   const [orbio, bag, staked, creditTokens, o, avatar, activations, pending] = await Promise.all([
     orbioFor(owner),
     bagOf(owner),

@@ -267,7 +267,7 @@ export async function addActivation(a: { txHash: string; activationId: string; o
 
 export async function listActivations(owner: string, limit = 20) {
   await migrate();
-  const r = await db().execute({ sql: `SELECT * FROM activations WHERE owner=? ORDER BY at DESC LIMIT ?`, args: [owner.toLowerCase(), limit] });
+  const r = await db().execute({ sql: `SELECT * FROM activations WHERE owner=? ORDER BY block_number DESC, at DESC LIMIT ?`, args: [owner.toLowerCase(), limit] });
   return r.rows.map((row) => ({ txHash: row.tx_hash as string, activationId: row.activation_id as string, from: row.from_addr as string, amountUsd: Number(row.amount_usd), blockNumber: Number(row.block_number), proposalId: (row.proposal_id as string) ?? null, at: Number(row.at) }));
 }
 

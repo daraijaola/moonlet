@@ -32,6 +32,16 @@ function activatedLog(activationId: number, from: string, beneficiary: string, a
 const chain: typeof fetch = async (_u, init) => {
   const body = JSON.parse(String(init?.body)) as { method: string; params: unknown[] };
   if (body.method === "eth_getTransactionReceipt") return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: receipts.get(String(body.params[0])) ?? null }));
+  if (body.method === "eth_getLogs") {
+    const f = body.params[0] as { topics: (string | null)[]; fromBlock: string };
+    const out: unknown[] = [];
+    for (const [hash, rc] of receipts) {
+      const r = rc as { status: string; blockNumber: string; logs: Array<{ topics: string[]; data: string }> };
+      if (r.status !== "0x1" || Number(r.blockNumber) < Number(f.fromBlock)) continue;
+      for (const l of r.logs) if (l.topics[3] === f.topics[3]) out.push({ ...l, transactionHash: hash, blockNumber: r.blockNumber });
+    }
+    return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: out }));
+  }
   return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x0" }));
 };
 
@@ -153,6 +163,17 @@ describe("CREDIT protocol", () => {
     await settleActivation(OWNER, tx2, short!, chain);
     expect((await store.getProposal(short!))?.verification?.status).toBe("mismatch");
     expect((await store.getOwner(OWNER))!.orbioBalanceUsd).toBe(3);
+  });
+
+  it("an activation made on Orbio's own dashboard is picked up from the chain's index, once", async () => {
+    const { syncActivations } = await import("@/moonlet/orbio");
+    const before = (await store.getOwner(OWNER))!.orbioBalanceUsd;
+    const tx = `0x${"77".repeat(32)}`;
+    receipts.set(tx, { status: "0x1", blockNumber: "0x30", logs: [activatedLog(11, OWNER, OWNER, 7_500_000n)] });
+    expect(await syncActivations(OWNER, chain)).toBe(7.5);
+    expect(await syncActivations(OWNER, chain)).toBe(0);
+    expect((await store.getOwner(OWNER))!.orbioBalanceUsd).toBeCloseTo(before + 7.5, 6);
+    expect((await makeCreditClient(OWNER, chain).getBalance()).availableUsd).toBeCloseTo(before + 7.5, 6);
   });
 
   it("the gateway refusing for balance zeroes the ledger so the next tick asks the owner instead of retrying", async () => {
