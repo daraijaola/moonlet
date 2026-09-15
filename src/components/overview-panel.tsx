@@ -77,7 +77,7 @@ export function OverviewPanel({ m, runs, status, running, earnAll, burnAll, sett
           <span className="text-[11.5px] text-ink-faint">billed to its key</span>
         </div>
         {billed.length === 0 ? (
-          <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft">Nothing billed yet. The first run mints its key and lands here with its cost and model.</p>
+          <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft">Nothing billed yet. The first run lands here with its cost and model.</p>
         ) : (
           <>
             <p className="mt-2 flex items-baseline gap-2">
@@ -128,7 +128,7 @@ export function OverviewPanel({ m, runs, status, running, earnAll, burnAll, sett
           </>
         ) : (
           <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft">
-            {status && status.bag < 1000 ? <>Hold 1,000+ $ORBIO and the bag starts paying for runs.</> : <>The bag isn&apos;t earning yet; runs draw on the Orbio balance{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> available)</> : null}.</>}
+            {status && status.staked <= 0 ? <>Stake $ORBIO with Orbio and the bag starts minting CREDIT. Runs draw on the AI balance you activate{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> now, estimate)</> : null}.</> : <>Runs draw on the AI balance you activate{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> now, estimate)</> : null}.</>}
           </p>
         )}
         {approve && <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-[12px] leading-[1.5] text-ink">{approve}</p>}

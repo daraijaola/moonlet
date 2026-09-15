@@ -14,10 +14,12 @@ import type { JobSpec } from "./spec";
 
 export type OwnerRow = {
   address: string;
-  orbioClientId: string | null;
-  orbioAccessToken: string | null;
-  orbioRefreshToken: string | null;
-  orbioExpiresAt: number | null;
+  /** The wallet-signed Orbio gateway key (sk-orb-…), sealed at rest. */
+  orbioKey: string | null;
+  orbioEpoch: number;
+  /** Activated AI balance Moonlet can account for: verified activations minus recorded spend. An estimate. */
+  orbioBalanceUsd: number;
+  orbioKeySignedAt: number | null;
   bag: number;
   bagCheckedAt: number;
 };
@@ -155,6 +157,11 @@ export function migrate() {
     );
     await c.execute(`ALTER TABLE moonlets ADD COLUMN autopilot INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE owners ADD COLUMN avatar INTEGER`).catch(() => undefined);
+    await c.execute(`ALTER TABLE owners ADD COLUMN orbio_key TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE owners ADD COLUMN orbio_epoch INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
+    await c.execute(`ALTER TABLE owners ADD COLUMN orbio_balance_usd REAL NOT NULL DEFAULT 0`).catch(() => undefined);
+    await c.execute(`ALTER TABLE owners ADD COLUMN orbio_key_signed_at INTEGER`).catch(() => undefined);
+    await c.execute(`CREATE TABLE IF NOT EXISTS activations (tx_hash TEXT NOT NULL, activation_id TEXT NOT NULL, owner TEXT NOT NULL, from_addr TEXT NOT NULL, amount_usd REAL NOT NULL, block_number INTEGER NOT NULL, proposal_id TEXT, at INTEGER NOT NULL, PRIMARY KEY (tx_hash, activation_id))`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN avatar INTEGER`).catch(() => undefined);
     await c.execute(`ALTER TABLE proposals ADD COLUMN verification TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN claimed_at INTEGER`).catch(() => undefined);
@@ -216,21 +223,52 @@ export async function getOwner(address: string): Promise<OwnerRow | null> {
   if (!row) return null;
   return {
     address: row.address as string,
-    orbioClientId: (row.orbio_client_id as string) ?? null,
-    orbioAccessToken: row.orbio_access_token ? open(row.orbio_access_token as string) : null,
-    orbioRefreshToken: row.orbio_refresh_token ? open(row.orbio_refresh_token as string) : null,
-    orbioExpiresAt: (row.orbio_expires_at as number) ?? null,
+    orbioKey: row.orbio_key ? open(row.orbio_key as string) : null,
+    orbioEpoch: Number(row.orbio_epoch ?? 0),
+    orbioBalanceUsd: Number(row.orbio_balance_usd ?? 0),
+    orbioKeySignedAt: row.orbio_key_signed_at == null ? null : Number(row.orbio_key_signed_at),
     bag: Number(row.bag),
     bagCheckedAt: Number(row.bag_checked_at),
   };
 }
 
-export async function setOwnerOrbio(address: string, t: { clientId: string; accessToken: string; refreshToken?: string; expiresAt?: number }) {
+/** Store the wallet-signed gateway key. Signing again with a higher epoch rotates it. */
+export async function setOwnerOrbioKey(address: string, key: string, epoch: number) {
   await upsertOwner(address);
-  await db().execute({
-    sql: `UPDATE owners SET orbio_client_id=?, orbio_access_token=?, orbio_refresh_token=?, orbio_expires_at=? WHERE address=?`,
-    args: [t.clientId, seal(t.accessToken), t.refreshToken ? seal(t.refreshToken) : null, t.expiresAt ?? null, address.toLowerCase()],
+  await db().execute({ sql: `UPDATE owners SET orbio_key=?, orbio_epoch=?, orbio_key_signed_at=? WHERE address=?`, args: [seal(key), epoch, Date.now(), address.toLowerCase()] });
+}
+
+export async function setOwnerBalance(address: string, usd: number) {
+  await upsertOwner(address);
+  await db().execute({ sql: `UPDATE owners SET orbio_balance_usd=? WHERE address=?`, args: [Math.max(0, usd), address.toLowerCase()] });
+}
+
+/** Subtract a run's cost from the ledger, never below zero. */
+export async function debitOwnerBalance(address: string, usd: number) {
+  if (!(usd > 0)) return;
+  await db().execute({ sql: `UPDATE owners SET orbio_balance_usd = MAX(0, orbio_balance_usd - ?) WHERE address=?`, args: [usd, address.toLowerCase()] });
+}
+
+/**
+ * Record a verified on-chain activation and credit the ledger once. The primary key makes a
+ * replayed transaction a no-op, so the same receipt can never fund the balance twice.
+ */
+export async function addActivation(a: { txHash: string; activationId: string; owner: string; from: string; amountUsd: number; blockNumber: number; proposalId?: string | null }) {
+  await migrate();
+  const r = await db().execute({
+    sql: `INSERT OR IGNORE INTO activations(tx_hash,activation_id,owner,from_addr,amount_usd,block_number,proposal_id,at) VALUES(?,?,?,?,?,?,?,?)`,
+    args: [a.txHash.toLowerCase(), a.activationId, a.owner.toLowerCase(), a.from.toLowerCase(), a.amountUsd, a.blockNumber, a.proposalId ?? null, Date.now()],
   });
+  if (r.rowsAffected !== 1) return false;
+  await upsertOwner(a.owner);
+  await db().execute({ sql: `UPDATE owners SET orbio_balance_usd = orbio_balance_usd + ? WHERE address=?`, args: [a.amountUsd, a.owner.toLowerCase()] });
+  return true;
+}
+
+export async function listActivations(owner: string, limit = 20) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM activations WHERE owner=? ORDER BY at DESC LIMIT ?`, args: [owner.toLowerCase(), limit] });
+  return r.rows.map((row) => ({ txHash: row.tx_hash as string, activationId: row.activation_id as string, from: row.from_addr as string, amountUsd: Number(row.amount_usd), blockNumber: Number(row.block_number), proposalId: (row.proposal_id as string) ?? null, at: Number(row.at) }));
 }
 
 export async function setOwnerBag(address: string, bag: number) {
@@ -239,7 +277,7 @@ export async function setOwnerBag(address: string, bag: number) {
 }
 
 export async function clearOwnerOrbio(address: string) {
-  await db().execute({ sql: `UPDATE owners SET orbio_access_token=NULL, orbio_refresh_token=NULL, orbio_expires_at=NULL WHERE address=?`, args: [address.toLowerCase()] });
+  await db().execute({ sql: `UPDATE owners SET orbio_key=NULL, orbio_key_signed_at=NULL WHERE address=?`, args: [address.toLowerCase()] });
 }
 
 // ---- sign-in nonces -------------------------------------------------------
@@ -639,7 +677,7 @@ export async function takeLinkCode(code: string) {
 
 // ---- proposals (draft → approve → act) --------------------------------------
 
-export type ProposalKind = "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create";
+export type ProposalKind = "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create" | "activate_credit";
 export type ProposalStatus = "pending" | "approved" | "executing" | "rejected" | "executed" | "failed" | "uncertain";
 export type ProposalRow = {
   id: string;

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-15 · Build Week day 14 · Orbio moved to the CREDIT protocol; Moonlet moved with it
+
+Orbio replaced passive credits and the MCP approve flow with $CREDIT on Robinhood Chain: stake ORBIO to earn CREDIT, `activate` burns it into an AI balance, and the gateway key is the wallet's signature of a fixed message. Every moonlet in production had been failing since 14:06 UTC.
+
+- The key is the wallet's signature of `Orbio API key · chain 4663 · epoch N`, accepted only if it recovers to the signed-in wallet, sealed at rest. No account, no OAuth, nothing minted. The OAuth and MCP code is gone.
+- The AI balance is a ledger: verified `Activated` events for the wallet (once per activation id) minus every run's cost; labelled an estimate; zeroed when the gateway refuses for balance.
+- Activation is a transaction the owner's wallet signs. A moonlet that runs dry puts one **Activate N CREDIT** card in the queue and Telegram, sized to a week of its runs; the receipt is read back from the chain and checked against the approved amount (less is a *mismatch*). Connections gains Activate buttons, the wallet's CREDIT and staked ORBIO.
+- The 1,000 ORBIO holder floor is gone; the bag is staked plus held ORBIO and the earn estimate comes from the staked part.
+- `tests/credit.test.ts`: six cases against a fake chain. Acceptance case 12 now reads "with no activated AI balance a run costs nothing".
+
 ## 2026-09-10 · Build Week day 9
 
 - Verified receipts: after an approved action executes, the result is read back from GitHub or Gmail by id and compared field by field with the approved payload (PR file contents, email body, no unexpected Cc, every message of a tidy up to the bulk limit). Stamped *verified*, *sample checked*, *mismatch* or *not checked* on the moonlet page, the public page (redacted for strangers) and in Telegram. A mismatch reads "happened, but not as approved", never Done.

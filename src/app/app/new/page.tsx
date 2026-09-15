@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, fmtBag, fmtUsd, type Connections, type OrbioStatus } from "@/lib/api";
-import { plan, HOLDER_FLOOR } from "@/moonlet/budget";
+import { plan } from "@/moonlet/budget";
 import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, recommendedCapUsd, TOOL_REQUIRES, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
 import { FuelGauge } from "@/components/fuel-gauge";
 import { DitherField } from "@/components/dither-field";
@@ -315,11 +315,11 @@ function NewInner() {
             </div>
             {p.quiet && (
               <p className="mt-4 rounded-md border border-gold/60 bg-gold/10 px-3 py-2 text-[12.5px] leading-[1.5] text-ink">
-                {p.reason}. It will launch quiet and wake up on its own when the bag clears {HOLDER_FLOOR.toLocaleString()} $ORBIO and can afford a run.
+                {p.reason}. It will launch quiet and wake up on its own once the AI balance can afford a run.
               </p>
             )}
             {status && !status.approved && (
-              <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">Orbio isn&apos;t approved for this wallet yet. Go back to sign-in and approve, or the first run will fail.</p>
+              <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">This wallet hasn&apos;t signed for its Orbio key yet. Sign once under Connections, or the first run will wait.</p>
             )}
             <div className="mt-5 rounded-lg border border-ink/10 p-4">
               <p className="text-[12px] font-medium text-ink-soft">{spec.name} · {TEMPLATE_LABEL[spec.template]} · {CADENCE_LABEL[spec.cadence]}</p>

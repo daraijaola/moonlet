@@ -20,7 +20,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const runIds = Array.from(new Set(rows.map((p) => p.runId).filter((x): x is string => !!x)));
   const privateRuns = new Set((await Promise.all(runIds.map((r) => store.getRun(r)))).filter((r) => r?.private).map((r) => r!.id));
   const specPrivate = isPrivateSpec(m.spec);
-  const GENERIC: Record<store.ProposalKind, string> = { tweet: "Posted on X", pull_request: "Opened a pull request", issue_comment: "Commented on an issue", issue_create: "Opened an issue", spawn_moonlet: "Spawned a moonlet", email_send: "Sent an email", email_forward: "Forwarded an email", email_organize: "Tidied the owner's inbox" };
+  const GENERIC: Record<store.ProposalKind, string> = { tweet: "Posted on X", pull_request: "Opened a pull request", issue_comment: "Commented on an issue", issue_create: "Opened an issue", spawn_moonlet: "Spawned a moonlet", email_send: "Sent an email", email_forward: "Forwarded an email", email_organize: "Tidied the owner's inbox", activate_credit: "Activated CREDIT" };
   return NextResponse.json({
     actions: rows.map((p) => {
       const priv = !mine && (specPrivate || p.kind.startsWith("email_") || (p.runId ? privateRuns.has(p.runId) : false));

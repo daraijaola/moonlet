@@ -5,7 +5,9 @@ import * as gh from "./connections/github";
 import * as x from "./connections/x";
 import * as gmail from "./connections/gmail";
 import { describeSpec, launchMoonlet } from "./launch";
-import type { JobSpec } from "./spec";
+import { CADENCE_WORDS, activationAmount } from "./budget";
+import { readActivations } from "./orbio";
+import type { Cadence, JobSpec } from "./spec";
 
 /**
  * Draft → approve → act.
@@ -135,6 +137,10 @@ export function describe(kind: store.ProposalKind, payload: Record<string, unkno
     const f = payload as { messageId: string; to: string; note: string; subject: string; from?: string; attachments?: string[] };
     return { title: `Forward "${f.subject}" to ${f.to}`, body: `To: ${f.to}${f.from ? `\nOriginal from: ${f.from}` : ""}${f.attachments?.length ? `\nAttachments: ${f.attachments.join(", ")}` : ""}\n\n${f.note}` };
   }
+  if (kind === "activate_credit") {
+    const a = payload as { amountUsd: number; reason: string };
+    return { title: `Activate ${a.amountUsd.toFixed(2)} CREDIT`, body: `${a.reason}\n\nYour wallet burns ${a.amountUsd.toFixed(2)} CREDIT into $${a.amountUsd.toFixed(2)} of AI balance on Orbio. Moonlet never touches your tokens; you sign the transaction, and the receipt is read back from the chain.` };
+  }
   const c = payload as { repo: string; number: number; body: string };
   return { title: `Comment on ${c.repo}#${c.number}`, body: c.body };
 }
@@ -177,6 +183,66 @@ export async function propose(input: ProposalInput, ctx: ProposeCtx) {
 }
 
 /**
+ * A moonlet went quiet for lack of AI balance: one card asking the owner to activate about a week of CREDIT. Only one
+ * such card per wallet is open at a time, so seven quiet moonlets do not produce seven cards.
+ */
+export async function proposeActivation(ctx: { owner: string; moonletId: string; moonletName: string; runId: string | null; perRunCapUsd: number; cadence: Cadence; fetch?: typeof fetch }) {
+  const open = (await store.listProposals(ctx.owner, "pending")).concat(await store.listProposals(ctx.owner, "approved")).some((p) => p.kind === "activate_credit");
+  if (open) return null;
+  const amountUsd = activationAmount(ctx.perRunCapUsd, ctx.cadence);
+  const payload = { amountUsd, reason: `${ctx.moonletName} runs ${CADENCE_WORDS[ctx.cadence]} at up to $${ctx.perRunCapUsd.toFixed(3)} a run and the AI balance can't pay for the next one. ${amountUsd.toFixed(2)} CREDIT covers about a week.`, cadence: ctx.cadence };
+  const id = store.newId("p");
+  await store.insertProposal({ id, owner: ctx.owner, moonletId: ctx.moonletId, runId: ctx.runId, kind: "activate_credit", payload });
+  const conn = await store.getConnection<tg.TelegramConn>(ctx.owner, "telegram");
+  if (conn && tg.telegramConfigured()) {
+    const d = describe("activate_credit", payload);
+    try {
+      const m = await tg.sendMessage(conn.data.chatId, `<b>${tg.esc(ctx.moonletName)}</b> is quiet: <b>${tg.esc(d.title)}</b>\n\n${tg.esc(d.body)}\n\nSign it from your wallet at ${tg.esc(appUrl())}/app?approve=${id}`, { buttons: [[{ text: "✗ Not now", data: `reject:${id}` }]], fetch: ctx.fetch });
+      await store.setProposalTelegram(id, { chatId: conn.data.chatId, messageId: Number(m.id) });
+    } catch {
+      // dashboard still shows it
+    }
+  }
+  return id;
+}
+
+const appUrl = () => process.env.APP_URL ?? "https://moonlet.16labs.xyz";
+
+/**
+ * The owner's wallet activated CREDIT: read the receipt from the chain, credit the ledger once per (tx, activationId), and
+ * settle the card it answers with a verification built from the chain's own record. Anyone can post a hash; only
+ * activations whose beneficiary is this owner count, so a stranger's transaction funds nothing here.
+ */
+export async function settleActivation(owner: string, txHash: string, proposalId: string | null, fetchImpl: typeof fetch = fetch) {
+  const receipts = (await readActivations(txHash, fetchImpl)).filter((r) => r.beneficiary === owner.toLowerCase());
+  if (!receipts.length) return { ok: false as const, error: "no CREDIT activation for this wallet in that transaction (it may still be pending)" };
+  let credited = 0;
+  for (const r of receipts) if (await store.addActivation({ ...r, owner, proposalId })) credited += r.amountUsd;
+  const total = receipts.reduce((a, r) => a + r.amountUsd, 0);
+  if (proposalId) {
+    const p = await store.getProposal(proposalId);
+    if (p && p.kind === "activate_credit" && p.owner === owner.toLowerCase() && (p.status === "approved" || p.status === "pending")) {
+      if (p.status === "pending") await store.decideProposal(proposalId, "approved");
+      if (await store.leaseProposal(proposalId)) {
+        const asked = Number(p.payload.amountUsd ?? 0);
+        await store.finishProposal(proposalId, "executed", { txHash, amountUsd: total, activationIds: receipts.map((r) => r.activationId) });
+        await store.setProposalVerification(proposalId, {
+          status: total + 1e-6 >= asked ? "verified" : "mismatch",
+          scope: "complete",
+          url: `https://robinhoodchain.blockscout.com/tx/${txHash}`,
+          checks: [
+            { field: "beneficiary", expected: owner.toLowerCase(), actual: receipts[0].beneficiary, ok: true },
+            { field: "amount", expected: `≥ ${asked.toFixed(2)} CREDIT`, actual: `${total.toFixed(2)} CREDIT`, ok: total + 1e-6 >= asked },
+          ],
+          at: Date.now(),
+        });
+      }
+    }
+  }
+  return { ok: true as const, credited, total, activations: receipts.length };
+}
+
+/**
  * Owner decided. Executes on approve. Safe to call twice (second call is a no-op).
  * Approval is for this one action only; autopilot is a separate, explicit switch on
  * the moonlet page. Spawns always ask.
@@ -187,6 +253,8 @@ export async function decide(id: string, action: "approve" | "reject", fetchImpl
   const moved = await store.decideProposal(id, action === "approve" ? "approved" : "rejected");
   if (!moved) return { ok: false as const, error: `already ${p.status}` };
   if (action === "reject") return { ok: true as const, status: "rejected" as const, autopilotOn: false };
+  // An activation is executed by the owner's wallet, not by Moonlet: approving here only means "show me the transaction".
+  if (p.kind === "activate_credit") return { ok: true as const, status: "approved" as const, result: { amountUsd: Number(p.payload.amountUsd ?? 0), note: "sign the activation in your wallet" }, autopilotOn: false };
   const r = await execute(id, fetchImpl);
   return { ok: true as const, status: r.status, result: r.result, autopilotOn: false };
 }
@@ -201,7 +269,9 @@ async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ s
   if (!(await store.leaseProposal(id))) return { status: "failed", result: { error: `already ${p.status}` } };
   try {
     let result: Record<string, unknown>;
-    if (p.kind === "tweet") {
+    if (p.kind === "activate_credit") {
+      throw new Error("activations are signed by the owner's wallet, not executed by Moonlet");
+    } else if (p.kind === "tweet") {
       result = await x.postTweet(p.owner, String(p.payload.text ?? ""), fetchImpl);
     } else if (p.kind === "spawn_moonlet") {
       const r = await launchMoonlet(p.owner, p.payload.spec as JobSpec, { parentId: p.moonletId, fetch: fetchImpl });
@@ -260,7 +330,8 @@ export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   if (!(await tg.chatOwns(ctx.chatId, p.owner))) return "This chat isn't linked to the wallet that owns this draft.";
   const r = await decide(id, action);
   if (!r.ok) return `<b>${tg.esc(d.title)}</b>\n\n${tg.esc(r.error)}.`;
-  if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : p.kind === "email_send" || p.kind === "email_forward" ? "was sent" : p.kind === "email_organize" ? "changed in your inbox" : "was posted"}.`;
+  if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : p.kind === "email_send" || p.kind === "email_forward" ? "was sent" : p.kind === "email_organize" ? "changed in your inbox" : p.kind === "activate_credit" ? "was activated; the moonlet stays quiet" : "was posted"}.`;
+  if (r.status === "approved") return `<b>${tg.esc(d.title)}</b>\n\nSign it from your wallet: ${tg.esc(appUrl())}/app?approve=${id}`;
   if (r.status === "executed") {
     const { url, name, familyNote, verification } = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string; verification?: { status: string; scope?: string; checks: Array<{ ok: boolean; field: string }> } };
     const scopeNote = verification?.scope === "sample" ? " (sample)" : "";

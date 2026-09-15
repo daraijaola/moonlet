@@ -1,177 +1,163 @@
+import { recoverMessageAddress } from "viem";
+import * as store from "./store";
+import { RH_RPC } from "./tools";
+
 /**
- * Orbio MCP client. Five tools:
- *   orbio_get_balance · orbio_get_key_status · orbio_create_key · orbio_revoke_key · orbio_delete_key (legacy)
+ * Orbio's CREDIT protocol (September 2026). Inference is a token on Robinhood
+ * Chain: stake ORBIO to earn CREDIT, `activate` burns CREDIT into a
+ * non-transferable AI balance, and the API key is the wallet's signature of a
+ * fixed message. There is no account to approve and no key to mint:
  *
- * The MCP speaks JSON-RPC over HTTP with a Bearer token obtained through
- * Orbio's OAuth (PKCE, dynamic client registration). Tool result shapes are
- * normalised here so the runner never sees Orbio's raw payloads.
+ *   key      = sk-orb-<epoch>-base64(signMessage("Orbio API key · chain 4663 · epoch <epoch>"))
+ *   balance  = what the owner activated (Activated events we verified) minus what runs spent
+ *   funding  = the owner's wallet calls CREDIT.activate(); Moonlet never holds a private key
  *
- * Verified against the live endpoint: unauthenticated calls return 401 with
- * resource_metadata pointing at /.well-known/oauth-protected-resource/api/mcp.
+ * The gateway publishes no balance endpoint, so the AI balance here is a
+ * ledger Moonlet keeps and labels an estimate; a gateway "insufficient_quota"
+ * zeroes it and the moonlet goes quiet until the owner activates more.
  */
 
 export const ORBIO = {
   origin: "https://www.orbio.so",
-  mcp: "https://www.orbio.so/api/mcp",
-  authorize: "https://www.orbio.so/mcp/authorize",
-  token: "https://www.orbio.so/api/mcp/oauth/token",
-  register: "https://www.orbio.so/api/mcp/oauth/register",
-  revoke: "https://www.orbio.so/api/mcp/oauth/revoke",
-  scope: "orbio:credits",
+  gateway: "https://www.orbio.so/api/v1",
+  chainId: 4663,
+  credit: "0xe33322da1380e61e5ae5dfb21e7f62924c73004c",
+  staking: "0xe0710011278bfb63e57c5f227e5980984b1eddca",
+  exchange: "0x6951ffd32630b05e06f50062aea801625a58ebc0",
+  orbio: "0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3",
+  /** keccak256("Activated(uint256,address,bytes32,uint256)") */
+  activatedTopic: "0x3a293632e41f6556f85d186d28ae95749534c2c9422cec0e1075886560ca7147",
 } as const;
 
-export type OrbioBalance = { availableUsd: number; accruedUsd?: number; raw: unknown };
-export type OrbioKey = { key: string; prefix?: string; baseUrl?: string; raw: unknown };
-export type LegacyKey = { limitUsd: number; spentUsd: number; remainingUsd: number; active: boolean };
-export type OrbioKeyStatus = { hasKey: boolean; prefix: string | null; createdAt?: string | null; lastUsedAt?: string | null; legacy: LegacyKey | null; raw: unknown };
+export const keyMessage = (epoch: number) => `Orbio API key · chain ${ORBIO.chainId} · epoch ${epoch}`;
 
-/**
- * Orbio's account-key model (Sept 2026): one key per account that spends the
- * live balance through Orbio's gateway. Legacy capped OpenRouter keys can be
- * folded back into the balance with deleteLegacyKey.
- */
+/** The gateway credential, derived from the wallet's signature exactly as Orbio's guide does. */
+export function apiKeyFromSignature(signature: `0x${string}`, epoch: number) {
+  return `sk-orb-${epoch}-${Buffer.from(signature.slice(2), "hex").toString("base64")}`;
+}
+
+/** True only if `signature` is the owner's signature of this epoch's key message. */
+export async function signatureBelongsTo(owner: string, signature: `0x${string}`, epoch: number) {
+  try {
+    const addr = await recoverMessageAddress({ message: keyMessage(epoch), signature });
+    return addr.toLowerCase() === owner.toLowerCase();
+  } catch {
+    return false;
+  }
+}
+
+export type OrbioBalance = { availableUsd: number; creditTokens?: number; raw: unknown };
+export type OrbioKey = { key: string; raw: unknown };
+export type OrbioKeyStatus = { hasKey: boolean; prefix: string | null; epoch: number; raw: unknown };
+
 export type OrbioClient = {
-  listTools?(): Promise<Array<{ name: string; inputSchema?: unknown }>>;
+  /** The AI balance Moonlet can account for, in dollars. */
   getBalance(): Promise<OrbioBalance>;
   getKeyStatus(): Promise<OrbioKeyStatus>;
+  /** The owner's signature key. Throws OrbioAuthError when the owner has not signed. */
   createKey(label?: string): Promise<OrbioKey>;
+  /** Forget the key; the owner signs again (with a higher epoch to rotate on Orbio's side). */
   revokeKey(): Promise<void>;
-  deleteLegacyKey(): Promise<{ returnedUsd: number }>;
+  /** The gateway refused for lack of balance: the ledger is wrong on the high side, so zero it. */
+  exhausted(): Promise<void>;
 };
 
-type Rpc = { jsonrpc: "2.0"; id: number; result?: { content?: Array<{ type: string; text?: string }>; structuredContent?: unknown; isError?: boolean }; error?: { code: number; message: string } };
-
 export class OrbioAuthError extends Error {
-  constructor(msg = "Orbio token rejected") {
+  constructor(msg = "Orbio key missing; owner must sign for it") {
     super(msg);
     this.name = "OrbioAuthError";
   }
 }
 
-let rpcId = 1;
+// ---- chain reads -----------------------------------------------------------
 
-type ToolDef = { name: string; inputSchema?: { properties?: Record<string, unknown>; required?: string[] } };
-const schemaCache = new Map<string, Promise<Map<string, ToolDef>>>();
+const pad = (hex: string) => hex.replace(/^0x/, "").padStart(64, "0");
 
-/** tools/list once per token; tells us the real argument names Orbio expects. */
-async function toolDefs(accessToken: string, fetchImpl: typeof fetch): Promise<Map<string, ToolDef>> {
-  const k = accessToken.slice(-16);
-  if (!schemaCache.has(k)) {
-    schemaCache.set(
-      k,
-      (async () => {
-        const res = await fetchImpl(ORBIO.mcp, {
-          method: "POST",
-          headers: { "content-type": "application/json", accept: "application/json, text/event-stream", authorization: `Bearer ${accessToken}` },
-          body: JSON.stringify({ jsonrpc: "2.0", id: rpcId++, method: "tools/list", params: {} }),
-        });
-        if (res.status === 401) throw new OrbioAuthError();
-        const text = await res.text();
-        const data = text.includes("data:") ? text.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).pop() ?? "{}" : text;
-        const msg = JSON.parse(data) as { result?: { tools?: ToolDef[] } };
-        return new Map((msg.result?.tools ?? []).map((t) => [t.name, t]));
-      })().catch((e) => {
-        schemaCache.delete(k);
-        throw e;
-      }),
-    );
-  }
-  return schemaCache.get(k)!;
-}
-
-
-async function callTool(accessToken: string, name: string, args: Record<string, unknown> = {}, fetchImpl: typeof fetch = fetch) {
-  const res = await fetchImpl(ORBIO.mcp, {
+async function ethCall(to: string, data: string, fetchImpl: typeof fetch): Promise<bigint> {
+  const r = await fetchImpl(RH_RPC, {
     method: "POST",
-    headers: {
-      "content-type": "application/json",
-      accept: "application/json, text/event-stream",
-      authorization: `Bearer ${accessToken}`,
-    },
-    body: JSON.stringify({ jsonrpc: "2.0", id: rpcId++, method: "tools/call", params: { name, arguments: args } }),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to, data }, "latest"] }),
+    signal: AbortSignal.timeout(8000),
   });
-  if (res.status === 401) throw new OrbioAuthError();
-  if (!res.ok) throw new Error(`Orbio MCP ${name}: HTTP ${res.status}`);
-  const ct = res.headers.get("content-type") ?? "";
-  let msg: Rpc;
-  if (ct.includes("text/event-stream")) {
-    const text = await res.text();
-    const data = text.split("\n").filter((l) => l.startsWith("data:")).map((l) => l.slice(5).trim()).pop();
-    if (!data) throw new Error(`Orbio MCP ${name}: empty stream`);
-    msg = JSON.parse(data);
-  } else {
-    msg = (await res.json()) as Rpc;
-  }
-  if (msg.error) throw new Error(`Orbio MCP ${name}: ${msg.error.message}`);
-  if (msg.result?.isError) throw new Error(`Orbio MCP ${name}: ${msg.result.content?.[0]?.text ?? "tool error"}`);
-  const structured = msg.result?.structuredContent;
-  if (structured !== undefined) return structured;
-  const text = msg.result?.content?.find((c) => c.type === "text")?.text ?? "{}";
+  const j = (await r.json()) as { result?: string; error?: { message: string } };
+  if (j.error) throw new Error(`rpc: ${j.error.message}`);
+  return j.result && j.result !== "0x" ? BigInt(j.result) : 0n;
+}
+
+/** Unactivated CREDIT in the wallet, in dollars (6 decimals). */
+export async function creditTokensOf(owner: string, fetchImpl: typeof fetch = fetch) {
+  return Number(await ethCall(ORBIO.credit, `0x70a08231${pad(owner)}`, fetchImpl)) / 1e6;
+}
+
+/** ORBIO staked by the owner, if the staking contract exposes balanceOf; 0 when it does not. */
+export async function stakedOrbioOf(owner: string, fetchImpl: typeof fetch = fetch) {
   try {
-    return JSON.parse(text);
+    return Number(await ethCall(ORBIO.staking, `0x70a08231${pad(owner)}`, fetchImpl)) / 1e18;
   } catch {
-    return { text };
+    return 0;
   }
 }
 
-const num = (o: unknown, ...keys: string[]) => {
-  for (const k of keys) {
-    const v = (o as Record<string, unknown>)?.[k];
-    if (typeof v === "number") return v;
-    if (typeof v === "string" && v.trim() !== "" && !Number.isNaN(Number(v))) return Number(v);
-  }
-  return 0;
-};
-const str = (o: unknown, ...keys: string[]) => {
-  for (const k of keys) {
-    const v = (o as Record<string, unknown>)?.[k];
-    if (typeof v === "string" && v) return v;
-  }
-  return "";
-};
+export type ActivationReceipt = { txHash: string; activationId: string; from: string; beneficiary: string; amountUsd: number; blockNumber: number };
 
-export function makeOrbioClient(accessToken: string, fetchImpl: typeof fetch = fetch): OrbioClient {
-  const call = (name: string, args?: Record<string, unknown>) => callTool(accessToken, name, args, fetchImpl);
+/**
+ * Read a transaction's receipt and return the CREDIT `Activated` events in it.
+ * The caller checks the beneficiary; this only proves the burn happened on chain.
+ */
+export async function readActivations(txHash: string, fetchImpl: typeof fetch = fetch): Promise<ActivationReceipt[]> {
+  const r = await fetchImpl(RH_RPC, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getTransactionReceipt", params: [txHash] }),
+    signal: AbortSignal.timeout(8000),
+  });
+  const j = (await r.json()) as { result?: { status: string; blockNumber: string; logs: Array<{ address: string; topics: string[]; data: string }> } | null };
+  const rc = j.result;
+  if (!rc) return [];
+  if (rc.status !== "0x1") throw new Error("transaction reverted");
+  const out: ActivationReceipt[] = [];
+  for (const log of rc.logs) {
+    if (log.address.toLowerCase() !== ORBIO.credit || log.topics[0]?.toLowerCase() !== ORBIO.activatedTopic) continue;
+    // Activated(uint256 indexed activationId, address indexed from, bytes32 indexed beneficiary, uint256 amount)
+    const [, activationId, from, beneficiary] = log.topics;
+    const amount = log.data.slice(0, 66);
+    if (!activationId || !from || !beneficiary || amount.length !== 66) continue;
+    out.push({
+      txHash,
+      activationId: BigInt(activationId).toString(),
+      from: `0x${from.slice(-40)}`.toLowerCase(),
+      beneficiary: `0x${beneficiary.slice(-40)}`.toLowerCase(),
+      amountUsd: Number(BigInt(amount)) / 1e6,
+      blockNumber: Number(BigInt(rc.blockNumber)),
+    });
+  }
+  return out;
+}
+
+// ---- the client ------------------------------------------------------------
+
+/** Client for one owner, backed by the owners table: the sealed signature key and the activated-balance ledger. */
+export function makeCreditClient(owner: string, fetchImpl: typeof fetch = fetch): OrbioClient {
   return {
-    async listTools() {
-      return [...(await toolDefs(accessToken, fetchImpl)).values()];
-    },
     async getBalance() {
-      const raw = (await call("orbio_get_balance")) as Record<string, unknown>;
-      const balance = (raw?.balance as Record<string, unknown>) ?? {};
-      return { availableUsd: num(balance, "usd") || num(raw, "available_usd", "availableUsd", "balance_usd", "spendable", "available"), accruedUsd: num((raw?.accrued as Record<string, unknown>) ?? {}, "usd") || undefined, raw };
+      const [o, creditTokens] = await Promise.all([store.getOwner(owner), creditTokensOf(owner, fetchImpl).catch(() => undefined)]);
+      return { availableUsd: Math.max(0, o?.orbioBalanceUsd ?? 0), creditTokens, raw: { ledger: true } };
     },
     async getKeyStatus() {
-      const raw = (await call("orbio_get_key_status")) as Record<string, unknown>;
-      const lg = raw?.legacy as Record<string, unknown> | undefined;
-      const legacy: LegacyKey | null = lg
-        ? { limitUsd: num(lg, "limitUsd", "limit_usd"), spentUsd: num(lg, "usageUsd", "usage_usd", "spentUsd"), remainingUsd: num(lg, "remainingUsd", "remaining_usd") || Math.max(0, num(lg, "limitUsd", "limit_usd") - num(lg, "usageUsd", "usage_usd")), active: lg.disabled === undefined ? true : !lg.disabled }
-        : null;
-      return { hasKey: !!raw?.hasKey, prefix: (raw?.prefix as string | null) ?? null, createdAt: (raw?.createdAt as string | null) ?? null, lastUsedAt: (raw?.lastUsedAt as string | null) ?? null, legacy, raw };
+      const o = await store.getOwner(owner);
+      return { hasKey: !!o?.orbioKey, prefix: o?.orbioKey ? o.orbioKey.slice(0, 12) : null, epoch: o?.orbioEpoch ?? 0, raw: {} };
     },
-    async createKey(label = "moonlet") {
-      const raw = await call("orbio_create_key", { label });
-      const key = str(raw, "key", "secret", "apiKey", "api_key");
-      if (!key) throw new Error("Orbio MCP orbio_create_key: no key in response");
-      return { key, prefix: str(raw, "prefix") || undefined, baseUrl: str(raw, "baseUrl", "base_url") || undefined, raw };
+    async createKey() {
+      const o = await store.getOwner(owner);
+      if (!o?.orbioKey) throw new OrbioAuthError();
+      return { key: o.orbioKey, raw: { epoch: o.orbioEpoch } };
     },
     async revokeKey() {
-      await call("orbio_revoke_key");
+      await store.clearOwnerOrbio(owner);
     },
-    async deleteLegacyKey() {
-      const raw = await call("orbio_delete_key");
-      return { returnedUsd: num(raw, "returnedUsd", "returned_usd", "refundedUsd", "refunded_usd", "returned") };
+    async exhausted() {
+      await store.setOwnerBalance(owner, 0);
     },
   };
-}
-
-/** Refresh an OAuth access token. Orbio's token endpoint supports refresh_token with a public client. */
-export async function refreshOrbioToken(clientId: string, refreshToken: string, fetchImpl: typeof fetch = fetch) {
-  const res = await fetchImpl(ORBIO.token, {
-    method: "POST",
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ grant_type: "refresh_token", refresh_token: refreshToken, client_id: clientId }),
-  });
-  if (!res.ok) throw new OrbioAuthError(`refresh failed: ${res.status}`);
-  return (await res.json()) as { access_token: string; refresh_token?: string; expires_in?: number };
 }

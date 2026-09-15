@@ -93,14 +93,19 @@ describe("scheduler", () => {
     expect((await store.getMoonlet(m.id))?.status).toBe("idle");
   });
 
-  it("10. Orbio disconnected → failed run with a clear message, moonlet parked quiet", async () => {
+  it("10. no signed Orbio key → parked quiet with a clear reason, written once", async () => {
     const m = (await store.listMoonlets(owners[1]))[0];
     await store.updateMoonlet(m.id, { nextRunAt: Date.now() - 1 });
     await store.claimForRun(m.id);
     const r = await runOne(m.id, { orbioFor: async () => null, bagOf: async () => 1_250_000, anchor: null });
-    expect(r.status).toBe("failed");
-    expect((await store.listRuns(m.id))[0].error).toMatch(/Orbio not connected/);
+    expect(r.status).toBe("quiet");
+    expect((await store.listRuns(m.id))[0].error).toMatch(/Orbio key not signed/);
     expect((await store.getMoonlet(m.id))?.status).toBe("quiet");
+    const before = (await store.listRuns(m.id)).length;
+    await store.updateMoonlet(m.id, { nextRunAt: Date.now() - 1 });
+    await store.claimForRun(m.id);
+    await runOne(m.id, { orbioFor: async () => null, bagOf: async () => 1_250_000, anchor: null });
+    expect((await store.listRuns(m.id)).length).toBe(before);
   });
 
   it("14. deleted while running → stays deleted, no key, no delivery, drafts withdrawn", async () => {
@@ -125,15 +130,13 @@ describe("scheduler", () => {
     expect((await store.listRuns(m.id)).length).toBeGreaterThan(0);
   });
 
-  it("12. a second moonlet on a wallet borrows the wallet's account key instead of minting another", async () => {
+  it("12. a second moonlet on a wallet uses the wallet's signed key", async () => {
     const owner = "0x0000000000000000000000000000000000000c0d";
     const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 6 });
     const now = Date.now();
     const p = plan(spec, 1_250_000);
     const mk = (id: string, key: typeof spec extends never ? never : { key: string; limitUsd: number; spentUsd: number } | null) =>
       store.insertMoonlet({ id, owner, name: id, spec, status: "idle", delivery: {}, key, cadence: p.cadence, perRunCapUsd: p.perRunCapUsd, earnPerDayUsd: p.earnPerDayUsd, burnPerDayUsd: p.burnPerDayUsd, nextRunAt: now - 1000, createdAt: now });
-    // First moonlet already holds the wallet's account key.
-    await orbio.client.createKey();
     await mk("m_first", { key: KEY, limitUsd: 6, spentUsd: 0.2 });
     await mk("m_second", null);
     const deps = { orbioFor: async () => orbio.client, bagOf: async () => 1_250_000, anchor: null };
@@ -143,11 +146,10 @@ describe("scheduler", () => {
     console.log("second moonlet:", r.status, second?.key && "has key", orbio.state.calls);
     expect(r.status).toBe("done");
     expect(second?.key?.key).toBe(KEY);
-    // it borrowed, so no second mint happened and the first moonlet's key still works
-    expect(orbio.state.mints).toBe(1);
+    expect((await store.getMoonlet("m_first"))?.key?.key).toBe(KEY);
   }, 120_000);
 
-  it("13. two moonlets of one wallet due at the same time mint exactly one key between them", async () => {
+  it("13. two moonlets of one wallet due at the same time both run on the one signed key", async () => {
     const owner = "0x0000000000000000000000000000000000000c0e";
     const orbio = fakeOrbio({ realKey: KEY, balanceUsd: 6 });
     const now = Date.now();
@@ -158,10 +160,9 @@ describe("scheduler", () => {
     }
     const deps = { orbioFor: async () => orbio.client, bagOf: async () => 1_250_000, anchor: null };
     const [a, b] = await Promise.all([runOne("m_race1", deps), runOne("m_race2", deps)]);
-    console.log("race:", a.status, b.status, orbio.state.calls.filter((c) => c === "create").length, "mints");
+    console.log("race:", a.status, b.status);
     expect(a.status).toBe("done");
     expect(b.status).toBe("done");
-    expect(orbio.state.mints).toBe(1);
     expect((await store.getMoonlet("m_race1"))?.key?.key).toBe(KEY);
     expect((await store.getMoonlet("m_race2"))?.key?.key).toBe(KEY);
   }, 180_000);

@@ -104,7 +104,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
             <div className="space-y-2.5">{runs.map((r) => <RunCard key={r.id} run={r} anchoring={anchoring} />)}</div>
           ) : (
             <p className="rounded-lg border border-dashed border-ink/20 p-6 text-center font-mono text-[13px] text-ink-soft">
-              {quiet ? "Gone quiet. Bag dropped below 1,000 $ORBIO." : "No runs yet."}
+              {quiet ? "Gone quiet. Waiting for its owner to activate CREDIT." : "No runs yet."}
             </p>
           )}
         </section>

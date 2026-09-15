@@ -11,7 +11,7 @@ import { compileJob } from "./compile";
 /**
  * One moonlet run, end to end:
  *   1. plan against the bag (quiet if it can't afford itself)
- *   2. make sure the key is funded (claim / top up / rotate through Orbio MCP)
+ *   2. make sure the activated balance can pay and take the wallet's signed key
  *   3. run the agent loop bounded by maxCost
  *   4. validate the structured output, hash it
  *   5. hand back a Run for storage, anchoring, delivery
@@ -96,7 +96,6 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
     return fail(e, "funding", { t0, model, p, keyEvents, trace, key, isPrivate });
   }
   if (!key) {
-    keyEvents.push({ kind: "quiet", detail: "no credits available to fund a key" });
     return { ok: true, status: "quiet", costUsd: 0, model, modelCalls: 0, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key, private: isPrivate };
   }
 
@@ -151,19 +150,11 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
     ({ text, cost, calls, model } = await attemptWithBackoff(key));
   } catch (e) {
     if (!isKeyExhausted(e)) return fail(e, "run", { t0, model, p, keyEvents, trace, key, cost: spentSoFar, calls: callsSoFar, isPrivate });
-    try {
-      const bal = await deps.orbio.getBalance();
-      if (bal.availableUsd < p.perRunCapUsd) {
-        keyEvents.push({ kind: "quiet", detail: "key rejected and the balance can't fund a run" });
-        return { ok: true, status: "quiet", costUsd: spentSoFar, model, modelCalls: callsSoFar, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key: null, private: isPrivate };
-      }
-      const minted = await deps.orbio.createKey("moonlet");
-      key = { key: minted.key, limitUsd: bal.availableUsd, spentUsd: 0 };
-      keyEvents.push({ kind: "rotated", detail: "key rejected mid-run; re-minted the Orbio key and retried", amountUsd: bal.availableUsd });
-      ({ text, cost, calls, model } = await attemptWithBackoff(key));
-    } catch (e2) {
-      return fail(e2, "run-after-rotate", { t0, model, p, keyEvents, trace, key, cost: spentSoFar, calls: callsSoFar, isPrivate });
-    }
+    // The gateway knows better than our ledger: it refused, so the activated balance is gone. Zero it and go quiet; the
+    // owner gets an activation card. A key the gateway does not recognise yet (activation still settling) lands here too.
+    await deps.orbio.exhausted().catch(() => undefined);
+    keyEvents.push({ kind: "quiet", detail: isUnknownKey(e) ? "Orbio doesn't recognise the signed key yet; it is accepted after the first activation settles" : "Orbio refused for lack of balance; activate more CREDIT to resume" });
+    return { ok: true, status: "quiet", costUsd: spentSoFar, model, modelCalls: callsSoFar, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key, private: isPrivate };
   }
 
   const parsed = safeParseOutput(text) ?? salvageOutput(text, m.spec.name);
@@ -191,46 +182,20 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
 }
 
 /**
- * Funding on Orbio's account-key model. One Orbio key per wallet draws on the
- * live balance; every moonlet of that wallet shares it. Legacy OpenRouter keys
- * (capped, sk-or-…) keep working until spent; when one runs dry we fold it back
- * into the balance and move to the account key.
+ * Funding under the CREDIT protocol. The key is the wallet's signature, shared by every moonlet of that wallet, and the
+ * balance is what the owner has activated minus what runs have spent. Nothing is minted here: either the ledger can pay
+ * for a run and we use the key, or the moonlet goes quiet and the scheduler asks the owner to activate more.
  */
 async function ensureFunded(key: KeyState, p: Plan, orbio: OrbioClient, events: KeyEvent[]): Promise<KeyState> {
   const floor = Math.max(p.perRunCapUsd, 0.02);
-  const status = await orbio.getKeyStatus();
-
-  // A legacy capped key we already hold: use it while it has room.
-  if (key && !key.key.startsWith("sk-orbio-")) {
-    const legacy = status.legacy;
-    if (legacy && legacy.active && legacy.remainingUsd >= floor) return { key: key.key, limitUsd: legacy.limitUsd, spentUsd: legacy.spentUsd };
-    if (legacy && !legacy.active) events.push({ kind: "rotated", detail: "legacy OpenRouter key was disabled; moving to the Orbio account key" });
-    if (legacy && legacy.active && legacy.remainingUsd > 0 && legacy.remainingUsd < floor) {
-      const back = await orbio.deleteLegacyKey().catch(() => null);
-      if (back) events.push({ kind: "topped_up", detail: `folded $${back.returnedUsd.toFixed(2)} left on the legacy key back into the balance`, amountUsd: back.returnedUsd });
-    }
-    key = null;
-  }
-
   const bal = await orbio.getBalance();
   if (bal.availableUsd < floor) {
-    // Nothing spendable, but a legacy key with money may still exist (the holder claimed it by hand).
-    const legacy = status.legacy;
-    if (legacy && legacy.active && legacy.remainingUsd >= floor && !key) {
-      const back = await orbio.deleteLegacyKey().catch(() => null);
-      if (back && back.returnedUsd >= floor) {
-        events.push({ kind: "topped_up", detail: `moved $${back.returnedUsd.toFixed(2)} from the wallet's legacy OpenRouter key into the Orbio balance`, amountUsd: back.returnedUsd });
-      } else return null;
-    } else return null;
+    events.push({ kind: "quiet", detail: bal.creditTokens && bal.creditTokens >= floor ? `AI balance can't fund a run; $${bal.creditTokens.toFixed(2)} of CREDIT is in the wallet, unactivated` : "AI balance can't fund a run; no credits to activate" });
+    return null;
   }
-
-  // Account key: reuse ours if Orbio still knows it; otherwise mint one (this retires any other).
-  if (key && key.key.startsWith("sk-orbio-") && status.hasKey && (!status.prefix || key.key.startsWith(status.prefix.replace(/…$/, "")))) {
-    return { key: key.key, limitUsd: bal.availableUsd, spentUsd: 0 };
-  }
-  const minted = await orbio.createKey("moonlet");
-  events.push({ kind: "claimed", detail: status.hasKey ? "re-minted the Orbio account key (previous one retired)" : "minted the Orbio account key; it spends the live balance", amountUsd: bal.availableUsd });
-  return { key: minted.key, limitUsd: bal.availableUsd, spentUsd: 0 };
+  const signed = await orbio.createKey();
+  if (!key || key.key !== signed.key) events.push({ kind: "claimed", detail: key ? "using the wallet's re-signed Orbio key" : "using the wallet's signed Orbio key; it spends the activated balance", amountUsd: bal.availableUsd });
+  return { key: signed.key, limitUsd: bal.availableUsd, spentUsd: key?.key === signed.key ? key.spentUsd : 0 };
 }
 
 function httpStatus(e: unknown) {
@@ -250,12 +215,16 @@ function isRateLimited(e: unknown) {
   return httpStatus(e) === 429 || /rate limit|too many requests|429/.test(msg);
 }
 
+function isUnknownKey(e: unknown) {
+  return /invalid_api_key|unknown or has been revoked|invalid api key/i.test(String((e as Error)?.message ?? e));
+}
+
 /** Key is dead or empty: 401/402/403 or an explicit credit message. Never a rate limit. */
 function isKeyExhausted(e: unknown) {
   if (isRateLimited(e)) return false;
   const msg = String((e as Error)?.message ?? e).toLowerCase();
   const status = httpStatus(e);
-  return status === 401 || status === 402 || status === 403 || /insufficient credits|credit limit|key limit|quota exceeded|unauthorized|invalid api key|user not found|\b40[123]\b/.test(msg);
+  return status === 401 || status === 402 || status === 403 || /insufficient credits|credit limit|key limit|quota exceeded|insufficient_quota|no available balance|unauthorized|invalid api key|invalid_api_key|user not found|\b40[123]\b/.test(msg);
 }
 
 function safeParseOutput(text: string): RunOutput | null {
@@ -329,7 +298,7 @@ function fail(
   stage: string,
   ctx: { t0: number; model: string; p: Plan; keyEvents: KeyEvent[]; trace: TraceEvent[]; key: KeyState; cost?: number; calls?: number; isPrivate: boolean },
 ): RunResult {
-  const msg = e instanceof OrbioAuthError ? "Orbio authorization expired; owner must re-approve" : `${stage}: ${(e as Error)?.message ?? String(e)}`;
+  const msg = e instanceof OrbioAuthError ? "Orbio key not signed; owner must sign once under Connections" : `${stage}: ${(e as Error)?.message ?? String(e)}`;
   return {
     ok: false,
     status: "failed",

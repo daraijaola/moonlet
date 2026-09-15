@@ -86,7 +86,12 @@ function Queue({ owner }: { owner: string }) {
   const [items, setItems] = useState<Proposal[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const load = useCallback(async () => setItems((await api.proposals(owner, "pending")).proposals), [owner]);
+  const { activateCredit } = useAuth();
+  // Activation cards stay in the queue after "approve" until the wallet transaction lands, so both states show here.
+  const load = useCallback(async () => {
+    const [pending, approved] = await Promise.all([api.proposals(owner, "pending"), api.proposals(owner, "approved")]);
+    setItems([...pending.proposals, ...approved.proposals.filter((p) => p.kind === "activate_credit")]);
+  }, [owner]);
   useEffect(() => {
     const first = setTimeout(load, 0);
     const t = setInterval(load, 10_000);
@@ -96,7 +101,7 @@ function Queue({ owner }: { owner: string }) {
     };
   }, [load]);
   if (!items.length) return note ? <p className="mb-6 rounded-lg border border-moss/30 bg-moss/5 px-4 py-3 text-[12.5px] text-moss">{note}</p> : null;
-  const KIND = { tweet: "Post on X", pull_request: "Pull request", issue_comment: "Comment", spawn_moonlet: "New moonlet", email_send: "Email", email_organize: "Inbox tidy", email_forward: "Forward", issue_create: "New issue" } as const;
+  const KIND = { tweet: "Post on X", pull_request: "Pull request", issue_comment: "Comment", spawn_moonlet: "New moonlet", email_send: "Email", email_organize: "Inbox tidy", email_forward: "Forward", issue_create: "New issue", activate_credit: "Activate CREDIT" } as const;
   return (
     <section className="mb-6 rounded-xl border border-gold/70 bg-gold/[0.08] p-4">
       <h2 className="text-[12.5px] font-semibold text-ink">Waiting for your OK <span className="ml-1 rounded-full bg-ink px-1.5 py-0.5 text-[10.5px] font-medium text-cream">{items.length}</span></h2>
@@ -114,6 +119,26 @@ function Queue({ owner }: { owner: string }) {
               <time className="shrink-0 text-[11.5px] text-ink-faint">{timeAgo(p.createdAt)}</time>
             </div>
             <div className="mt-3 flex gap-2">
+              {p.kind === "activate_credit" ? (
+                <button
+                  disabled={!!busy}
+                  onClick={async () => {
+                    setBusy(p.id);
+                    try {
+                      if (p.status === "pending") await api.decide(owner, p.id, "approve");
+                      const tx = await activateCredit(Number(p.payload.amountUsd ?? 0), p.id);
+                      setNote(`Activated. The receipt was read back from the chain (${tx.slice(0, 10)}…) and the balance is credited; quiet moonlets wake on their next tick.`);
+                    } catch (e) {
+                      setNote((e as Error).message);
+                    }
+                    await load();
+                    setBusy(null);
+                  }}
+                  className="ui-btn ui-btn-sm ui-btn-gold"
+                >
+                  <Check size={13} strokeWidth={2.4} /> {busy === p.id ? "Waiting for your wallet…" : "Sign in wallet"}
+                </button>
+              ) : (
               <button
                 disabled={!!busy}
                 onClick={async () => {
@@ -131,7 +156,8 @@ function Queue({ owner }: { owner: string }) {
               >
                 <Check size={13} strokeWidth={2.4} /> {busy === p.id ? "Doing it…" : "Approve"}
               </button>
-              <button disabled={!!busy} onClick={async () => { setBusy(p.id); await api.decide(owner, p.id, "reject").catch(() => undefined); await load(); setBusy(null); }} className="ui-btn ui-btn-sm ui-btn-ghost">
+              )}
+              <button disabled={!!busy || p.status === "approved"} onClick={async () => { setBusy(p.id); await api.decide(owner, p.id, "reject").catch(() => undefined); await load(); setBusy(null); }} className="ui-btn ui-btn-sm ui-btn-ghost">
                 <X size={13} strokeWidth={2.2} /> Reject
               </button>
             </div>
@@ -383,7 +409,7 @@ function Detail({ m, all, owner, onChange, conns, launched, askDelete, status }:
       running={running}
       earnAll={earnAll}
       burnAll={burnAll}
-      approve={status && !status.approved ? <>Approve Moonlet on orbio.so so it can mint a key. <OrbioApprove /></> : null}
+      approve={status && !status.approved ? <>Sign once for this wallet&apos;s Orbio key so runs can bill it. <OrbioApprove /></> : null}
       artifacts={files.length > 0 ? artifactList(false) : null}
       settings={
         <>
@@ -630,14 +656,13 @@ function OrbioApprove() {
   const [busy, setBusy] = useState(false);
   return (
     <button disabled={busy} onClick={async () => { setBusy(true); await approveOrbio("/app").catch(() => setBusy(false)); }} className="text-[12.5px] font-medium text-ink underline decoration-ink/30 disabled:opacity-50">
-      Approve on Orbio
+      Sign for key
     </button>
   );
 }
 
 function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Connections | null }) {
   const { approveOrbio } = useAuth();
-  const [handoff, setHandoff] = useState(false);
   const idle = status?.idleCreditsUsd;
   const orbioOk = !!status?.approved;
   const telegramOk = !!conns?.connections.some((c) => c.kind === "telegram");
@@ -655,20 +680,19 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
           <h1 className="mt-1 font-display text-[2.3rem] leading-[0.95] text-ink sm:text-[2.8rem]">What should it do?</h1>
           <p className="mt-2 text-[14px] leading-[1.6] text-ink-soft">
             {idle !== null && idle !== undefined && idle > 0
-              ? <>You have <span className="font-mono text-ink">{fmtUsd(idle)}</span> of inference sitting idle from your bag. One sentence puts it to work.</>
+              ? <>You have <span className="font-mono text-ink">{fmtUsd(idle)}</span> of activated AI balance waiting. One sentence puts it to work.</>
               : <>One sentence. You review the plan and the price per run before anything starts.</>}
           </p>
         </div>
         <div className="mt-6"><JobInput id="first-job" /></div>
 
         <div className="mt-10 divide-y divide-ink/[0.07] rounded-lg border border-ink/10 bg-white">
-          <SetupStep n={1} done={orbioOk} title={orbioOk ? "Orbio approved" : "Approve Orbio"} hint={orbioOk ? "Your credits can fund runs." : "The budget. Once, on orbio.so; your $ORBIO credits pay for every run."}>
-            {!orbioOk && !handoff && (
-              <button onClick={() => void approveOrbio("/app").then((r) => setHandoff(r === "handoff")).catch(() => undefined)} className="ui-btn ui-btn-sm ui-btn-gold">
-                <OrbioMark size={13} /> Approve
+          <SetupStep n={1} done={orbioOk} title={orbioOk ? "Orbio key signed" : "Sign for your Orbio key"} hint={orbioOk ? "Runs bill the CREDIT you activate." : "One signature in your wallet becomes the gateway key. Then activate CREDIT under Connections."}>
+            {!orbioOk && (
+              <button onClick={() => void approveOrbio("/app").catch(() => undefined)} className="ui-btn ui-btn-sm ui-btn-gold">
+                <OrbioMark size={13} /> Sign
               </button>
             )}
-            {!orbioOk && handoff && <span className="text-[12px] text-ink-soft">Finish in MetaMask, then come back. <button onClick={() => setHandoff(false)} className="underline">didn’t open?</button></span>}
           </SetupStep>
           <SetupStep n={2} done={telegramOk} title={telegramOk ? "Telegram linked" : "Link Telegram"} hint={telegramOk ? "Results and approvals reach your phone." : telegramAvailable ? "Where results and approvals reach you. Open the bot, press Start." : "Not switched on here yet; results stay on this dashboard."}>
             {!telegramOk && telegramAvailable && (

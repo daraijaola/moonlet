@@ -25,9 +25,10 @@ describe("the schedule is the owner's", () => {
     expect(p.perRunCapUsd).toBe(0.03);
     expect(p.burnPerDayUsd).toBe(0.06);
   });
-  it("goes quiet only under the holder floor", () => {
-    expect(plan(spec, 999).quiet).toBe(true);
-    expect(plan(spec, 1_000).quiet).toBe(false);
+  it("never goes quiet on the size of the bag: the balance decides at run time", () => {
+    expect(plan(spec, 0).quiet).toBe(false);
+    expect(plan(spec, 1_000_000).quiet).toBe(false);
+    expect(plan(spec, 0).perRunCapUsd).toBe(spec.spendCapUsd);
   });
   it("warns in plain words when the cap outruns the income, but keeps the cadence", () => {
     const r = cadenceReply("Sentry", { ...spec, spendCapUsd: 0.03 }, "6h", 0.035);

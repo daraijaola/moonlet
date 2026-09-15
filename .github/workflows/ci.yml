@@ -39,7 +39,7 @@ jobs:
           pnpm exec vitest run --no-file-parallelism
           tests/acceptance.test.ts tests/anchor.test.ts tests/budget-reply.test.ts tests/cap.test.ts tests/compile-fallback.test.ts
           tests/connections.test.ts tests/discord.test.ts tests/documents.test.ts tests/fallback.test.ts tests/gmail.test.ts
-          tests/privacy.test.ts tests/safe-fetch.test.ts tests/session.test.ts tests/spawn.test.ts tests/tripwire.test.ts
+          tests/privacy.test.ts tests/safe-fetch.test.ts tests/session.test.ts tests/spawn.test.ts tests/tripwire.test.ts tests/credit.test.ts
 
   real-models:
     if: github.event_name == 'workflow_dispatch' && inputs.real_models

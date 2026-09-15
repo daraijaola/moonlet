@@ -11,8 +11,8 @@ const EASE = [0.23, 1, 0.32, 1] as const;
 
 const STEPS: { gesture: Gesture; title: string; body: string; meta: string }[] = [
   { gesture: "listen", title: "Say the job", body: "One sentence is enough. Moonlet writes the plan: what to check, which tools, how often. Change any of it before a cent moves.", meta: "01 · brief" },
-  { gesture: "claim", title: "It claims its own key", body: "It reads your Orbio balance and claims a capped inference key for itself. The key never touches your clipboard.", meta: "02 · key" },
-  { gesture: "work", title: "It works while you don't", body: "On the schedule you set, up to the cap you set, billed to the credits your bag earns. It reads the chain, the market and the web, and asks before it posts anything.", meta: "03 · run" },
+  { gesture: "claim", title: "Your signature is the key", body: "You sign Orbio's key message once in your wallet; that signature is the gateway key your moonlets bill. Nothing to copy, no account to open.", meta: "02 · key" },
+  { gesture: "work", title: "It works while you don't", body: "On the schedule you set, up to the cap you set, billed to the CREDIT you activate from your wallet. It reads the chain, the market and the web, and asks before it posts anything.", meta: "03 · run" },
   { gesture: "stamp", title: "It leaves a receipt", body: "Every run leaves a receipt: cost, model, time taken and a hash of what it wrote, stamped on Robinhood Chain when anchoring is on. Anyone can open the page.", meta: "04 · receipt" },
 ];
 
