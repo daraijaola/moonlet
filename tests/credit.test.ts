@@ -30,7 +30,9 @@ const word = (n: bigint | string) => `0x${BigInt(n).toString(16).padStart(64, "0
 function activatedLog(activationId: number, from: string, beneficiary: string, amountUnits: bigint) {
   return { address: ORBIO.credit, topics: [topic, word(BigInt(activationId)), word(from), word(beneficiary)], data: encodeAbiParameters([{ type: "uint256" }], [amountUnits]) };
 }
-const chain: typeof fetch = async (_u, init) => {
+let gatewaySays: { available: string; used: string } | null = null;
+const chain: typeof fetch = async (u, init) => {
+  if (String(u).endsWith("/api/v1/key")) return gatewaySays ? new Response(JSON.stringify({ object: "key", balance: gatewaySays })) : new Response("{\"error\":\"unknown key\"}", { status: 401 });
   const body = JSON.parse(String(init?.body)) as { method: string; params: unknown[] };
   if (body.method === "eth_getTransactionReceipt") return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: receipts.get(String(body.params[0])) ?? null }));
   if (body.method === "eth_getLogs") {
@@ -186,6 +188,19 @@ describe("CREDIT protocol", () => {
     expect((await store.getMoonlet("m_c1"))!.nextRunAt).toBeLessThanOrEqual(Date.now());
     expect((await store.getOwner(OWNER))!.orbioBalanceUsd).toBeCloseTo(before + 7.5, 6);
     expect((await makeCreditClient(OWNER, chain).getBalance()).availableUsd).toBeCloseTo(before + 7.5, 6);
+  });
+
+  it("when the gateway answers, its balance wins and the ledger is reconciled to it; when it does not, the ledger stands", async () => {
+    await store.setOwnerBalance(OWNER, 3);
+    const client = makeCreditClient(OWNER, chain);
+    gatewaySays = { available: "12.5", used: "41.86" };
+    const live = await client.getBalance();
+    expect(live.availableUsd).toBe(12.5);
+    expect(live.raw).toMatchObject({ gateway: true, usedUsd: 41.86 });
+    expect((await store.getOwner(OWNER))!.orbioBalanceUsd).toBe(12.5);
+    gatewaySays = null;
+    expect((await client.getBalance()).availableUsd).toBe(12.5);
+    expect((await client.getBalance()).raw).toMatchObject({ ledger: true });
   });
 
   it("the gateway refusing for balance zeroes the ledger so the next tick asks the owner instead of retrying", async () => {

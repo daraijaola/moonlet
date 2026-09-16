@@ -89,7 +89,7 @@ function ConnectionsInner() {
                   {orbio && (
                     <div className="mt-2 grid gap-1.5 text-[12.5px] text-ink-soft">
                       <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
-                        <span>AI balance <b className="text-ink">${orbio.idleCreditsUsd.toFixed(2)}</b> <span className="text-ink-faint">(estimate)</span></span>
+                        <span>AI balance <b className="text-ink">${orbio.idleCreditsUsd.toFixed(2)}</b> <span className="text-ink-faint">{orbio.balanceSource === "gateway" ? "(from Orbio)" : "(estimate)"}</span></span>
                         {orbio.creditTokensUsd !== null && <span>CREDIT in wallet <b className="text-ink">{orbio.creditTokensUsd.toFixed(2)}</b></span>}
                         <span>staked <b className="text-ink">{Math.round(orbio.staked).toLocaleString()} ORBIO</b></span>
                       </div>

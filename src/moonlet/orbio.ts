@@ -12,9 +12,10 @@ import { RH_RPC } from "./tools";
  *   balance  = what the owner activated (Activated events we verified) minus what runs spent
  *   funding  = the owner's wallet calls CREDIT.activate(); Moonlet never holds a private key
  *
- * The gateway publishes no balance endpoint, so the AI balance here is a
- * ledger Moonlet keeps and labels an estimate; a gateway "insufficient_quota"
- * zeroes it and the moonlet goes quiet until the owner activates more.
+ * GET /api/v1/key on the gateway returns the key's live balance (verified 16 Sep:
+ * {balance:{available, used}}). That is the source of truth when the wallet has a
+ * key; the on-chain ledger of activations minus spend is the fallback when the
+ * gateway is unreachable, and is what the app shows labelled an estimate.
  */
 
 export const ORBIO = {
@@ -172,6 +173,19 @@ export async function syncActivations(owner: string, fetchImpl: typeof fetch = f
   }
 }
 
+/** The gateway's own view of a key: available and used dollars. Null when the key is unknown to it or the call fails. */
+export async function gatewayBalance(key: string, fetchImpl: typeof fetch = fetch): Promise<{ availableUsd: number; usedUsd: number } | null> {
+  try {
+    const r = await fetchImpl(`${ORBIO.gateway}/key`, { headers: { authorization: `Bearer ${key}` }, signal: AbortSignal.timeout(8000) });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { balance?: { available?: string; used?: string } };
+    if (!j.balance) return null;
+    return { availableUsd: Number(j.balance.available ?? 0), usedUsd: Number(j.balance.used ?? 0) };
+  } catch {
+    return null;
+  }
+}
+
 // ---- the client ------------------------------------------------------------
 
 /** Client for one owner, backed by the owners table: the sealed signature key and the activated-balance ledger. */
@@ -180,6 +194,13 @@ export function makeCreditClient(owner: string, fetchImpl: typeof fetch = fetch)
     async getBalance() {
       await syncActivations(owner, fetchImpl);
       const [o, creditTokens] = await Promise.all([store.getOwner(owner), creditTokensOf(owner, fetchImpl).catch(() => undefined)]);
+      // Ask the gateway first, with whichever key this wallet has; reconcile the ledger to it so the app shows the real figure.
+      const key = o?.orbioKey ?? (await store.listMoonlets(owner)).find((m) => m.key?.key.startsWith("sk-orb"))?.key?.key;
+      const live = key ? await gatewayBalance(key, fetchImpl) : null;
+      if (live) {
+        if (Math.abs(live.availableUsd - (o?.orbioBalanceUsd ?? 0)) > 0.0005) await store.setOwnerBalance(owner, live.availableUsd);
+        return { availableUsd: live.availableUsd, creditTokens, raw: { gateway: true, usedUsd: live.usedUsd } };
+      }
       return { availableUsd: Math.max(0, o?.orbioBalanceUsd ?? 0), creditTokens, raw: { ledger: true } };
     },
     async getKeyStatus() {

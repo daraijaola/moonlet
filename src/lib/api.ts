@@ -99,8 +99,9 @@ export type OrbioStatus = {
   bag: number;
   staked: number;
   earnPerDayUsd: number;
-  /** Activated AI balance Moonlet accounts for (estimate). */
+  /** Activated AI balance: from the gateway when it answers, else Moonlet's ledger. */
   idleCreditsUsd: number;
+  balanceSource: "gateway" | "ledger";
   /** CREDIT tokens in the wallet, not yet activated. */
   creditTokensUsd: number | null;
   canWrite: boolean;

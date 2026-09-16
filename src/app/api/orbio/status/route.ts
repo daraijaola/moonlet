@@ -22,6 +22,7 @@ export async function GET(req: Request) {
     store.listActivations(owner, 5),
     store.listProposals(owner, "pending").then((ps) => ps.concat([])).catch(() => []),
   ]);
+  const balance = orbio ? await orbio.getBalance().catch(() => null) : null;
   const activationCard = pending.find((p) => p.kind === "activate_credit") ?? (await store.listProposals(owner, "approved")).find((p) => p.kind === "activate_credit") ?? null;
   const canWrite = !!sessionFrom(req) || process.env.ALLOW_HEADER_AUTH === "1" || process.env.NODE_ENV !== "production";
   const res = NextResponse.json({
@@ -30,8 +31,9 @@ export async function GET(req: Request) {
     bag,
     staked,
     earnPerDayUsd: estimateEarnPerDay(staked),
-    /** Activated AI balance Moonlet accounts for (an estimate: verified activations minus recorded spend). */
-    idleCreditsUsd: o?.orbioBalanceUsd ?? 0,
+    /** Activated AI balance: the gateway's figure when it answers, else verified activations minus recorded spend. */
+    idleCreditsUsd: balance?.availableUsd ?? o?.orbioBalanceUsd ?? 0,
+    balanceSource: balance?.raw && (balance.raw as { gateway?: boolean }).gateway ? "gateway" : "ledger",
     /** CREDIT tokens in the wallet, not yet activated. */
     creditTokensUsd: creditTokens,
     canWrite,

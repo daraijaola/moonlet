@@ -128,7 +128,7 @@ export function OverviewPanel({ m, runs, status, running, earnAll, burnAll, sett
           </>
         ) : (
           <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft">
-            {status && status.staked <= 0 ? <>Stake $ORBIO with Orbio and the bag starts minting CREDIT. Runs draw on the AI balance you activate{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> now, estimate)</> : null}.</> : <>Runs draw on the AI balance you activate{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> now, estimate)</> : null}.</>}
+            {status && status.staked <= 0 ? <>Stake $ORBIO with Orbio and the bag starts minting CREDIT. Runs draw on the AI balance you activate{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> now{status.balanceSource === "gateway" ? "" : ", estimate"})</> : null}.</> : <>Runs draw on the AI balance you activate{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> now{status.balanceSource === "gateway" ? "" : ", estimate"})</> : null}.</>}
           </p>
         )}
         {approve && <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-[12px] leading-[1.5] text-ink">{approve}</p>}
