@@ -15,8 +15,10 @@ import { safeFetchText, type SafeFetchResult } from "./safe-fetch";
 export const ORBIO_GATEWAY = process.env.ORBIO_GATEWAY_URL ?? "https://www.orbio.so/api/v1";
 export const OPENROUTER = "https://openrouter.ai/api/v1";
 
+/** Orbio issues two key shapes: dashboard account keys (sk-orbio-…) and wallet-signed keys (sk-orb-<epoch>-…). Both bill Orbio's gateway. */
+export const isOrbioKey = (key: string) => /^sk-orb(io)?-/.test(key);
 export function baseUrlFor(key: string) {
-  if (key.startsWith("sk-orbio-")) return ORBIO_GATEWAY;
+  if (isOrbioKey(key)) return ORBIO_GATEWAY;
   return OPENROUTER;
 }
 

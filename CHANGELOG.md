@@ -10,6 +10,12 @@ Orbio replaced passive credits and the MCP approve flow with $CREDIT on Robinhoo
 - The 1,000 ORBIO holder floor is gone; the bag is staked plus held ORBIO and the earn estimate comes from the staked part.
 - `tests/credit.test.ts`: six cases against a fake chain. Acceptance case 12 now reads "with no activated AI balance a run costs nothing".
 
+## 2026-09-16 · Build Week day 15
+
+- Fix, found by an outside review: `baseUrlFor` only recognised dashboard keys (`sk-orbio-…`), so a wallet-signed key (`sk-orb-<epoch>-…`) would have been sent to OpenRouter. Both shapes now route to Orbio's gateway; a test pins it.
+- Sentry and Shadow had a $0.012 cap and hit it on 88% of runs, so most reports stopped before finishing the checks. Three moonlets carried a $0 cap left over from the holder-floor plan. All five set to $0.05; the market-watch template's base cost is $0.02 so new ones start with room to finish.
+- Dashboard-issued keys are first-class; an activation wakes quiet moonlets; earn estimate from staked ORBIO everywhere; last pre-CREDIT copy removed.
+
 ## 2026-09-10 · Build Week day 9
 
 - Verified receipts: after an approved action executes, the result is read back from GitHub or Gmail by id and compared field by field with the approved payload (PR file contents, email body, no unexpected Cc, every message of a tidy up to the bulk limit). Stamped *verified*, *sample checked*, *mismatch* or *not checked* on the moonlet page, the public page (redacted for strangers) and in Telegram. A mismatch reads "happened, but not as approved", never Done.

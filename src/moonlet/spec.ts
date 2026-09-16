@@ -129,7 +129,7 @@ export const TEMPLATE_DEFAULTS: Record<
     tools: ["token_market", "chain_read", "web_search", "deliver"],
     cadence: "6h",
     output: { kind: "brief", maxWords: 180, alwaysReport: true },
-    costPerRunUsd: 0.012,
+    costPerRunUsd: 0.02,
   },
   "repo-mechanic": {
     tools: ["github_read", "web_fetch", "deliver"],

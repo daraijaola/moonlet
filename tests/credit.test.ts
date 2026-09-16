@@ -9,6 +9,7 @@ import { runOne } from "@/moonlet/scheduler";
 import { activationAmount } from "@/moonlet/budget";
 import type { JobSpec } from "@/moonlet/spec";
 import { fakeOrbio } from "./fakes";
+import { ORBIO_GATEWAY, OPENROUTER, baseUrlFor } from "@/moonlet/llm";
 
 /**
  * Orbio's CREDIT protocol, end to end against a fake chain: the wallet's signature is the key, an on-chain activation
@@ -62,6 +63,14 @@ describe("CREDIT protocol", () => {
     const key = apiKeyFromSignature(sig, 0);
     expect(key.startsWith("sk-orb-0-")).toBe(true);
     expect(Buffer.from(key.slice("sk-orb-0-".length), "base64").toString("hex")).toBe(sig.slice(2).toLowerCase());
+  });
+
+  it("both Orbio key shapes route to Orbio's gateway, never to OpenRouter", async () => {
+    const sig = await wallet.signMessage({ message: keyMessage(0) });
+    expect(baseUrlFor(apiKeyFromSignature(sig, 0))).toBe(ORBIO_GATEWAY);
+    expect(baseUrlFor("sk-orb-3-AAAA")).toBe(ORBIO_GATEWAY);
+    expect(baseUrlFor("sk-orbio-Y_x83y")).toBe(ORBIO_GATEWAY);
+    expect(baseUrlFor("sk-or-v1-legacy")).toBe(OPENROUTER);
   });
 
   it("the client hands runs the sealed key and the ledger, and refuses before the owner has signed", async () => {
