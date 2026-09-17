@@ -1,7 +1,7 @@
 import type { Hex } from "viem";
 import { makeAnchorer, type Anchorer } from "./anchor";
 import { estimateEarnPerDay } from "./budget";
-import { makeCreditClient, OrbioAuthError, type OrbioClient } from "./orbio";
+import { makeCreditClient, OrbioAuthError, syncActivations, type OrbioClient } from "./orbio";
 import { devOrbio } from "./orbio-dev";
 import { runMoonlet } from "./runner";
 import { CADENCE_MS, type Cadence } from "./spec";
@@ -56,6 +56,9 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   await store.releaseStale(now() - 10 * 60_000);
   await store.reconcileStuckActions(now() - 5 * 60_000).catch(() => undefined);
   await probeTripwires(now(), deps.fetch).catch((e) => console.error("tripwire probe", (e as Error).message));
+  // A quiet moonlet is waiting for money. Look at the chain for its owner's activations every tick, so an activation made
+  // anywhere wakes it within the minute rather than at its next scheduled slot.
+  if (!deps.orbioFor) for (const owner of await store.ownersWithQuietMoonlets()) await syncActivations(owner, deps.fetch);
   const due = await store.listDue(now(), limit);
   const results: Array<{ id: string; status: string; error?: string }> = [];
   const queue = [...due];

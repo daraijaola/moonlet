@@ -265,6 +265,13 @@ export async function addActivation(a: { txHash: string; activationId: string; o
   return true;
 }
 
+/** Wallets with at least one quiet moonlet: the ones an activation could wake. */
+export async function ownersWithQuietMoonlets(): Promise<string[]> {
+  await migrate();
+  const r = await db().execute(`SELECT DISTINCT owner FROM moonlets WHERE status='quiet'`);
+  return r.rows.map((x) => x.owner as string);
+}
+
 /** Money arrived: quiet moonlets of this wallet run on the next tick instead of waiting out their cadence. */
 export async function wakeQuietMoonlets(owner: string) {
   await db().execute({ sql: `UPDATE moonlets SET next_run_at=? WHERE owner=? AND status='quiet'`, args: [Date.now(), owner.toLowerCase()] });
