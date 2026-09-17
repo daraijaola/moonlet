@@ -13,6 +13,7 @@ import { CADENCE_LABEL, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
 import { explorerTx } from "@/moonlet/anchor";
 import type { Cadence } from "@/moonlet/spec";
 import * as store from "@/moonlet/store";
+import { bagOf } from "@/moonlet/bag";
 import { isPrivateSpec, redactMoonlet, redactRun } from "@/moonlet/privacy";
 import { COOKIE, openSession } from "@/moonlet/session";
 import { fmtBag, fmtUsd, shortAddr, shortenHexes, timeAgo, timeUntil } from "@/lib/api";
@@ -38,6 +39,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
   const m = hidden ? redactMoonlet(stored) : stored;
   const runs = (await store.listRuns(m.id)).map((r) => ({ ...(!mine && r.private ? redactRun(r) : r), explorerUrl: r.txHash ? explorerTx(r.txHash) : null }));
   const owner = await store.getOwner(m.owner);
+  const bagNow = await bagOf(m.owner).catch(() => owner?.bag ?? 0);
   const quiet = m.status === "quiet" || m.status === "paused";
   const tone = fuelTone(m.earnPerDayUsd, m.burnPerDayUsd, quiet);
   const anchored = runs.filter((r) => r.txHash).length;
@@ -61,7 +63,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
               <h1 className="mt-2 font-display text-[3.4rem] leading-[0.9] text-ink sm:text-[4.2rem]">{m.name}</h1>
               <p className="mt-3 max-w-[34rem] text-[15px] leading-[1.55] text-ink [overflow-wrap:anywhere]">“{shortenHexes(m.spec.objective)}”</p>
               <p className="mt-3 font-mono text-[12px] text-ink-soft">
-                {m.id} · {TEMPLATE_LABEL[m.spec.template]} · orbits {shortAddr(m.owner)} · {owner ? `${fmtBag(owner.bag)} $ORBIO` : ""}
+                {m.id} · {TEMPLATE_LABEL[m.spec.template]} · orbits {shortAddr(m.owner)} · {owner ? `${fmtBag(bagNow)} $ORBIO` : ""}
               </p>
               <p className="mt-1 font-mono text-[12px] text-ink-faint">tools: {m.spec.tools.map((t) => TOOL_LABEL[t]).join(", ")}</p>
               {!hidden && (
