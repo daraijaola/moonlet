@@ -277,6 +277,13 @@ export async function wakeQuietMoonlets(owner: string) {
   await db().execute({ sql: `UPDATE moonlets SET next_run_at=? WHERE owner=? AND status='quiet'`, args: [Date.now(), owner.toLowerCase()] });
 }
 
+/** Activations of this owner's balance that came from another wallet: fuel given to their moonlets. Public by design. */
+export async function listFuel(owner: string, limit = 20) {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT * FROM activations WHERE owner=? AND from_addr != owner ORDER BY at DESC LIMIT ?`, args: [owner.toLowerCase(), limit] });
+  return r.rows.map((row) => ({ txHash: row.tx_hash as string, from: row.from_addr as string, amountUsd: Number(row.amount_usd), at: Number(row.at), moonletId: (row.proposal_id as string)?.startsWith("m_") ? (row.proposal_id as string) : null }));
+}
+
 export async function listActivations(owner: string, limit = 20) {
   await migrate();
   const r = await db().execute({ sql: `SELECT * FROM activations WHERE owner=? ORDER BY block_number DESC, at DESC LIMIT ?`, args: [owner.toLowerCase(), limit] });
@@ -580,6 +587,13 @@ export async function listUnanchored(limit = 20): Promise<RunRow[]> {
     args: [limit],
   });
   return r.rows.map((row) => rowToRun(row as Record<string, unknown>));
+}
+
+/** The newest finished, public, non-empty report per moonlet: the headline the sky shows. */
+export async function latestHeadlines(): Promise<Map<string, { title: string; at: number; signal: string }>> {
+  await migrate();
+  const r = await db().execute(`SELECT moonlet_id, title, at, signal FROM runs r WHERE status='done' AND private=0 AND nothing_happened=0 AND at = (SELECT MAX(at) FROM runs r2 WHERE r2.moonlet_id=r.moonlet_id AND r2.status='done' AND r2.private=0 AND r2.nothing_happened=0)`);
+  return new Map(r.rows.map((x) => [x.moonlet_id as string, { title: x.title as string, at: Number(x.at), signal: String(x.signal ?? "") }]));
 }
 
 export async function listRuns(moonletId: string, limit = 50): Promise<RunRow[]> {

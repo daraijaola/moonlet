@@ -186,6 +186,32 @@ function providerFor(id: WalletId): Eip1193 | undefined {
   return all.find((p) => (id === "rabby" ? p.isRabby : id === "robinhood" ? p.isRobinhood : id === "metamask" ? p.isMetaMask && !p.isRabby : true)) ?? eth;
 }
 
+/**
+ * Fuel a moonlet from whatever wallet the visitor has: connect, switch to Robinhood Chain, and send
+ * CREDIT.activate(amount, beneficiary) so the giver's CREDIT burns into the moonlet owner's AI balance.
+ * Works signed out; the visitor need not be a Moonlet user at all. Resolves the transaction hash and the giver's address.
+ */
+export async function fuelFromWallet(amountUsd: number, beneficiary: string, wallet?: WalletId): Promise<{ txHash: string; from: string }> {
+  if (!(amountUsd > 0)) throw new Error("amount must be positive");
+  let eth = wallet === "walletconnect" ? await walletConnectProvider() : wallet ? providerFor(wallet) : activeProvider ?? injected();
+  if (!eth && (wallet === "metamask" || !wallet)) eth = await metamaskSdkProvider();
+  if (!eth) throw new Error("No wallet found in this browser. Open this page inside your wallet app, or use WalletConnect.");
+  const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+  const from = accounts[0]?.toLowerCase() ?? "";
+  if (!/^0x[0-9a-f]{40}$/.test(from)) throw new Error("No account was shared. Unlock your wallet and try again.");
+  await ensureRobinhoodChain(eth);
+  const units = BigInt(Math.round(amountUsd * 1e6));
+  // activate(uint256 amount, bytes32 beneficiary): the beneficiary address left-padded to 32 bytes.
+  const data = `0x0e3c008b${units.toString(16).padStart(64, "0")}${beneficiary.slice(2).toLowerCase().padStart(64, "0")}`;
+  try {
+    const txHash = (await eth.request({ method: "eth_sendTransaction", params: [{ from, to: CREDIT_TOKEN, data }] })) as string;
+    return { txHash, from };
+  } catch (e) {
+    const code = (e as { code?: number }).code;
+    throw new Error(code === 4001 ? "You declined the transaction in your wallet." : `Your wallet could not send it: ${(e as Error).message}`);
+  }
+}
+
 const Ctx = createContext<Auth | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {

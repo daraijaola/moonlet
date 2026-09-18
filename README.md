@@ -48,6 +48,7 @@ No card. No API key to copy. No dashboard to babysit.
 | **Prove** | Every run: cost, model, duration, tool trace, and a sha256 of the output, anchored on Robinhood Chain when anchoring is enabled. Every action: read back from GitHub or Gmail by id and compared field by field with what you approved, stamped *verified*, *mismatch* or *not checked*. Watch jobs end each run with one checkable call about the next and grade it hit or miss when it comes (self-graded, and labelled so). |
 | **Watch cheaply** | Alert jobs get a tripwire: one number read for free every 15 minutes; the model wakes only when it moves past your line, at most once every three hours. |
 | **Ask** | Draft → approve → act. A moonlet that wants to send an email, open a PR, post, archive or spawn another moonlet puts a card in your queue (and Telegram). Each approval covers that one action; Autopilot is a separate switch on the moonlet. Spawns always ask. |
+| **Fuel** | Every public moonlet has a Fuel button. Anyone who finds it useful burns 1, 2 or 5 of their own CREDIT into its owner's balance with one wallet signature (`activate(amount, beneficiary)`); Moonlet reads the receipt from the chain, credits it once, wakes the moonlet if it was quiet, and lists the giver on the page. Patronage for agents, settled in inference, verifiable on chain. |
 | **Talk** | Reply to any report in Telegram or on the page. It answers from the run, reaches for its tools when it must, and can act (through the same approval cards). |
 
 ## Quick start
@@ -155,7 +156,7 @@ Built during Orbio Build Week 2026, live at [moonlet.16labs.xyz](https://moonlet
 - The approved mascot everywhere: logo, favicon, app icons, ten moonlet faces, ten owner profile pictures, and the thinking animation on pending replies (an inline SVG port of the approved motion, static under reduced motion).
 - Overview panel: next run, runs, cap, model, call record; spend from real runs; the bag's income; delivery and autopilot.
 - Wizard with template tiles, a review step you can edit, missing-connection prompts that resume the draft after connecting, and "Use this job" to fork any public moonlet.
-- Public pages: every moonlet has a page with its receipts; IDs visible with a share menu; the sky shows every moonlet alive with a search across all of them.
+- Public pages: every moonlet has a page that leads with its latest report, its receipts, and a Fuel button; the sky shows every moonlet alive with its latest headline and a search across all of them.
 - Phone layout throughout: rail of moonlets, bottom tabs, composer that clears the tab bar, model picker as a bottom sheet.
 
 **Landing**: hero with the mascot, How it works, "Three jobs, running right now" (three scripted scenes on real data: Sentry's report, Postie's inbox draft approved by a cursor, Scribe's merged PR #14), the tools panel with draggable tiles, the faces of the moonlets in the sky, footer.

@@ -10,6 +10,13 @@ Orbio replaced passive credits and the MCP approve flow with $CREDIT on Robinhoo
 - The 1,000 ORBIO holder floor is gone; the bag is staked plus held ORBIO and the earn estimate comes from the staked part.
 - `tests/credit.test.ts`: six cases against a fake chain. Acceptance case 12 now reads "with no activated AI balance a run costs nothing".
 
+## 2026-09-17 · Build Week day 16
+
+- First real CREDIT-funded runs: Sentry and Shadow ran and finished on the activated balance; the gateway's balance moved by exactly their cost; the activation card Sentry raised while quiet settled *verified* against the chain.
+- **Fuel.** Anyone can burn their own CREDIT into a public moonlet's owner's balance from the moonlet's page (`activate(amount, beneficiary)`, one signature, any wallet). The receipt is read from the chain, credited once, wakes a quiet moonlet, and the giver is listed with a link to the transaction.
+- Public pages lead with the latest report; failed and quiet runs are counted but kept out of the feed; a private job explains itself; earn shows "owner isn't staking" instead of $0. The sky shows each moonlet's latest headline.
+- Tick checks the chain for every wallet with a quiet moonlet, so an activation made anywhere wakes it within the minute. The gauge is grey only when a moonlet is quiet.
+
 ## 2026-09-16 · Build Week day 15
 
 - Fix, found by an outside review: `baseUrlFor` only recognised dashboard keys (`sk-orbio-…`), so a wallet-signed key (`sk-orb-<epoch>-…`) would have been sent to OpenRouter. Both shapes now route to Orbio's gateway; a test pins it.

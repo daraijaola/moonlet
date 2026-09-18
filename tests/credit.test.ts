@@ -203,6 +203,25 @@ describe("CREDIT protocol", () => {
     expect((await client.getBalance()).raw).toMatchObject({ ledger: true });
   });
 
+  it("fuel: a stranger burns their CREDIT into the owner's balance; credited once, recorded with who gave it, wakes the moonlet", async () => {
+    await store.setOwnerBalance(OWNER, 0);
+    await store.updateMoonlet("m_c1", { status: "quiet", nextRunAt: Date.now() + 86_400_000 });
+    const tx = `0x${"88".repeat(32)}`;
+    receipts.set(tx, { status: "0x1", blockNumber: "0x40", logs: [activatedLog(12, STRANGER, OWNER, 1_000_000n)] });
+    const parsed = await readActivations(tx, chain);
+    expect(parsed[0]).toMatchObject({ from: STRANGER, beneficiary: OWNER, amountUsd: 1 });
+    expect(await store.addActivation({ ...parsed[0], owner: OWNER, proposalId: "m_c1" })).toBe(true);
+    expect(await store.addActivation({ ...parsed[0], owner: OWNER, proposalId: "m_c1" })).toBe(false);
+    await store.wakeQuietMoonlets(OWNER);
+    expect((await store.getOwner(OWNER))!.orbioBalanceUsd).toBe(1);
+    expect((await store.getMoonlet("m_c1"))!.nextRunAt).toBeLessThanOrEqual(Date.now());
+    const fuel = await store.listFuel(OWNER);
+    expect(fuel).toHaveLength(1);
+    expect(fuel[0]).toMatchObject({ from: STRANGER, amountUsd: 1, moonletId: "m_c1" });
+    // the owner's own activations are not "fuel"
+    expect(fuel.some((f) => f.from === OWNER)).toBe(false);
+  });
+
   it("the gateway refusing for balance zeroes the ledger so the next tick asks the owner instead of retrying", async () => {
     await store.setOwnerBalance(OWNER, 4);
     const fake = fakeOrbio({ realKey: "sk-orb-0-x", balanceUsd: 4 });
