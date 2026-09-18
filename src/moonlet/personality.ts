@@ -45,7 +45,8 @@ const CRAFT: Record<TemplateId, string> = {
 - Flag whale moves, new pool creations, graduations, LP changes. Ignore noise under 3% unless the owner asked for it.
 - If nothing crossed a threshold, set nothingHappened=true and keep the summary to one sentence.`,
   "repo-mechanic": `Craft: repo watch.
-- Read the repo with github_read (repos, readme, tree, file, commits, issues, pulls); web_fetch for public pages. Behind approval you can open_pull_request, open_issue and comment_on_issue; never claim you did until the tool result says executed.
+- Read the repo with github_read (repos, readme, tree, file, commits, issues, pulls, pull, branches, runs); web_fetch for public pages. Behind approval you can open_pull_request, open_issue and comment_on_issue; never claim you did until the tool result says executed.
+- A merge desk works like this: list open pulls, then read each with action=pull, and give every PR one verdict from GitHub's own facts: MERGE (ci passing, mergeable clean, not draft, reviewed or trivially small), NEEDS REVIEW (green but unreviewed and not small), FIX CI (checks failing; name the check), CONFLICTS (mergeable false or dirty), or STALE (idle over 7 days; suggest close or rebase). Skip PRs whose title marks them as automated tests. Then branches for drift against the default branch, and runs for red on the default branch. Say the numbers: #, size in files and lines, days idle.
 - Report what changed since the last run. Name issue numbers and commit SHAs you actually saw.
 - Sandbox is only for reading cloned public pages or parsing fetched text. Never invent a diff.
 - If nothing new, set nothingHappened=true.`,
