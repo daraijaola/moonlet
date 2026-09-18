@@ -11,6 +11,7 @@ import { fileSink } from "./files";
 import { bagOf, stakedOf } from "./bag";
 export { bagOf } from "./bag";
 import * as tg from "./connections/telegram";
+import { reportBlocks } from "./connections/telegram-rich";
 import type { GitHubConn } from "./connections/github";
 import * as discord from "./connections/discord";
 import type { DiscordConn } from "./connections/discord";
@@ -298,10 +299,13 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     ];
     const proofBlock = proof.length ? `\n\n${proof.join("\n")}` : "";
     const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}${proofBlock}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
-    const sent = await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch((e) => {
-      console.error("telegram delivery failed", m.id, (e as Error).message);
-      return null;
-    });
+    // Rich blocks first (headline, pull-quote, table, expandable body, checkbox calls, buttons); the HTML text is the fallback.
+    const sent =
+      (await tg.sendRichMessage(tgConn.data.chatId, reportBlocks(o, { moonletName: m.spec.name, moonletId: m.id, page, costUsd: result.costUsd, hashed: !!result.outputHash, anchoredUrl: txHash ? `https://robinhoodchain.blockscout.com/tx/${txHash}` : null, template: m.spec.template, at: now() }), { fetch: deps.fetch })) ??
+      (await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch((e) => {
+        console.error("telegram delivery failed", m.id, (e as Error).message);
+        return null;
+      }));
     if (sent) await store.rememberTelegramMessage(tgConn.data.chatId, Number(sent.id), m.id, runId).catch((e) => console.error("tg_messages insert failed", (e as Error).message));
   } else if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && !alreadyDelivered) {
     await deliver({ channel: "telegram", text: `${result.output.title}\n\n${result.output.summary}` }).catch(() => undefined);

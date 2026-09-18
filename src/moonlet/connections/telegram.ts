@@ -53,6 +53,28 @@ export async function sendMessage(
   return { ok: true as const, id: String(r.message_id) };
 }
 
+/**
+ * Send a Rich Message (blocks). Returns null when the API refuses, so the caller can fall back to plain HTML: a server that
+ * predates Bot API 10.2, a chat where rich messages are not allowed, or a block the server rejects.
+ */
+export async function sendRichMessage(chatId: string, blocks: unknown[], opts: { replyTo?: number; fetch?: typeof fetch } = {}) {
+  try {
+    const r = await call<{ message_id: number }>(
+      "sendRichMessage",
+      {
+        chat_id: chatId,
+        rich_message: { blocks },
+        ...(opts.replyTo ? { reply_parameters: { message_id: opts.replyTo, allow_sending_without_reply: true } } : {}),
+      },
+      opts.fetch,
+    );
+    return { ok: true as const, id: String(r.message_id) };
+  } catch (e) {
+    console.error("sendRichMessage refused, falling back to HTML:", (e as Error).message);
+    return null;
+  }
+}
+
 /** Send a file (a report as PDF/DOCX/TXT) to a linked chat. Telegram caps bot uploads at 50 MB; ours are far smaller. */
 export async function sendDocument(chatId: string, file: { name: string; mime: string; bytes: Uint8Array; caption?: string; replyTo?: number }, fetchImpl: typeof fetch = fetch) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -312,6 +334,13 @@ export async function handleUpdate(u: Update, onCallback: CallbackHandler, fetch
       }
     } else if (u.callback_query?.data && u.callback_query.message) {
       const [action, id] = u.callback_query.data.split(":");
+      if (action === "ask" && id) {
+        // "Ask about it" on a report: tell the owner how, and force the reply box open on this message.
+        const chatId = String(u.callback_query.message.chat.id);
+        await call("answerCallbackQuery", { callback_query_id: u.callback_query.id, text: "Reply to the report with your question" }, fetchImpl).catch(() => undefined);
+        await call("sendMessage", { chat_id: chatId, text: "Reply to the report above with your question and it answers from that run (\"why did it move?\", \"send this as a PDF\", \"every 12 hours instead\").", reply_parameters: { message_id: u.callback_query.message.message_id, allow_sending_without_reply: true }, reply_markup: { force_reply: true, selective: true, input_field_placeholder: "Ask about this report…" } }, fetchImpl).catch(() => undefined);
+        return "handled";
+      }
       if ((action === "approve" || action === "reject") && id) {
         const chatId = String(u.callback_query.message.chat.id);
         const messageId = u.callback_query.message.message_id;
