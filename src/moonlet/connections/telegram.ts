@@ -57,7 +57,7 @@ export async function sendMessage(
  * Send a Rich Message (blocks). Returns null when the API refuses, so the caller can fall back to plain HTML: a server that
  * predates Bot API 10.2, a chat where rich messages are not allowed, or a block the server rejects.
  */
-export async function sendRichMessage(chatId: string, blocks: unknown[], opts: { replyTo?: number; fetch?: typeof fetch } = {}) {
+export async function sendRichMessage(chatId: string, blocks: unknown[], opts: { replyTo?: number; buttons?: Array<Array<{ text: string; data?: string; url?: string }>>; fetch?: typeof fetch } = {}) {
   try {
     const r = await call<{ message_id: number }>(
       "sendRichMessage",
@@ -65,6 +65,7 @@ export async function sendRichMessage(chatId: string, blocks: unknown[], opts: {
         chat_id: chatId,
         rich_message: { blocks },
         ...(opts.replyTo ? { reply_parameters: { message_id: opts.replyTo, allow_sending_without_reply: true } } : {}),
+        ...(opts.buttons ? { reply_markup: { inline_keyboard: opts.buttons.map((row) => row.map((b) => (b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data }))) } } : {}),
       },
       opts.fetch,
     );
@@ -72,6 +73,15 @@ export async function sendRichMessage(chatId: string, blocks: unknown[], opts: {
   } catch (e) {
     console.error("sendRichMessage refused, falling back to HTML:", (e as Error).message);
     return null;
+  }
+}
+
+/** Replace a card with a rich message (used after a decision). Falls back to editing the HTML text. */
+export async function editRichMessage(chatId: string, messageId: number, blocks: unknown[], fallbackHtml: string, fetchImpl: typeof fetch = fetch) {
+  try {
+    await call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { blocks } }, fetchImpl);
+  } catch {
+    await editMessage(chatId, messageId, fallbackHtml, fetchImpl);
   }
 }
 
@@ -231,7 +241,7 @@ export type Update = {
   callback_query?: { id: string; data?: string; message?: { message_id: number; chat: { id: number } } };
 };
 
-export type CallbackHandler = (action: "approve" | "reject", proposalId: string, ctx: { chatId: string; messageId: number }) => Promise<string>;
+export type CallbackHandler = (action: "approve" | "reject", proposalId: string, ctx: { chatId: string; messageId: number }) => Promise<string | { html: string; blocks: unknown[] }>;
 /** Free text from a linked chat. Returns the reply (HTML-escaped by the caller). */
 export type ChatHandler = (owner: string, text: string, ctx: { chatId: string; replyToMessageId?: number; imageUrl?: string }) => Promise<string>;
 
@@ -344,9 +354,10 @@ export async function handleUpdate(u: Update, onCallback: CallbackHandler, fetch
       if ((action === "approve" || action === "reject") && id) {
         const chatId = String(u.callback_query.message.chat.id);
         const messageId = u.callback_query.message.message_id;
-        const text = await onCallback(action, id, { chatId, messageId });
+        const out = await onCallback(action, id, { chatId, messageId });
         await call("answerCallbackQuery", { callback_query_id: u.callback_query.id, text: action === "approve" ? "Approved" : "Rejected" }, fetchImpl).catch(() => undefined);
-        await editMessage(chatId, messageId, text, fetchImpl);
+        if (typeof out === "string") await editMessage(chatId, messageId, out, fetchImpl);
+        else await editRichMessage(chatId, messageId, out.blocks, out.html, fetchImpl);
         return "decided";
       }
     }

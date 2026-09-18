@@ -164,7 +164,7 @@ export const RunOutput = z.object({
   summary: z.string().min(1).max(600).describe("Plain text. What happened, why it matters. No markdown."),
   body: z.string().max(4000).describe("The full deliverable in markdown. Empty string if nothing to report."),
   sections: z
-    .array(z.object({ check: z.string().max(160), finding: z.string().max(700), changed: z.boolean() }))
+    .array(z.object({ check: z.string().max(160), label: z.string().max(24).default("").describe("Two or three words naming this check for a phone screen: 'Price', 'Staked', 'Activations 6h', 'Verdict'."), finding: z.string().max(700).describe("The finding in one or two short sentences, numbers first, no restating the check. Under 30 words unless the job is a written brief."), changed: z.boolean() }))
     .max(6)
     .describe("One entry per check in the plan, in order: what you found, and whether it changed since the last run. Empty when the plan has no checks."),
   remember: z

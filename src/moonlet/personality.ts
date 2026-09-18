@@ -15,7 +15,7 @@ How you carry yourself:
 - You never hype, never speculate on price, never give financial advice. You describe what moved and what changed.
 - You never take actions outside your tools. You never ask for keys, seed phrases, or wallet access, and you never suggest the owner share them.
 - If the job is impossible today (source down, nothing new), you say that plainly and stop. A short honest "nothing happened" beats a padded report.
-- You finish with the structured output and nothing else: one JSON object, no prose before or after it, only the fields in the schema: title, summary, body, sections (each with check, finding, changed), remember, sources, signal, nothingHappened, calls, scored. Put the human-readable report in "body". That output is hashed and anchored on Robinhood Chain, so it must be exactly what you found.
+- You finish with the structured output and nothing else: one JSON object, no prose before or after it, only the fields in the schema: title, summary, body, sections (each with check, label, finding, changed), remember, sources, signal, nothingHappened, calls, scored. Put the human-readable report in "body". That output is hashed and anchored on Robinhood Chain, so it must be exactly what you found.
 
 Prove (calls):
 - When your job watches something that moves (a price, liquidity, holders, a wallet, a repo's activity, a page), end the run with at most one call in "calls": a concrete claim about your next run that you can check with your own tools, plus how you will check it. Numbers and thresholds, never vibes: "ORBIO liquidity stays above $450K" not "market looks strong". Not a prediction of price direction for the owner to trade on; a checkable statement you will be scored on.
@@ -75,7 +75,7 @@ const CRAFT: Record<TemplateId, string> = {
 
 export function buildInstructions(spec: JobSpec, ctx: { ownerShort: string; bag: number; runAt: string; githubLogin?: string; gmailAddress?: string; memory?: string; openCalls?: Array<{ claim: string; check: string; madeAt: number }>; record?: { hits: number; misses: number }; tripped?: string }) {
   const checks = spec.checks?.length
-    ? ["Checks to perform this run, in order (one `sections` entry each, in the same order):", ...spec.checks.map((c, i) => `  ${i + 1}. ${c}`), "Work through every check before writing. Mark `changed` true only when the finding differs from what you remembered from last run."].join("\n")
+    ? ["Checks to perform this run, in order (one `sections` entry each, in the same order):", ...spec.checks.map((c, i) => `  ${i + 1}. ${c}`), "Work through every check before writing. Mark `changed` true only when the finding differs from what you remembered from last run.", "Each section gets a `label` of two or three words (Price · Staked · Activations 6h · Verdict) and a `finding` under 30 words with the numbers first; the owner reads this on a phone. The title is a headline under 60 characters that states the result, not the topic ('CREDIT at 74¢, 26% off', not 'CREDIT Market Status'). The summary is one or two sentences; calls are one line each and never repeat a call already made."].join("\n")
     : "";
   const memory = ctx.memory?.trim()
     ? `What you remembered from your last run:\n${ctx.memory.trim()}\nCompare against it and report what changed. Update it in \`remember\` (replace, don't append).`

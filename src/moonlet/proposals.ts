@@ -7,6 +7,7 @@ import * as gmail from "./connections/gmail";
 import { describeSpec, launchMoonlet } from "./launch";
 import { CADENCE_WORDS, activationAmount } from "./budget";
 import { readActivations } from "./orbio";
+import { activationBlocks, approvalBlocks, decidedBlocks } from "./connections/telegram-rich";
 import type { Cadence, JobSpec } from "./spec";
 
 /**
@@ -169,11 +170,14 @@ export async function propose(input: ProposalInput, ctx: ProposeCtx) {
   if (conn && tg.telegramConfigured()) {
     const d = describe(input.kind, payload);
     try {
-      const m = await tg.sendMessage(
-        conn.data.chatId,
-        `<b>${tg.esc(ctx.moonletName)}</b> wants to: <b>${tg.esc(d.title)}</b>\n\n${tg.esc(d.body).slice(0, 3000)}`,
-        { buttons: [[{ text: "✓ Approve", data: `approve:${id}` }, { text: "✗ Reject", data: `reject:${id}` }]], fetch: ctx.fetch },
-      );
+      const rich = approvalBlocks(d, { moonletName: ctx.moonletName, proposalId: id });
+      const m =
+        (await tg.sendRichMessage(conn.data.chatId, rich.blocks, { buttons: rich.keyboard, fetch: ctx.fetch })) ??
+        (await tg.sendMessage(
+          conn.data.chatId,
+          `<b>${tg.esc(ctx.moonletName)}</b> wants to: <b>${tg.esc(d.title)}</b>\n\n${tg.esc(d.body).slice(0, 3000)}`,
+          { buttons: [[{ text: "✓ Approve", data: `approve:${id}` }, { text: "✗ Reject", data: `reject:${id}` }]], fetch: ctx.fetch },
+        ));
       await store.setProposalTelegram(id, { chatId: conn.data.chatId, messageId: Number(m.id) });
     } catch {
       // Telegram down is not a reason to lose the proposal; it still shows on the dashboard.
@@ -197,7 +201,10 @@ export async function proposeActivation(ctx: { owner: string; moonletId: string;
   if (conn && tg.telegramConfigured()) {
     const d = describe("activate_credit", payload);
     try {
-      const m = await tg.sendMessage(conn.data.chatId, `<b>${tg.esc(ctx.moonletName)}</b> is quiet: <b>${tg.esc(d.title)}</b>\n\n${tg.esc(d.body)}\n\nSign it from your wallet at ${tg.esc(appUrl())}/app?approve=${id}`, { buttons: [[{ text: "✗ Not now", data: `reject:${id}` }]], fetch: ctx.fetch });
+      const rich = activationBlocks({ amountUsd, reason: payload.reason }, { moonletName: ctx.moonletName, proposalId: id, url: `${appUrl()}/app?approve=${id}` });
+      const m =
+        (await tg.sendRichMessage(conn.data.chatId, rich.blocks, { buttons: rich.keyboard, fetch: ctx.fetch })) ??
+        (await tg.sendMessage(conn.data.chatId, `<b>${tg.esc(ctx.moonletName)}</b> is quiet: <b>${tg.esc(d.title)}</b>\n\n${tg.esc(d.body)}\n\nSign it from your wallet at ${tg.esc(appUrl())}/app?approve=${id}`, { buttons: [[{ text: "✗ Not now", data: `reject:${id}` }]], fetch: ctx.fetch }));
       await store.setProposalTelegram(id, { chatId: conn.data.chatId, messageId: Number(m.id) });
     } catch {
       // dashboard still shows it
@@ -323,7 +330,7 @@ async function execute(id: string, fetchImpl: typeof fetch = fetch): Promise<{ s
   }
 }
 
-/** Telegram button handler: decide, then return the text the message should be edited to. */
+/** Telegram button handler: decide, then return what the card should become (rich blocks, with HTML as the fallback). */
 export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   const p = await store.getProposal(id);
   const d = p ? describe(p.kind, p.payload) : { title: "proposal", body: "" };
@@ -331,23 +338,20 @@ export const telegramCallback: tg.CallbackHandler = async (action, id, ctx) => {
   if (!(await tg.chatOwns(ctx.chatId, p.owner))) return "This chat isn't linked to the wallet that owns this draft.";
   const r = await decide(id, action);
   if (!r.ok) return `<b>${tg.esc(d.title)}</b>\n\n${tg.esc(r.error)}.`;
-  if (r.status === "rejected") return `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : p.kind === "email_send" || p.kind === "email_forward" ? "was sent" : p.kind === "email_organize" ? "changed in your inbox" : p.kind === "activate_credit" ? "was activated; the moonlet stays quiet" : "was posted"}.`;
-  if (r.status === "approved") return `<b>${tg.esc(d.title)}</b>\n\nSign it from your wallet: ${tg.esc(appUrl())}/app?approve=${id}`;
-  if (r.status === "executed") {
-    const { url, name, familyNote, verification } = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string; verification?: { status: string; scope?: string; checks: Array<{ ok: boolean; field: string }> } };
-    const scopeNote = verification?.scope === "sample" ? " (sample)" : "";
-    const proof = verification ? (verification.status === "verified" ? `\n<i>Read back and checked${scopeNote}: ${verification.checks.length} field${verification.checks.length === 1 ? "" : "s"} match.</i>` : verification.status === "mismatch" ? `` : `\n<i>Could not be read back to check.</i>`) : "";
-    if (verification?.status === "mismatch") {
-      const bad = verification.checks.filter((c) => !c.ok).map((c) => c.field).join(", ");
-      return `<b>${tg.esc(d.title)}</b>\n\n⚠ <b>Happened, but not as approved.</b> Read back from the provider, these differ: ${tg.esc(bad)}. Check it${url ? ` at ${tg.esc(url)}` : ""} before relying on it.`;
-    }
-    if (p.kind === "spawn_moonlet") return `<b>${tg.esc(d.title)}</b>\n\n✓ <b>${tg.esc(name ?? "")}</b> is live and running its first check now; its reports will land here too.${familyNote ? `\n\n${tg.esc(familyNote)}` : ""}\n${tg.esc(url ?? "")}`;
-    const m = await store.getMoonlet(p.moonletId);
-    const note = m && !m.autopilot ? `\n\n<i>It will ask again next time. To let ${tg.esc(m.name)} act on its own, turn on Autopilot on its page.</i>` : "";
-    if (p.kind === "email_send" || p.kind === "email_forward") return `<b>${tg.esc(d.title)}</b>\n\n✓ Sent from your Gmail.${url ? ` ${tg.esc(url)}` : ""}${proof}${note}`;
-    if (p.kind === "email_organize") return `<b>${tg.esc(d.title)}</b>\n\n✓ Done in your Gmail.${proof}${note}`;
-    return `<b>${tg.esc(d.title)}</b>\n\n✓ Done.${url ? ` ${tg.esc(url)}` : ""}${proof}${note}`;
+  const res = (r.result ?? {}) as { url?: string; name?: string; familyNote?: string; error?: string; verification?: { status: string; scope?: string; checks: Array<{ ok: boolean; field: string; expected?: string; actual?: string }> } };
+  if (r.status === "rejected") {
+    const html = `<b>${tg.esc(d.title)}</b>\n\n✗ Rejected. Nothing ${p.kind === "spawn_moonlet" ? "was spawned" : p.kind === "email_send" || p.kind === "email_forward" ? "was sent" : p.kind === "email_organize" ? "changed in your inbox" : p.kind === "activate_credit" ? "was activated; the moonlet stays quiet" : "was posted"}.`;
+    return { html, blocks: decidedBlocks(d, { status: "rejected" }) };
   }
-  if (r.status === "uncertain") return `<b>${tg.esc(d.title)}</b>\n\n⚠ Approved, but the provider didn't answer in time. It may have gone through; check there before approving again. ${tg.esc(String((r.result as { error?: string })?.error ?? ""))}`;
-  return `<b>${tg.esc(d.title)}</b>\n\n⚠ Approved, but it failed: ${tg.esc(String((r.result as { error?: string })?.error ?? "unknown"))}`;
+  if (r.status === "approved") {
+    const url = `${appUrl()}/app?approve=${id}`;
+    return { html: `<b>${tg.esc(d.title)}</b>\n\nSign it from your wallet: ${tg.esc(url)}`, blocks: decidedBlocks(d, { status: "approved", extra: "Sign the activation from your wallet on the dashboard.", url }) };
+  }
+  const m = await store.getMoonlet(p.moonletId);
+  const note = r.status === "executed" && m && !m.autopilot && p.kind !== "spawn_moonlet" ? `It will ask again next time; Autopilot on ${m.name}'s page lets it act on its own.` : undefined;
+  const extra = p.kind === "spawn_moonlet" && r.status === "executed" ? `${res.name ?? ""} is live and running its first check now.${res.familyNote ? ` ${res.familyNote}` : ""}` : note;
+  const html = r.status === "executed"
+    ? `<b>${tg.esc(d.title)}</b>\n\n${res.verification?.status === "mismatch" ? "⚠ Happened, but not as approved." : "✓ Done."}${res.url ? ` ${tg.esc(res.url)}` : ""}`
+    : `<b>${tg.esc(d.title)}</b>\n\n⚠ ${r.status === "uncertain" ? "Approved, but the provider didn't answer in time." : "Approved, but it failed."} ${tg.esc(res.error ?? "")}`;
+  return { html, blocks: decidedBlocks(d, { status: r.status, url: res.url, verification: res.verification ?? null, error: r.status === "executed" ? undefined : res.error, extra }) };
 };

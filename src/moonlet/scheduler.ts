@@ -301,7 +301,10 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}${proofBlock}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
     // Rich blocks first (headline, pull-quote, table, expandable body, checkbox calls, buttons); the HTML text is the fallback.
     const sent =
-      (await tg.sendRichMessage(tgConn.data.chatId, reportBlocks(o, { moonletName: m.spec.name, moonletId: m.id, page, costUsd: result.costUsd, hashed: !!result.outputHash, anchoredUrl: txHash ? `https://robinhoodchain.blockscout.com/tx/${txHash}` : null, template: m.spec.template, at: now() }), { fetch: deps.fetch })) ??
+      (await (async () => {
+        const rich = reportBlocks(o, { moonletName: m.spec.name, page, costUsd: result.costUsd, hashed: !!result.outputHash, anchoredUrl: txHash ? `https://robinhoodchain.blockscout.com/tx/${txHash}` : null, template: m.spec.template, at: now() });
+        return tg.sendRichMessage(tgConn.data.chatId, rich.blocks, { buttons: rich.keyboard, fetch: deps.fetch });
+      })()) ??
       (await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch((e) => {
         console.error("telegram delivery failed", m.id, (e as Error).message);
         return null;
