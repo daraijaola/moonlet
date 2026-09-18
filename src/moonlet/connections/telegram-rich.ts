@@ -36,7 +36,7 @@ export function reportBlocks(o: RunOutput, ctx: { moonletName: string; moonletId
         [{ text: bold("check"), is_header: true, align: "left" }, { text: bold("finding"), is_header: true, align: "left" }],
         ...sections.slice(0, 8).map((s) => [{ text: [s.changed ? "● " : "○ ", short(s.check)], align: "left", valign: "top" }, { text: short(s.finding), align: "left", valign: "top" }]),
       ],
-      caption: { text: italic("● changed since last run · ○ unchanged") },
+      caption: italic("● changed since last run · ○ unchanged"),
     });
   }
   const body = o.body.trim();
