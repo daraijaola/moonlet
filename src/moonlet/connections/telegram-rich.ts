@@ -14,7 +14,7 @@ const bold = (t: Rich): Rich => ({ type: "bold", text: t });
 const italic = (t: Rich): Rich => ({ type: "italic", text: t });
 const code = (t: Rich): Rich => ({ type: "code", text: t });
 const link = (t: Rich, url: string): Rich => ({ type: "url", text: t, url });
-const when = (unix: number): Rich => ({ type: "date_time", text: new Date(unix * 1000).toISOString(), unix_time: unix, date_time_format: "d MMM, HH:mm" });
+const when = (unix: number): Rich => ({ type: "date_time", text: new Date(unix * 1000).toISOString(), unix_time: unix, date_time_format: "r" });
 
 /** Long hex strings read badly on a phone; shorten them the way the web pages do. */
 const short = (s: string) => s.replace(/0x[0-9a-fA-F]{40,64}/g, (h) => `${h.slice(0, 6)}…${h.slice(-4)}`);
