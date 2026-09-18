@@ -4,9 +4,9 @@ import { StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { CADENCE_LABEL, TEMPLATE_LABEL } from "@/components/labels";
 import type { Cadence } from "@/moonlet/spec";
 import type * as store from "@/moonlet/store";
-import { fmtBag, shortAddr } from "@/lib/api";
+import { fmtBag, shortAddr, shortenHexes, timeAgo } from "@/lib/api";
 
-export type SkyItem = { id: string; name: string; status: store.MoonletRow["status"]; objective: string; template: store.MoonletRow["spec"]["template"]; cadence: string; owner: string; bag: number; earn: number; burn: number; avatar: number; runs: number; lastRunAt: number | null; private?: boolean };
+export type SkyItem = { id: string; name: string; status: store.MoonletRow["status"]; objective: string; template: store.MoonletRow["spec"]["template"]; cadence: string; owner: string; bag: number; earn: number; burn: number; avatar: number; runs: number; lastRunAt: number | null; private?: boolean; headline?: { title: string; at: number; signal: string } | null };
 
 export function SkyCard({ m }: { m: SkyItem }) {
   const quiet = m.status === "quiet" || m.status === "paused";
@@ -24,6 +24,12 @@ export function SkyCard({ m }: { m: SkyItem }) {
         <span className="shrink-0 rounded-full bg-ink/[0.05] px-2 py-0.5 text-[11px] font-medium text-ink-soft">{TEMPLATE_LABEL[m.template]}</span>
       </div>
       <p className="mt-3 line-clamp-2 min-h-[2.9em] text-[13.5px] leading-[1.5] text-ink-soft">“{m.objective}”</p>
+      {m.headline && !m.private && (
+        <p className="mt-2.5 border-l-2 border-gold/70 pl-2.5 text-[12.5px] leading-[1.45] text-ink">
+          <span className="line-clamp-2 font-medium">{shortenHexes(m.headline.title)}</span>
+          <span className="block font-mono text-[10.5px] text-ink-faint">{timeAgo(m.headline.at)}{m.headline.signal === "high" ? " · high signal" : ""}</span>
+        </p>
+      )}
       <div className="mt-4 flex items-center justify-between border-t border-ink/[0.06] pt-3">
         <span className="flex items-center gap-2 text-[12px] text-ink-soft">
           <span className="font-mono">{shortAddr(m.owner)}</span>

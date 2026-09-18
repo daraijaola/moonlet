@@ -14,6 +14,7 @@ export const TOOL_IDS = [
   "web_fetch",
   "chain_read",
   "token_market",
+  "credit_market",
   "sandbox",
   "deliver",
   "github_read",
@@ -129,7 +130,7 @@ export const TEMPLATE_DEFAULTS: Record<
     tools: ["token_market", "chain_read", "web_search", "deliver"],
     cadence: "6h",
     output: { kind: "brief", maxWords: 180, alwaysReport: true },
-    costPerRunUsd: 0.012,
+    costPerRunUsd: 0.02,
   },
   "repo-mechanic": {
     tools: ["github_read", "web_fetch", "deliver"],
@@ -163,9 +164,14 @@ export const RunOutput = z.object({
   summary: z.string().min(1).max(600).describe("Plain text. What happened, why it matters. No markdown."),
   body: z.string().max(4000).describe("The full deliverable in markdown. Empty string if nothing to report."),
   sections: z
-    .array(z.object({ check: z.string().max(160), finding: z.string().max(700), changed: z.boolean() }))
+    .array(z.object({ check: z.string().max(160), label: z.string().max(24).default("").describe("Two or three words naming this check for a phone screen: 'Price', 'Staked', 'Activations 6h', 'Verdict'."), finding: z.string().max(700).describe("The finding in one or two short sentences, numbers first, no restating the check. Under 30 words unless the job is a written brief."), changed: z.boolean() }))
     .max(6)
     .describe("One entry per check in the plan, in order: what you found, and whether it changed since the last run. Empty when the plan has no checks."),
+  metrics: z
+    .array(z.object({ label: z.string().max(18), value: z.string().max(18), delta: z.string().max(18).default("").describe("Change since last run, e.g. '+2.8%', '−$23', 'new'. Empty if none or first run."), tone: z.enum(["up", "down", "flat"]).default("flat") }))
+    .max(4)
+    .default([])
+    .describe("The numbers that matter, at a glance: up to four label/value pairs ('CREDIT' '74¢', 'Discount' '26%', 'Staked' '303.8M', 'Burned 6h' '$589'). Only real figures you read this run."),
   remember: z
     .string()
     .max(1200)

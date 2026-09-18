@@ -255,18 +255,20 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
   const ghToken = deps.connections?.github?.token;
   const githubRead = tool({
     name: "github_read",
-    description: "Read GitHub through the owner's connected account. `repos` lists the owner's own repositories (use it to resolve 'my repo X'); `readme`, `tree`, `file`, `commits`, `issues`, `pulls` read one repo. Read-only.",
+    description: "Read GitHub through the owner's connected account. `repos` lists the owner's own repositories (use it to resolve 'my repo X'); `readme`, `tree`, `file`, `commits`, `issues`, `pulls` read one repo. `pull` (with number) is the merge-decision view of one PR: mergeable state, CI on its head (passing/failing/pending), reviews, size, age, files. `branches` gives each branch's ahead/behind against the default branch. `runs` lists recent workflow runs and their conclusions. Read-only.",
     inputSchema: z.object({
-      action: z.enum(["repos", "readme", "issues", "pulls", "commits", "file", "tree"]),
+      action: z.enum(["repos", "readme", "issues", "pulls", "commits", "file", "tree", "pull", "branches", "runs"]),
+      number: z.number().int().positive().optional().describe("for pull"),
       repo: z.string().regex(/^[\w.-]+\/[\w.-]+$/).optional().describe("owner/name; not needed for `repos`"),
       path: z.string().optional().describe("for file / tree"),
       ref: z.string().optional().describe("branch or sha"),
       state: z.enum(["open", "closed", "all"]).optional(),
       limit: z.number().int().min(1).max(30).optional(),
     }),
-    execute: traced("github_read", (q: { action: string; repo?: string; path?: string }, r: unknown) => `${q.action}${q.repo ? " " + q.repo : ""}${q.path ? " " + q.path : ""} · ${brief(r, 90)}`, async (q) => {
+    execute: traced("github_read", (q: { action: string; repo?: string; path?: string; number?: number }, r: unknown) => `${q.action}${q.repo ? " " + q.repo : ""}${q.number ? " #" + q.number : ""}${q.path ? " " + q.path : ""} · ${brief(r, 90)}`, async (q) => {
       if (!ghToken) return { error: "GitHub not connected" };
       if (q.action !== "repos" && !q.repo) return { error: "repo (owner/name) is required; call action=repos to find it" };
+      if (q.action === "pull" && !q.number) return { error: "number is required for pull" };
       try {
         if (q.repo && (await isPrivateRepo(ghToken, q.repo, f))) deps.onPrivate?.(`private repo ${q.repo}`);
         if (q.action === "repos") deps.onPrivate?.("repo list");
@@ -466,11 +468,86 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     }),
   });
 
+
+  /**
+   * Orbio's CREDIT protocol, read from the contracts: what a dollar of USDG buys on the order book, the pool price, supply,
+   * ORBIO staked, and every activation in a window. The one number a holder wants is the discount: 1 CREDIT is $1 of
+   * inference, so a 74¢ quote is a 26% discount. Read-only; nothing here can buy, sell or activate.
+   */
+  const CREDIT = "0xe33322da1380e61e5ae5dfb21e7f62924c73004c", EXCHANGE = "0x6951ffd32630b05e06f50062aea801625a58ebc0", STAKING = "0xe0710011278bfb63e57c5f227e5980984b1eddca", ORBIO_T = "0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3";
+  const ACTIVATED = "0x3a293632e41f6556f85d186d28ae95749534c2c9422cec0e1075886560ca7147";
+  const creditMarket = tool({
+    name: "credit_market",
+    description:
+      "Orbio's CREDIT protocol on Robinhood Chain, read straight from the contracts. 1 CREDIT activates $1 of inference, so the price is a discount on AI. quote: what 1, 10 and 100 USDG buy on Orbio's order book right now (implied price per CREDIT and the discount vs $1), plus the Uniswap pool price. supply: CREDIT total supply, ORBIO staked with Orbio, the wallet's own CREDIT. activations: every activate() in the last N hours (count, total dollars burned into AI balance, the largest, how many went to someone else's account). Read-only.",
+    inputSchema: z.object({
+      action: z.enum(["quote", "supply", "activations"]),
+      hours: z.number().int().min(1).max(168).default(6).describe("activations: window to scan"),
+      wallet: z.string().regex(/^0x[0-9a-fA-F]{40}$/).optional().describe("supply: also report this wallet's CREDIT and staked ORBIO"),
+    }),
+    execute: traced("credit_market", (a: { action: string; hours?: number; wallet?: string }, r: unknown) => `${a.action}${a.action === "activations" ? ` ${a.hours ?? 6}h` : ""} · ${brief(r, 90)}`, async ({ action, hours, wallet }) => {
+      try {
+        const call = async (to: string, data: string) => BigInt(((await rpc("eth_call", [{ to, data }, "latest"])) as string) || "0x0");
+        const pad = (h: string) => h.replace(/^0x/, "").padStart(64, "0");
+        if (action === "quote") {
+          const rows: Array<{ usdgIn: number; creditOut: number; pricePerCredit: number; discountPct: number; fills: number; note?: string }> = [];
+          for (const usd of [1, 10, 100]) {
+            // getQuote(uint256 usdgIn, uint256 maxFills) → (creditOut, usdgSpent, feeAtoms, fills, reason)
+            const raw = (await rpc("eth_call", [{ to: EXCHANGE, data: `0x758af3ab${pad((BigInt(usd) * 1_000_000n).toString(16))}${pad("40")}` }, "latest"])) as string;
+            const words = raw.slice(2).match(/.{64}/g) ?? [];
+            if (words.length < 5) { rows.push({ usdgIn: usd, creditOut: 0, pricePerCredit: 0, discountPct: 0, fills: 0, note: "no quote" }); continue; }
+            const creditOut = Number(BigInt(`0x${words[0]}`)) / 1e6, spent = Number(BigInt(`0x${words[1]}`)) / 1e6, fills = Number(BigInt(`0x${words[3]}`)), reason = Number(BigInt(`0x${words[4]}`));
+            const price = creditOut > 0 ? spent / creditOut : 0;
+            rows.push({ usdgIn: usd, creditOut: round6(creditOut), pricePerCredit: round6(price), discountPct: price > 0 ? Math.round((1 - price) * 1000) / 10 : 0, fills, note: reason === 1 ? "order book thinner than this size" : reason === 2 ? "smallest unit unaffordable" : undefined });
+          }
+          let pool: { priceUsd: number | null; volume24hUsd: number | null } = { priceUsd: null, volume24hUsd: null };
+          try {
+            const g = (await (await f(`https://api.geckoterminal.com/api/v2/networks/robinhood/tokens/${CREDIT}`, { signal: AbortSignal.timeout(8000) })).json()) as { data?: { attributes?: { price_usd?: string; volume_usd?: { h24?: string } } } };
+            pool = { priceUsd: g.data?.attributes?.price_usd ? round6(Number(g.data.attributes.price_usd)) : null, volume24hUsd: g.data?.attributes?.volume_usd?.h24 ? Math.round(Number(g.data.attributes.volume_usd.h24)) : null };
+          } catch { /* pool price is a bonus */ }
+          return { faceValueUsd: 1, orderBook: rows, uniswapPool: pool, note: "1 CREDIT activates $1 of Orbio inference; discount = 1 − price. Order book quotes are live and unreserved." };
+        }
+        if (action === "supply") {
+          const [supply, staked] = await Promise.all([call(CREDIT, "0x18160ddd"), call(ORBIO_T, `0x70a08231${pad(STAKING)}`)]);
+          const out: Record<string, unknown> = { creditSupply: round6(Number(supply) / 1e6), orbioStaked: Math.round(Number(staked) / 1e18) };
+          if (wallet) {
+            const [c, s] = await Promise.all([call(CREDIT, `0x70a08231${pad(wallet)}`), call(STAKING, `0x70a08231${pad(wallet)}`).catch(() => 0n)]);
+            out.wallet = { address: wallet, credit: round6(Number(c) / 1e6), orbioStaked: Math.round(Number(s) / 1e18) };
+          }
+          return out;
+        }
+        // activations: Activated(activationId indexed, from indexed, beneficiary indexed, amount). Blocks are ~0.1s; a topic-filtered
+        // eth_getLogs over a wide range is accepted by the public RPC (verified 17 Sep), unlike unfiltered scans.
+        const latest = parseInt((await rpc("eth_blockNumber", [])) as string, 16);
+        const span = Math.min(latest, Math.round((hours ?? 6) * 36_000));
+        type Log = { topics: string[]; data: string; transactionHash: string; blockNumber: string };
+        const logs = ((await rpc("eth_getLogs", [{ fromBlock: `0x${(latest - span).toString(16)}`, toBlock: "latest", address: CREDIT, topics: [ACTIVATED] }])) as Log[]) ?? [];
+        const acts = logs.map((l) => ({ id: BigInt(l.topics[1]).toString(), from: `0x${l.topics[2].slice(-40)}`, beneficiary: `0x${l.topics[3].slice(-40)}`, amountUsd: Number(BigInt(l.data.slice(0, 66))) / 1e6, tx: l.transactionHash, block: parseInt(l.blockNumber, 16) }));
+        const total = acts.reduce((a, x) => a + x.amountUsd, 0);
+        const largest = acts.slice().sort((a, b) => b.amountUsd - a.amountUsd)[0];
+        return {
+          hours: hours ?? 6,
+          blocksScanned: span,
+          count: acts.length,
+          totalUsd: round6(total),
+          largest: largest ? { amountUsd: largest.amountUsd, from: largest.from, beneficiary: largest.beneficiary, tx: largest.tx } : null,
+          givenToOthers: acts.filter((a) => a.from.toLowerCase() !== a.beneficiary.toLowerCase()).length,
+          recent: acts.slice(-10).reverse(),
+          note: "each activation burns CREDIT into a non-transferable AI balance; 'given to others' means the payer and the beneficiary differ (someone fueling another account)",
+        };
+      } catch (e) {
+        return { error: (e as Error).message };
+      }
+    }),
+  });
+  const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+
   const webFetch: LocalTool = { ...webFetchTool(f), execute: traced("web_fetch", (a: { url: string }, r: unknown) => `${a.url} · ${brief(r, 90)}`, webFetchTool(f).execute as never) as never };
 
   const all: Partial<Record<ToolId, LocalTool>> = {
     chain_read: chainRead,
     token_market: tokenMarket,
+    credit_market: creditMarket,
     deliver,
     web_fetch: webFetch,
     github_read: githubRead,

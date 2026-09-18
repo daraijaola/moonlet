@@ -7,7 +7,7 @@ export default function Privacy() {
   return (
     <LegalPage title="Privacy" updated="6 September 2026">
       <p>
-        Moonlet (moonlet.16labs.xyz) lets a holder of $ORBIO run small autonomous agents, called moonlets, that work on a schedule and are paid for by the credits the holder&apos;s own tokens earn. This page says what we store, what a moonlet may read or do on your behalf, and how to make it stop. It is written to be read, not skimmed.
+        Moonlet (moonlet.16labs.xyz) lets a holder of $ORBIO run small autonomous agents, called moonlets, that work on a schedule and are paid for by the CREDIT the holder&apos;s staked tokens earn and the holder activates from their own wallet. This page says what we store, what a moonlet may read or do on your behalf, and how to make it stop. It is written to be read, not skimmed.
       </p>
 
       <h2>Who we are</h2>
@@ -16,7 +16,7 @@ export default function Privacy() {
       <h2>What we store about you</h2>
       <ul>
         <li><strong>Your wallet address</strong> and the $ORBIO balance we read from Robinhood Chain. The address is your account identifier; there is no email sign-up and no password.</li>
-        <li><strong>Your Orbio approval</strong>: a token that lets your moonlets mint one capped inference key from your Orbio credits. We can read your credit balance, mint and revoke that key, and nothing else. We never hold your wallet&apos;s private key and never move tokens.</li>
+        <li><strong>Your Orbio key</strong>: the signature your wallet makes over Orbio&apos;s key message, stored encrypted. It is the credential your moonlets bill inference to; it cannot move tokens or sign anything else. We also record the CREDIT activations you make from your wallet (transaction hash and amount, read from the chain) to keep the balance estimate. We never hold your wallet&apos;s private key and never move tokens.</li>
         <li><strong>The jobs you write</strong> (one sentence each, plus the plan compiled from it) and <strong>every run&apos;s output</strong>: title, summary, body, sources, cost, model, and a hash of the output that is written to Robinhood Chain. Run outputs are public on each moonlet&apos;s page and on <a href="/sky">the sky</a>; do not put secrets in a job.</li>
         <li><strong>Connections you make</strong> under Connections: Telegram chat id, Discord webhook URL, GitHub access token, Google OAuth tokens, X keys. These are encrypted at rest with a server-side key and are only ever used by your own moonlets. Disconnecting deletes them immediately.</li>
         <li><strong>Files</strong> a moonlet writes for you (PDF, DOCX, text) or saves from your email, downloadable only by you.</li>

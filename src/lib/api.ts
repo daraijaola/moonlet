@@ -54,7 +54,8 @@ export type ApiRun = {
   explorerUrl: string | null;
   keyEvents: Array<{ kind: string; detail: string; amountUsd?: number }>;
   trace?: Array<{ at: number; tool: string; summary: string }>;
-  sections?: Array<{ check: string; finding: string; changed: boolean }>;
+  sections?: Array<{ check: string; label?: string; finding: string; changed: boolean }>;
+  metrics?: Array<{ label: string; value: string; delta?: string; tone?: "up" | "down" | "flat" }>;
   calls?: Array<{ claim: string; check: string }>;
   scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }>;
   error: string | null;
@@ -82,16 +83,31 @@ export type ApiAction = {
 export type Proposal = {
   id: string;
   moonletId: string;
-  kind: "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create";
+  kind: "tweet" | "pull_request" | "issue_comment" | "spawn_moonlet" | "email_send" | "email_organize" | "email_forward" | "issue_create" | "activate_credit";
   status: "pending" | "approved" | "executing" | "rejected" | "executed" | "failed" | "uncertain";
   title: string;
   body: string;
+  payload: Record<string, unknown>;
   result: Record<string, unknown> | null;
   createdAt: number;
   decidedAt: number | null;
 };
 
-export type OrbioStatus = { approved: boolean; avatar: number; bag: number; earnPerDayUsd: number; idleCreditsUsd: number | null; legacyKeyUsd?: number | null; canWrite: boolean; orbio: { tools: string[]; error: string | null; expiresAt: number | null; dev: boolean } };
+export type OrbioActivation = { txHash: string; activationId: string; from: string; amountUsd: number; blockNumber: number; proposalId: string | null; at: number };
+export type OrbioStatus = {
+  approved: boolean;
+  avatar: number;
+  bag: number;
+  staked: number;
+  earnPerDayUsd: number;
+  /** Activated AI balance: from the gateway when it answers, else Moonlet's ledger. */
+  idleCreditsUsd: number;
+  balanceSource: "gateway" | "ledger";
+  /** CREDIT tokens in the wallet, not yet activated. */
+  creditTokensUsd: number | null;
+  canWrite: boolean;
+  orbio: { epoch: number; signedAt: number | null; message: string; dev: boolean; activations: OrbioActivation[]; activationCard: { id: string; amountUsd: number; status: string } | null };
+};
 
 async function req<T>(owner: string | null, path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -110,8 +126,13 @@ async function req<T>(owner: string | null, path: string, init?: RequestInit): P
 export const api = {
   orbioStatus: (owner: string) => req<OrbioStatus>(owner, "/api/orbio/status"),
   orbioDisconnect: (owner: string) => req<{ ok: boolean }>(owner, "/api/orbio/status", { method: "DELETE" }),
-  orbioStart: (owner: string, redirectTo: string) =>
-    req<{ url: string }>(owner, "/api/orbio/start", { method: "POST", body: JSON.stringify({ redirectTo, origin: typeof window !== "undefined" ? window.location.origin : undefined }) }),
+  orbioSignKey: (owner: string, signature: string, epoch: number) => req<{ ok: boolean; epoch: number }>(owner, "/api/orbio/key", { method: "POST", body: JSON.stringify({ signature, epoch }) }),
+  orbioActivate: async (owner: string, txHash: string, proposalId: string | null) => {
+    const r = await fetch("/api/orbio/activate", { method: "POST", headers: { "content-type": "application/json", "x-owner": owner }, body: JSON.stringify({ txHash, proposalId }), credentials: "include" });
+    const j = (await r.json().catch(() => ({}))) as { ok: boolean; error?: string; credited?: number; total?: number };
+    if (!r.ok) throw new Error(j.error ?? `HTTP ${r.status}`);
+    return { ...j, pending: r.status === 202 };
+  },
   listMoonlets: (owner: string) => req<{ moonlets: ApiMoonlet[] }>(owner, "/api/moonlets"),
   getMoonlet: (id: string) => req<{ moonlet: ApiMoonlet }>(null, `/api/moonlets/${id}`),
   runs: (id: string) => req<{ runs: ApiRun[]; anchoring?: boolean }>(null, `/api/moonlets/${id}/runs`),

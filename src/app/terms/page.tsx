@@ -9,7 +9,7 @@ export default function Terms() {
       <p>Moonlet is an early product built for Orbio Build Week. Using it means you accept the following, which we have kept short on purpose.</p>
 
       <h2>What Moonlet is</h2>
-      <p>A way to run small autonomous agents on a schedule, paid for by inference credits your $ORBIO holding earns through Orbio. Credits are product access, not cash; Moonlet never holds or moves your tokens.</p>
+      <p>A way to run small autonomous agents on a schedule, paid for by Orbio CREDIT your staked $ORBIO earns and you activate from your own wallet. Activated balance is product access, not cash; Moonlet never holds or moves your tokens.</p>
 
       <h2>Your side</h2>
       <ul>

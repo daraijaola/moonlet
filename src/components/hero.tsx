@@ -37,7 +37,7 @@ export function Hero() {
             an agent.
           </motion.h1>
           <motion.p {...up(0.12)} className="mt-6 max-w-[30rem] text-[17px] leading-[1.55] text-ink-soft">
-            Type one sentence. A moonlet works on your schedule, paid by the credits your $ORBIO earns. No card, no key to copy. Sell the bag and it sleeps.
+            Type one sentence. A moonlet works on your schedule, paid by the CREDIT your staked $ORBIO earns. No card, no key to copy. Sell the bag and it sleeps.
           </motion.p>
           <motion.div {...up(0.18)} className="mt-9 max-w-[32rem]">
             <JobInput />
@@ -46,7 +46,7 @@ export function Hero() {
             <Link href="#how" className="lp-btn lp-btn-ghost lp-btn-sm -ml-3 w-fit">
               How it works <ArrowRight className="lp-arrow" size={14} strokeWidth={2.2} />
             </Link>
-            <p className="font-mono text-[12px] text-ink-faint">Hold 1,000+ $ORBIO · approve Orbio once · every run hashed on Robinhood Chain</p>
+            <p className="font-mono text-[12px] text-ink-faint">Stake $ORBIO, earn CREDIT · sign once · every run hashed on Robinhood Chain</p>
           </motion.div>
         </div>
 

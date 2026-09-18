@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
 import { api, fmtBag, fmtUsd, type Connections, type OrbioStatus } from "@/lib/api";
-import { plan, HOLDER_FLOOR } from "@/moonlet/budget";
+import { plan } from "@/moonlet/budget";
 import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, recommendedCapUsd, TOOL_REQUIRES, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
 import { FuelGauge } from "@/components/fuel-gauge";
 import { DitherField } from "@/components/dither-field";
@@ -63,7 +63,8 @@ function NewInner() {
   }, [editId, forkId]);
 
   const bag = status?.bag ?? 0;
-  const p = useMemo(() => (spec ? plan(spec, bag) : null), [spec, bag]);
+  const staked = status?.staked ?? 0;
+  const p = useMemo(() => (spec ? plan(spec, staked) : null), [spec, staked]);
   const linked = (k: "telegram" | "x" | "github" | "discord" | "gmail") => conns?.connections.find((c) => c.kind === k) ?? null;
   const resume = params.get("resume") === "1";
   // Connecting a service sends you off-site; the draft waits in this tab and the wizard picks up at the same step on return.
@@ -299,7 +300,7 @@ function NewInner() {
         {step === 3 && spec && p && !launching && (
           <>
             <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">The honest math</h1>
-            <p className="mt-1 text-[13.5px] text-ink-soft">It runs on the schedule you set, up to the cap you set, billed to your Orbio credits. When the credits run out it goes quiet and wakes as the bag earns.</p>
+            <p className="mt-1 text-[13.5px] text-ink-soft">It runs on the schedule you set, up to the cap you set, billed to the CREDIT you activate. When the balance runs out it goes quiet and asks you for more.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
               <div className="rounded-lg border border-ink/10 bg-paper p-4">
                 <FuelGauge earnPerDay={p.earnPerDayUsd} burnPerDay={p.burnPerDayUsd} quiet={p.quiet} size="md" />
@@ -315,11 +316,11 @@ function NewInner() {
             </div>
             {p.quiet && (
               <p className="mt-4 rounded-md border border-gold/60 bg-gold/10 px-3 py-2 text-[12.5px] leading-[1.5] text-ink">
-                {p.reason}. It will launch quiet and wake up on its own when the bag clears {HOLDER_FLOOR.toLocaleString()} $ORBIO and can afford a run.
+                {p.reason}. It will launch quiet and wake up on its own once the AI balance can afford a run.
               </p>
             )}
             {status && !status.approved && (
-              <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">Orbio isn&apos;t approved for this wallet yet. Go back to sign-in and approve, or the first run will fail.</p>
+              <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">This wallet hasn&apos;t signed for its Orbio key yet. Sign once under Connections, or the first run will wait.</p>
             )}
             <div className="mt-5 rounded-lg border border-ink/10 p-4">
               <p className="text-[12px] font-medium text-ink-soft">{spec.name} · {TEMPLATE_LABEL[spec.template]} · {CADENCE_LABEL[spec.cadence]}</p>

@@ -29,6 +29,7 @@ export const TOOL_LABEL: Record<ToolId, string> = {
   web_fetch: "Read pages",
   chain_read: "Robinhood Chain RPC",
   token_market: "DEX market data",
+  credit_market: "Orbio CREDIT protocol",
   sandbox: "Sandboxed shell",
   deliver: "Deliver",
   spawn_moonlet: "Spawn a moonlet",

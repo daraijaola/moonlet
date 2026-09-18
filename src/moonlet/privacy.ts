@@ -27,6 +27,7 @@ export function redactRun<T extends RunRow>(r: T): T {
     body: "",
     sources: [],
     sections: [],
+    metrics: [],
     calls: [],
     scored: [],
     keyEvents: r.keyEvents.filter((e) => e.kind !== "tripwire"),

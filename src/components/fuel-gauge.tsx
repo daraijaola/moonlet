@@ -2,9 +2,10 @@ import { fmtUsd } from "@/lib/api";
 
 export type FuelTone = "green" | "amber" | "grey";
 
+/** Grey only when the moonlet really is quiet. A funded balance with no staking income is "burning down", not quiet. */
 export function fuelTone(earnPerDay: number, burnPerDay: number, quiet = false): FuelTone {
-  if (quiet || earnPerDay <= 0) return "grey";
-  return earnPerDay >= burnPerDay ? "green" : "amber";
+  if (quiet) return "grey";
+  return earnPerDay >= burnPerDay && earnPerDay > 0 ? "green" : "amber";
 }
 
 const TONE = {

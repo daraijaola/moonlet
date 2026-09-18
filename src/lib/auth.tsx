@@ -21,8 +21,10 @@ type AuthState = Saved & { ready: boolean; orbioApproved: boolean; orbioChecked:
 type Auth = AuthState & {
   signed: boolean;
   connect: (wallet?: WalletId) => Promise<string>;
-  /** Resolves "handoff" when the approval was sent to the wallet app's browser and this tab is now polling for it. */
-  approveOrbio: (redirectTo?: string) => Promise<"redirect" | "handoff">;
+  /** Sign Orbio's key message once; the signature becomes the gateway key. Resolves "done", then navigates to redirectTo. */
+  approveOrbio: (redirectTo?: string) => Promise<"redirect" | "handoff" | "done">;
+  /** Send CREDIT.activate(amount) from the wallet and wait for Moonlet to read the receipt. Resolves the tx hash. */
+  activateCredit: (amountUsd: number, proposalId?: string | null) => Promise<string>;
   refreshOrbio: () => Promise<boolean>;
   disconnect: () => void;
   hasInjected: boolean;
@@ -113,6 +115,7 @@ async function walletConnectProvider(): Promise<Eip1193> {
   return wcProvider;
 }
 
+const CREDIT_TOKEN = "0xe33322da1380e61e5ae5dfb21e7f62924c73004c";
 const ROBINHOOD_CHAIN = {
   chainId: "0x1237",
   chainName: "Robinhood Chain",
@@ -154,6 +157,8 @@ async function siwe(eth: Eip1193, address: string) {
 }
 
 let mmSdkProvider: Eip1193 | null = null;
+/** The provider the current session connected with, so later signatures go to the same wallet. */
+let activeProvider: Eip1193 | null = null;
 /**
  * MetaMask without an extension (phone browsers): the SDK deep-links into the
  * MetaMask app, the user approves there and comes back. No project id needed.
@@ -179,6 +184,32 @@ function providerFor(id: WalletId): Eip1193 | undefined {
   if (!eth) return id === "injected" ? undefined : announced.values().next().value;
   const all = eth.providers?.length ? eth.providers : [eth];
   return all.find((p) => (id === "rabby" ? p.isRabby : id === "robinhood" ? p.isRobinhood : id === "metamask" ? p.isMetaMask && !p.isRabby : true)) ?? eth;
+}
+
+/**
+ * Fuel a moonlet from whatever wallet the visitor has: connect, switch to Robinhood Chain, and send
+ * CREDIT.activate(amount, beneficiary) so the giver's CREDIT burns into the moonlet owner's AI balance.
+ * Works signed out; the visitor need not be a Moonlet user at all. Resolves the transaction hash and the giver's address.
+ */
+export async function fuelFromWallet(amountUsd: number, beneficiary: string, wallet?: WalletId): Promise<{ txHash: string; from: string }> {
+  if (!(amountUsd > 0)) throw new Error("amount must be positive");
+  let eth = wallet === "walletconnect" ? await walletConnectProvider() : wallet ? providerFor(wallet) : activeProvider ?? injected();
+  if (!eth && (wallet === "metamask" || !wallet)) eth = await metamaskSdkProvider();
+  if (!eth) throw new Error("No wallet found in this browser. Open this page inside your wallet app, or use WalletConnect.");
+  const accounts = (await eth.request({ method: "eth_requestAccounts" })) as string[];
+  const from = accounts[0]?.toLowerCase() ?? "";
+  if (!/^0x[0-9a-f]{40}$/.test(from)) throw new Error("No account was shared. Unlock your wallet and try again.");
+  await ensureRobinhoodChain(eth);
+  const units = BigInt(Math.round(amountUsd * 1e6));
+  // activate(uint256 amount, bytes32 beneficiary): the beneficiary address left-padded to 32 bytes.
+  const data = `0x0e3c008b${units.toString(16).padStart(64, "0")}${beneficiary.slice(2).toLowerCase().padStart(64, "0")}`;
+  try {
+    const txHash = (await eth.request({ method: "eth_sendTransaction", params: [{ from, to: CREDIT_TOKEN, data }] })) as string;
+    return { txHash, from };
+  } catch (e) {
+    const code = (e as { code?: number }).code;
+    throw new Error(code === 4001 ? "You declined the transaction in your wallet." : `Your wallet could not send it: ${(e as Error).message}`);
+  }
 }
 
 const Ctx = createContext<Auth | null>(null);
@@ -226,35 +257,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const address = accounts[0]?.toLowerCase() ?? "";
     if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error("No account was shared. Unlock your wallet and try again.");
     await ensureRobinhoodChain(eth);
+    activeProvider = eth;
     // The signature is the login. Without it nothing is stored and nothing is shown.
     await siwe(eth, address);
     write({ address, signed: true });
     return address;
   }, []);
 
+  const walletFor = useCallback(async (address: string) => {
+    const eth = activeProvider ?? injected() ?? (await metamaskSdkProvider());
+    if (!eth) throw new Error("Open this page in the browser where your wallet is, or inside your wallet app.");
+    const accounts = ((await eth.request({ method: "eth_accounts" })) as string[]).map((a) => a.toLowerCase());
+    if (!accounts.includes(address)) {
+      const asked = ((await eth.request({ method: "eth_requestAccounts" })) as string[]).map((a) => a.toLowerCase());
+      if (!asked.includes(address)) throw new Error(`Your wallet is on a different account. Switch to ${address.slice(0, 6)}…${address.slice(-4)} and try again.`);
+    }
+    return eth;
+  }, []);
+
   const approveOrbio = useCallback(async (redirectTo = "/app") => {
     const address = read().address;
     if (!address) throw new Error("connect a wallet first");
-    // Orbio's page connects the wallet through Privy, which on a phone browser
-    // without an injected wallet just waits forever. Hand the approval to the
-    // MetaMask in-app browser instead (the callback needs no cookie: the state
-    // carries the wallet) and watch for it from here.
-    const phone = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
-    if (phone && !injected()) {
-      const { url } = await api.orbioStart(address, "/orbio/done");
-      window.location.assign(`https://metamask.app.link/dapp/${url.replace(/^https?:\/\//, "")}`);
-      const started = Date.now();
-      const poll = async () => {
-        if (await refreshOrbio()) return;
-        if (Date.now() - started < 15 * 60_000) setTimeout(poll, 3000);
-      };
-      setTimeout(poll, 3000);
-      return "handoff" as const;
+    const eth = await walletFor(address);
+    const status = await api.orbioStatus(address).catch(() => null);
+    const epoch = status?.orbio.epoch ?? 0;
+    const message = status?.orbio.message ?? `Orbio API key · chain 4663 · epoch ${epoch}`;
+    let signature: string;
+    try {
+      signature = (await eth.request({ method: "personal_sign", params: [message, address] })) as string;
+    } catch (e) {
+      const code = (e as { code?: number }).code;
+      throw new Error(code === 4001 ? "You declined the signature in your wallet." : `Your wallet could not sign: ${(e as Error).message}`);
     }
-    const { url } = await api.orbioStart(address, redirectTo);
-    window.location.assign(url);
-    return "redirect" as const;
-  }, [refreshOrbio]);
+    await api.orbioSignKey(address, signature, epoch);
+    await refreshOrbio();
+    if (redirectTo && typeof window !== "undefined" && window.location.pathname !== redirectTo.split("?")[0]) window.location.assign(redirectTo);
+    return "done" as const;
+  }, [refreshOrbio, walletFor]);
+
+  const activateCredit = useCallback(async (amountUsd: number, proposalId: string | null = null) => {
+    const address = read().address;
+    if (!address) throw new Error("connect a wallet first");
+    if (!(amountUsd > 0)) throw new Error("amount must be positive");
+    const eth = await walletFor(address);
+    await ensureRobinhoodChain(eth);
+    // CREDIT.activate(uint256 amount), 6 decimals.
+    const units = BigInt(Math.round(amountUsd * 1e6));
+    const data = `0xb260c42a${units.toString(16).padStart(64, "0")}`;
+    let txHash: string;
+    try {
+      txHash = (await eth.request({ method: "eth_sendTransaction", params: [{ from: address, to: CREDIT_TOKEN, data }] })) as string;
+    } catch (e) {
+      const code = (e as { code?: number }).code;
+      throw new Error(code === 4001 ? "You declined the transaction in your wallet." : `Your wallet could not send it: ${(e as Error).message}`);
+    }
+    // The chain confirms in seconds; Moonlet reads the receipt and credits the balance once it sees the Activated event.
+    const started = Date.now();
+    while (Date.now() - started < 3 * 60_000) {
+      const r = await api.orbioActivate(address, txHash, proposalId);
+      if (!r.pending) break;
+      await new Promise((res) => setTimeout(res, 3000));
+    }
+    await refreshOrbio();
+    return txHash;
+  }, [refreshOrbio, walletFor]);
 
   const disconnect = useCallback(() => {
     void fetch("/api/auth/logout", { method: "POST" });
@@ -271,11 +337,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       orbioChecked: orbio.checked,
       connect,
       approveOrbio,
+      activateCredit,
       refreshOrbio,
       disconnect,
       hasInjected: !!injected(),
     }),
-    [hydrated, saved.address, saved.signed, orbio, connect, approveOrbio, refreshOrbio, disconnect],
+    [hydrated, saved.address, saved.signed, orbio, connect, approveOrbio, activateCredit, refreshOrbio, disconnect],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

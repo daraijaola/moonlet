@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-09-15 · Build Week day 14 · Orbio moved to the CREDIT protocol; Moonlet moved with it
+
+Orbio replaced passive credits and the MCP approve flow with $CREDIT on Robinhood Chain: stake ORBIO to earn CREDIT, `activate` burns it into an AI balance, and the gateway key is the wallet's signature of a fixed message. Every moonlet in production had been failing since 14:06 UTC.
+
+- The key is the wallet's signature of `Orbio API key · chain 4663 · epoch N`, accepted only if it recovers to the signed-in wallet, sealed at rest. No account, no OAuth, nothing minted. The OAuth and MCP code is gone.
+- The AI balance is a ledger: verified `Activated` events for the wallet (once per activation id) minus every run's cost; labelled an estimate; zeroed when the gateway refuses for balance.
+- Activation is a transaction the owner's wallet signs. A moonlet that runs dry puts one **Activate N CREDIT** card in the queue and Telegram, sized to a week of its runs; the receipt is read back from the chain and checked against the approved amount (less is a *mismatch*). Connections gains Activate buttons, the wallet's CREDIT and staked ORBIO.
+- The 1,000 ORBIO holder floor is gone; the bag is staked plus held ORBIO and the earn estimate comes from the staked part.
+- `tests/credit.test.ts`: six cases against a fake chain. Acceptance case 12 now reads "with no activated AI balance a run costs nothing".
+
+## 2026-09-17 · Build Week day 16
+
+- First real CREDIT-funded runs: Sentry and Shadow ran and finished on the activated balance; the gateway's balance moved by exactly their cost; the activation card Sentry raised while quiet settled *verified* against the chain.
+- **Fuel.** Anyone can burn their own CREDIT into a public moonlet's owner's balance from the moonlet's page (`activate(amount, beneficiary)`, one signature, any wallet). The receipt is read from the chain, credited once, wakes a quiet moonlet, and the giver is listed with a link to the transaction.
+- Public pages lead with the latest report; failed and quiet runs are counted but kept out of the feed; a private job explains itself; earn shows "owner isn't staking" instead of $0. The sky shows each moonlet's latest headline.
+- Tick checks the chain for every wallet with a quiet moonlet, so an activation made anywhere wakes it within the minute. The gauge is grey only when a moonlet is quiet.
+
+## 2026-09-16 · Build Week day 15
+
+- Fix, found by an outside review: `baseUrlFor` only recognised dashboard keys (`sk-orbio-…`), so a wallet-signed key (`sk-orb-<epoch>-…`) would have been sent to OpenRouter. Both shapes now route to Orbio's gateway; a test pins it.
+- Sentry and Shadow had a $0.012 cap and hit it on 88% of runs, so most reports stopped before finishing the checks. Three moonlets carried a $0 cap left over from the holder-floor plan. All five set to $0.05; the market-watch template's base cost is $0.02 so new ones start with room to finish.
+- Dashboard-issued keys are first-class; an activation wakes quiet moonlets; earn estimate from staked ORBIO everywhere; last pre-CREDIT copy removed.
+
 ## 2026-09-10 · Build Week day 9
 
 - Verified receipts: after an approved action executes, the result is read back from GitHub or Gmail by id and compared field by field with the approved payload (PR file contents, email body, no unexpected Cc, every message of a tidy up to the bulk limit). Stamped *verified*, *sample checked*, *mismatch* or *not checked* on the moonlet page, the public page (redacted for strangers) and in Telegram. A mismatch reads "happened, but not as approved", never Done.

@@ -1,12 +1,13 @@
 import { CADENCE_MS, type Cadence, type JobSpec } from "./spec";
 
 /**
- * Budgeting to income. A moonlet may only spend what its owner's bag earns,
- * minus a reserve so the key never hits zero mid-run.
+ * Budgeting to income. Under Orbio's CREDIT protocol the bag earns by staking:
+ * staked ORBIO mints CREDIT every hour, and the owner activates CREDIT into the
+ * AI balance the moonlets spend. The earn figure below is an estimate from the
+ * staked amount, shown so the owner can see whether the bag keeps up.
  */
 
-export const HOLDER_FLOOR = 1_000;
-/** Placeholder until live Orbio balance deltas are used. ~$30k/day over 950M tokens. */
+/** Rough CREDIT minted per staked ORBIO per day, from the fee share Orbio publishes. An estimate, labelled as one wherever it appears. */
 export const EARN_PER_TOKEN_PER_DAY_USD = 0.0000316;
 const RESERVE = 0.15;
 
@@ -15,8 +16,8 @@ export function spendablePerDay(earnPerDayUsd: number) {
   return earnPerDayUsd * (1 - RESERVE);
 }
 
-export function estimateEarnPerDay(bag: number) {
-  return bag >= HOLDER_FLOOR ? bag * EARN_PER_TOKEN_PER_DAY_USD : 0;
+export function estimateEarnPerDay(staked: number) {
+  return Math.max(0, staked) * EARN_PER_TOKEN_PER_DAY_USD;
 }
 
 export function runsPerDay(cadence: Cadence) {
@@ -34,25 +35,17 @@ export type Plan = {
 
 /**
  * The rule is one line: a moonlet runs on the cadence its owner set, spending up to the cap its owner set, and goes quiet
- * only when the wallet's Orbio balance can't pay for a run (that check happens at run time, in the runner). Nothing here
+ * only when the activated AI balance can't pay for a run (that check happens at run time, in the runner). Nothing here
  * slows a schedule or splits income; the earn figure is shown so the owner can see whether the bag keeps up.
  */
-export function plan(spec: JobSpec, bag: number, earnPerDayUsd = estimateEarnPerDay(bag)): Plan {
-  if (bag < HOLDER_FLOOR) {
-    return { cadence: spec.cadence, perRunCapUsd: 0, burnPerDayUsd: 0, earnPerDayUsd, quiet: true, reason: `bag below ${HOLDER_FLOOR}` };
-  }
+export function plan(spec: JobSpec, staked: number, earnPerDayUsd = estimateEarnPerDay(staked)): Plan {
   return { cadence: spec.cadence, perRunCapUsd: round(spec.spendCapUsd), burnPerDayUsd: round(spec.spendCapUsd * runsPerDay(spec.cadence)), earnPerDayUsd, quiet: false };
 }
 
 
-/** How much to ask Orbio for on a fresh key: about three days of burn, clamped to Orbio's $200 ceiling. */
-export function keyClaimAmount(p: Plan) {
-  return Math.min(200, Math.max(2, round(p.burnPerDayUsd * 3)));
-}
-
-/** Rotate or top up when the active key is nearly spent. */
-export function keyNeedsRefill(remainingUsd: number, p: Plan) {
-  return remainingUsd < Math.max(p.perRunCapUsd * 2, 0.5);
+/** How much CREDIT to suggest activating when a moonlet goes quiet: about a week of its runs, never under $2. */
+export function activationAmount(perRunCapUsd: number, cadence: Cadence) {
+  return Math.max(2, Math.ceil(perRunCapUsd * runsPerDay(cadence) * 7 * 100) / 100);
 }
 
 const round = (n: number) => Math.round(n * 1000) / 1000;
@@ -63,5 +56,5 @@ export const CADENCE_WORDS: Record<Cadence, string> = { "15m": "every 15 minutes
 export function cadenceReply(name: string, spec: JobSpec, cadence: Cadence, earnPerDayUsd: number) {
   const burn = spec.spendCapUsd * runsPerDay(cadence);
   if (burn <= spendablePerDay(earnPerDayUsd)) return `Done. ${name} now reports ${CADENCE_WORDS[cadence]}.`;
-  return `Done. ${name} now reports ${CADENCE_WORDS[cadence]}. Heads up: at up to $${spec.spendCapUsd.toFixed(3)} a run that's about $${burn.toFixed(2)}/day, and your bag earns about $${earnPerDayUsd.toFixed(2)}/day, so it will draw the balance down and go quiet when the credits run out.`;
+  return `Done. ${name} now reports ${CADENCE_WORDS[cadence]}. Heads up: at up to $${spec.spendCapUsd.toFixed(3)} a run that's about $${burn.toFixed(2)}/day, and your bag earns about $${earnPerDayUsd.toFixed(2)}/day, so it will draw the balance down and ask you to activate more CREDIT when it runs out.`;
 }

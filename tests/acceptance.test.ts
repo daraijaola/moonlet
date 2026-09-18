@@ -135,13 +135,13 @@ describe("acceptance: the promises, as tests", () => {
     await expect(safeFetchText("https://example.com/redirect", { fetch: f })).rejects.toThrow(/private or local/);
   });
 
-  it("12. below the holder floor a run costs nothing and calls no model", async () => {
-    const orbio = fakeOrbio({ realKey: "sk-orbio-x" });
+  it("12. with no activated AI balance a run costs nothing and calls no model", async () => {
+    const orbio = fakeOrbio({ realKey: "sk-orb-0-x", balanceUsd: 0 });
     const r = await runMoonlet({ id: "m_q", owner: A, bag: 500, spec: inbox, delivery: {}, key: null }, { orbio: orbio.client, fetch: noNet });
     expect(r.status).toBe("quiet");
     expect(r.costUsd).toBe(0);
     expect(r.modelCalls).toBe(0);
-    expect(orbio.state.calls).toEqual([]);
+    expect(orbio.state.calls).toEqual(["balance"]);
   });
 
   it("13. spend is counted per call, so a failed run still reports what it cost", async () => {

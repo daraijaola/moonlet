@@ -23,7 +23,7 @@ const bebas = Bebas_Neue({
 export const metadata: Metadata = {
   title: "moonlet — your bag runs an agent",
   description:
-    "Connect your wallet, type one sentence, and a moonlet works around the clock, paid only by the credits your $ORBIO earns. No key ever touches a human.",
+    "Connect your wallet, type one sentence, and a moonlet works around the clock, paid by the CREDIT your staked $ORBIO earns. No key ever touches a human.",
   metadataBase: new URL(process.env.APP_URL ?? "https://moonlet.16labs.xyz"),
   openGraph: {
     title: "moonlet — your bag runs an agent",

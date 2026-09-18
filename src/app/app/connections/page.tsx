@@ -9,7 +9,8 @@ import { ArrowRight, ChevronUp, Ellipsis } from "lucide-react";
 import Link from "next/link";
 
 function ConnectionsInner() {
-  const { address, approveOrbio } = useAuth();
+  const { address, approveOrbio, activateCredit } = useAuth();
+
   const params = useSearchParams();
   const [data, setData] = useState<Connections | null>(null);
   const [orbio, setOrbio] = useState<OrbioStatus | null>(null);
@@ -20,8 +21,6 @@ function ConnectionsInner() {
         ? "GitHub didn't complete the connection. Try again."
         : params.get("gmail") === "failed" || params.get("gmail") === "denied"
           ? `Google didn't complete the connection. ${params.get("reason") ?? "Try again."}`
-        : params.get("orbio") && params.get("orbio") !== "ok"
-          ? `Orbio approval ${params.get("orbio")!.replace("_", " ")}. Try again.`
           : null,
   );
 
@@ -31,6 +30,19 @@ function ConnectionsInner() {
     setData(c);
     setOrbio(o);
   }, [address]);
+  const [busy, setBusy] = useState<number | null>(null);
+  const activate = async (n: number, proposalId: string | null) => {
+    setBusy(n);
+    setErr(null);
+    try {
+      await activateCredit(n, proposalId);
+      await load();
+    } catch (e) {
+      setErr((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
   useEffect(() => {
     const t = setTimeout(load, 0);
     return () => clearTimeout(t);
@@ -64,17 +76,42 @@ function ConnectionsInner() {
                 <Shell
                   mark={<OrbioMark size={20} />}
                   name="Orbio"
-                  blurb="The budget. Once approved on orbio.so, your moonlets mint one capped inference key for your wallet from the credits your $ORBIO earns. Moonlet can read the balance, mint and revoke that key, nothing else."
-                  unlocks="get_balance, create_key, revoke_key"
-                  conn={orbio?.approved ? { label: orbio.orbio.dev ? "dev stub" : `${orbio.orbio.tools.length || "MCP"} tools`, createdAt: 0 } : undefined}
+                  blurb="The budget. Your wallet signs Orbio's key message once; that signature is the gateway key your moonlets spend with. Runs draw on the CREDIT you activate from your wallet. Moonlet never holds your tokens or your private key."
+                  unlocks="signed gateway key · activation receipts read from the chain"
+                  conn={orbio?.approved ? { label: orbio.orbio.dev ? "dev stub" : `key signed · epoch ${orbio.orbio.epoch}`, createdAt: orbio.orbio.signedAt ?? 0 } : undefined}
                   onDisconnect={orbio?.approved ? async () => { await api.orbioDisconnect(address); await load(); } : undefined}
                   action={orbio && !orbio.approved ? (
-                    <button onClick={() => approveOrbio("/app/connections").catch((e) => setErr((e as Error).message))} className="ui-btn ui-btn-gold">
-                      <OrbioMark size={13} /> Approve
+                    <button onClick={() => approveOrbio("/app/connections").then(load).catch((e) => setErr((e as Error).message))} className="ui-btn ui-btn-gold">
+                      <OrbioMark size={13} /> Sign for key
                     </button>
                   ) : undefined}
                 >
-                  {orbio?.orbio.error && <p className="font-mono text-[11.5px] text-red-700">{orbio.orbio.error}</p>}
+                  {orbio && (
+                    <div className="mt-2 grid gap-1.5 text-[12.5px] text-ink-soft">
+                      <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+                        <span>AI balance <b className="text-ink">${orbio.idleCreditsUsd.toFixed(2)}</b> <span className="text-ink-faint">{orbio.balanceSource === "gateway" ? "(from Orbio)" : "(estimate)"}</span></span>
+                        {orbio.creditTokensUsd !== null && <span>CREDIT in wallet <b className="text-ink">{orbio.creditTokensUsd.toFixed(2)}</b></span>}
+                        <span>staked <b className="text-ink">{Math.round(orbio.staked).toLocaleString()} ORBIO</b></span>
+                      </div>
+                      {orbio.approved && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          {[2, 5, 10].map((n) => (
+                            <button key={n} disabled={busy !== null || (orbio.creditTokensUsd ?? 0) < n} onClick={() => activate(n, orbio.orbio.activationCard?.id ?? null)} className="ui-btn" title={(orbio.creditTokensUsd ?? 0) < n ? "not enough CREDIT in the wallet" : `burn ${n} CREDIT into $${n} of AI balance`}>
+                              {busy === n ? "Waiting for the chain…" : `Activate ${n} CREDIT`}
+                            </button>
+                          ))}
+                          {orbio.orbio.activationCard && <span className="text-[12px] text-gold-deep">A moonlet is asking for {orbio.orbio.activationCard.amountUsd.toFixed(2)} CREDIT.</span>}
+                        </div>
+                      )}
+                      {orbio.orbio.activations.length > 0 && (
+                        <ul className="mt-1 grid gap-0.5 font-mono text-[11px] text-ink-faint">
+                          {orbio.orbio.activations.map((a) => (
+                            <li key={`${a.txHash}-${a.activationId}`}>+{a.amountUsd.toFixed(2)} · <a className="underline" href={`https://robinhoodchain.blockscout.com/tx/${a.txHash}`} target="_blank" rel="noreferrer">{a.txHash.slice(0, 10)}…</a> · verified on chain · {timeAgo(a.at)}</li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </Shell>
               ),
             },

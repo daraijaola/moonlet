@@ -46,7 +46,7 @@ export function SiteFooter() {
               <MoonletMark size={34} ink="#F5F2EA" face="#141413" />
               <Wordmark className="text-[1.45rem] text-[#F5F2EA]" />
             </Link>
-            <p className="mt-5 max-w-[22rem] text-[15px] leading-[1.55] text-[#F5F2EA]/65">Agents that pay for themselves with the credits your $ORBIO earns. One sentence to start; a receipt for every run.</p>
+            <p className="mt-5 max-w-[22rem] text-[15px] leading-[1.55] text-[#F5F2EA]/65">Agents that pay for themselves with the CREDIT your staked $ORBIO earns. One sentence to start; a receipt for every run.</p>
             <form
               onSubmit={(e) => {
                 e.preventDefault();

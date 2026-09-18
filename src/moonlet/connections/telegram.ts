@@ -53,6 +53,38 @@ export async function sendMessage(
   return { ok: true as const, id: String(r.message_id) };
 }
 
+/**
+ * Send a Rich Message (blocks). Returns null when the API refuses, so the caller can fall back to plain HTML: a server that
+ * predates Bot API 10.2, a chat where rich messages are not allowed, or a block the server rejects.
+ */
+export async function sendRichMessage(chatId: string, blocks: unknown[], opts: { replyTo?: number; buttons?: Array<Array<{ text: string; data?: string; url?: string }>>; fetch?: typeof fetch } = {}) {
+  try {
+    const r = await call<{ message_id: number }>(
+      "sendRichMessage",
+      {
+        chat_id: chatId,
+        rich_message: { blocks },
+        ...(opts.replyTo ? { reply_parameters: { message_id: opts.replyTo, allow_sending_without_reply: true } } : {}),
+        ...(opts.buttons ? { reply_markup: { inline_keyboard: opts.buttons.map((row) => row.map((b) => (b.url ? { text: b.text, url: b.url } : { text: b.text, callback_data: b.data }))) } } : {}),
+      },
+      opts.fetch,
+    );
+    return { ok: true as const, id: String(r.message_id) };
+  } catch (e) {
+    console.error("sendRichMessage refused, falling back to HTML:", (e as Error).message);
+    return null;
+  }
+}
+
+/** Replace a card with a rich message (used after a decision). Falls back to editing the HTML text. */
+export async function editRichMessage(chatId: string, messageId: number, blocks: unknown[], fallbackHtml: string, fetchImpl: typeof fetch = fetch) {
+  try {
+    await call("editMessageText", { chat_id: chatId, message_id: messageId, rich_message: { blocks } }, fetchImpl);
+  } catch {
+    await editMessage(chatId, messageId, fallbackHtml, fetchImpl);
+  }
+}
+
 /** Send a file (a report as PDF/DOCX/TXT) to a linked chat. Telegram caps bot uploads at 50 MB; ours are far smaller. */
 export async function sendDocument(chatId: string, file: { name: string; mime: string; bytes: Uint8Array; caption?: string; replyTo?: number }, fetchImpl: typeof fetch = fetch) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -124,7 +156,7 @@ export async function configureBot(fetchImpl: typeof fetch = fetch) {
   }, fetchImpl);
   await call("setMyShortDescription", { short_description: "Your moonlets report here. Approve or reject what they want to do with one tap." }, fetchImpl);
   await call("setMyDescription", {
-    description: "Moonlet runs small AI agents paid for by the credits your $ORBIO earns. Link this chat from Moonlet → Connections and your moonlets will send you briefs, alerts and anything that needs your OK, with Approve / Reject buttons.",
+    description: "Moonlet runs small AI agents paid for by the CREDIT your staked $ORBIO earns. Link this chat from Moonlet → Connections and your moonlets will send you briefs, alerts and anything that needs your OK, with Approve / Reject buttons.",
   }, fetchImpl);
   await store.kvSet("telegram.configured", stamp);
   return true;
@@ -209,7 +241,7 @@ export type Update = {
   callback_query?: { id: string; data?: string; message?: { message_id: number; chat: { id: number } } };
 };
 
-export type CallbackHandler = (action: "approve" | "reject", proposalId: string, ctx: { chatId: string; messageId: number }) => Promise<string>;
+export type CallbackHandler = (action: "approve" | "reject", proposalId: string, ctx: { chatId: string; messageId: number }) => Promise<string | { html: string; blocks: unknown[] }>;
 /** Free text from a linked chat. Returns the reply (HTML-escaped by the caller). */
 export type ChatHandler = (owner: string, text: string, ctx: { chatId: string; replyToMessageId?: number; imageUrl?: string }) => Promise<string>;
 
@@ -293,7 +325,7 @@ export async function handleUpdate(u: Update, onCallback: CallbackHandler, fetch
       } else {
         const owner = await ownerOfChat(chatId);
         if (!owner) {
-          await sendMessage(chatId, `Moonlet runs small AI agents paid for by the credits your $ORBIO earns.\n\nTo link this chat: open ${esc(APP())}/app/connections, tap <b>Link Telegram</b>, then press Start here.`, { fetch: fetchImpl });
+          await sendMessage(chatId, `Moonlet runs small AI agents paid for by the CREDIT your staked $ORBIO earns.\n\nTo link this chat: open ${esc(APP())}/app/connections, tap <b>Link Telegram</b>, then press Start here.`, { fetch: fetchImpl });
         } else if (command === "/help" || command === "/start" || !chatHandler) {
           await sendMessage(
             chatId,
@@ -312,12 +344,20 @@ export async function handleUpdate(u: Update, onCallback: CallbackHandler, fetch
       }
     } else if (u.callback_query?.data && u.callback_query.message) {
       const [action, id] = u.callback_query.data.split(":");
+      if (action === "ask" && id) {
+        // "Ask about it" on a report: tell the owner how, and force the reply box open on this message.
+        const chatId = String(u.callback_query.message.chat.id);
+        await call("answerCallbackQuery", { callback_query_id: u.callback_query.id, text: "Reply to the report with your question" }, fetchImpl).catch(() => undefined);
+        await call("sendMessage", { chat_id: chatId, text: "Reply to the report above with your question and it answers from that run (\"why did it move?\", \"send this as a PDF\", \"every 12 hours instead\").", reply_parameters: { message_id: u.callback_query.message.message_id, allow_sending_without_reply: true }, reply_markup: { force_reply: true, selective: true, input_field_placeholder: "Ask about this report…" } }, fetchImpl).catch(() => undefined);
+        return "handled";
+      }
       if ((action === "approve" || action === "reject") && id) {
         const chatId = String(u.callback_query.message.chat.id);
         const messageId = u.callback_query.message.message_id;
-        const text = await onCallback(action, id, { chatId, messageId });
+        const out = await onCallback(action, id, { chatId, messageId });
         await call("answerCallbackQuery", { callback_query_id: u.callback_query.id, text: action === "approve" ? "Approved" : "Rejected" }, fetchImpl).catch(() => undefined);
-        await editMessage(chatId, messageId, text, fetchImpl);
+        if (typeof out === "string") await editMessage(chatId, messageId, out, fetchImpl);
+        else await editRichMessage(chatId, messageId, out.blocks, out.html, fetchImpl);
         return "decided";
       }
     }

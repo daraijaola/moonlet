@@ -77,6 +77,9 @@ export type RepoRead =
   | { action: "pulls"; repo: string; state?: "open" | "closed" | "all"; limit?: number }
   | { action: "commits"; repo: string; limit?: number }
   | { action: "file"; repo: string; path: string; ref?: string }
+  | { action: "pull"; repo: string; number: number }
+  | { action: "branches"; repo: string; limit?: number }
+  | { action: "runs"; repo: string; limit?: number }
   | { action: "tree"; repo: string; path?: string; ref?: string };
 
 /** The owner's own repositories, most recently pushed first. */
@@ -125,6 +128,49 @@ export async function readRepo(token: string, q: RepoRead, fetchImpl?: typeof fe
       const f = await gh<{ content?: string; encoding?: string; size?: number; sha: string }>(token, `/repos/${o}/${r}/contents/${q.path}${q.ref ? `?ref=${q.ref}` : ""}`, {}, fetchImpl);
       const text = f.content && f.encoding === "base64" ? Buffer.from(f.content, "base64").toString("utf8") : "";
       return { path: q.path, sha: f.sha, size: f.size, content: text.slice(0, 12_000), truncated: text.length > 12_000 };
+    }
+    case "pull": {
+      // Everything a merge decision needs, from GitHub's own records: mergeability, checks on the head, reviews, size, age.
+      const n = q.number;
+      const p = await gh<Record<string, unknown>>(token, `/repos/${o}/${r}/pulls/${n}`, {}, fetchImpl);
+      const head = (p.head as { sha: string; ref: string }) ?? { sha: "", ref: "" };
+      const [checks, reviews, files] = await Promise.all([
+        gh<{ check_runs?: Array<{ name: string; status: string; conclusion: string | null }> }>(token, `/repos/${o}/${r}/commits/${head.sha}/check-runs?per_page=30`, {}, fetchImpl).catch(() => ({ check_runs: [] })),
+        gh<Array<{ user: { login: string }; state: string; submitted_at: string }>>(token, `/repos/${o}/${r}/pulls/${n}/reviews?per_page=30`, {}, fetchImpl).catch(() => []),
+        gh<Array<{ filename: string; additions: number; deletions: number; status: string }>>(token, `/repos/${o}/${r}/pulls/${n}/files?per_page=100`, {}, fetchImpl).catch(() => []),
+      ]);
+      const runs = checks.check_runs ?? [];
+      const ci = runs.length === 0 ? "none" : runs.some((c) => c.status !== "completed") ? "pending" : runs.every((c) => c.conclusion === "success" || c.conclusion === "skipped" || c.conclusion === "neutral") ? "passing" : "failing";
+      const latestByUser = new Map<string, string>();
+      for (const rv of reviews) if (rv.state !== "COMMENTED") latestByUser.set(rv.user.login, rv.state);
+      const ageDays = Math.round((Date.now() - new Date(String(p.created_at)).getTime()) / 86_400_000);
+      const idleDays = Math.round((Date.now() - new Date(String(p.updated_at)).getTime()) / 86_400_000);
+      return {
+        number: n, title: p.title, url: p.html_url, author: (p.user as { login: string })?.login, draft: !!p.draft, state: p.state,
+        base: (p.base as { ref: string })?.ref, head: head.ref, ageDays, idleDays,
+        mergeable: p.mergeable, mergeableState: p.mergeable_state, merged: !!p.merged,
+        ci, checks: runs.slice(0, 12).map((c) => ({ name: c.name, status: c.status, conclusion: c.conclusion })),
+        reviews: [...latestByUser].map(([login, state]) => ({ login, state })), reviewComments: p.review_comments, comments: p.comments,
+        size: { commits: p.commits, files: p.changed_files, additions: p.additions, deletions: p.deletions },
+        files: files.slice(0, 40).map((f) => ({ path: f.filename, add: f.additions, del: f.deletions, status: f.status })),
+        body: String(p.body ?? "").slice(0, 1200),
+      };
+    }
+    case "branches": {
+      // Where each branch stands against the default branch, so drift ("main is 27 behind") is a fact, not a guess.
+      const repoInfo = await gh<{ default_branch: string }>(token, `/repos/${o}/${r}`, {}, fetchImpl);
+      const branches = await gh<Array<{ name: string; commit: { sha: string } }>>(token, `/repos/${o}/${r}/branches?per_page=${lim}`, {}, fetchImpl);
+      const out = [];
+      for (const b of branches.slice(0, Math.min(lim, 12))) {
+        if (b.name === repoInfo.default_branch) continue;
+        const cmp = await gh<{ ahead_by: number; behind_by: number; status: string }>(token, `/repos/${o}/${r}/compare/${repoInfo.default_branch}...${b.name}`, {}, fetchImpl).catch(() => null);
+        out.push({ name: b.name, aheadOfDefault: cmp?.ahead_by ?? null, behindDefault: cmp?.behind_by ?? null, status: cmp?.status ?? "unknown" });
+      }
+      return { defaultBranch: repoInfo.default_branch, branches: out };
+    }
+    case "runs": {
+      const w = await gh<{ workflow_runs: Array<Record<string, unknown>> }>(token, `/repos/${o}/${r}/actions/runs?per_page=${lim}`, {}, fetchImpl);
+      return { runs: w.workflow_runs.map((x) => ({ id: x.id, name: x.name, branch: x.head_branch, event: x.event, status: x.status, conclusion: x.conclusion, sha: String(x.head_sha).slice(0, 7), at: x.created_at, url: x.html_url })) };
     }
     case "tree": {
       const items = await gh<Array<{ name: string; path: string; type: string; size?: number }>>(token, `/repos/${o}/${r}/contents/${q.path ?? ""}${q.ref ? `?ref=${q.ref}` : ""}`, {}, fetchImpl);

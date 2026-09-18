@@ -40,8 +40,8 @@ const RUNS: Run[] = [
     seconds: 34.2,
     hash: "0x5620d09ad69e02a0586c1c4a77aca22ba80506924b27fb7560b8aea7790261ca",
     steps: [
-      { at: 0.0, kind: "sys", label: "read bag", detail: "1,240 $ORBIO · above the 1,000 floor" },
-      { at: 0.4, kind: "sys", label: "claimed key", detail: "$2.00 funded from Orbio credits · orbio.create_key" },
+      { at: 0.0, kind: "sys", label: "read balance", detail: "$4.63 activated CREDIT · Sentry's cap is $0.05" },
+      { at: 0.4, kind: "sys", label: "signed key", detail: "the wallet's Orbio key · epoch 0" },
       { at: 3.6, kind: "tool", label: "github_read", detail: "commits daraijaola/moonlet · 14 commits today, a0f4846 … 9e819f3" },
       { at: 6.8, kind: "tool", label: "github_read", detail: "file CHANGELOG.md · 404, no changelog yet" },
       { at: 20.0, kind: "act", label: "open_pull_request", detail: "drafted “Add CHANGELOG.md for 2026-09-04” · waiting for the owner" },
@@ -69,8 +69,8 @@ const RUNS: Run[] = [
     seconds: 45.7,
     hash: "0x3f1b5d83ffb33e00f863ecb983230964eb64a9ab52621a31fed245225be8dbe3",
     steps: [
-      { at: 0.0, kind: "sys", label: "read bag", detail: "1,240 $ORBIO · above the 1,000 floor" },
-      { at: 3.0, kind: "sys", label: "claimed key", detail: "$2.00 funded from Orbio credits · orbio.create_key" },
+      { at: 0.0, kind: "sys", label: "read balance", detail: "$4.63 activated CREDIT · Sentry's cap is $0.05" },
+      { at: 3.0, kind: "sys", label: "signed key", detail: "the wallet's Orbio key · epoch 0" },
       { at: 8.0, kind: "tool", label: "token_market", detail: "ORBIO/NVDA · $0.004646 · +8.26% · liq $188,440" },
       { at: 14.0, kind: "tool", label: "token_market", detail: "ORBIO/USDG · $0.004664 · +1.96% · liq $92,265" },
       { at: 21.0, kind: "tool", label: "chain_read", detail: "transfer 101,071.69 ORBIO · block 54329173" },

@@ -1,23 +1,24 @@
 import type { Hex } from "viem";
 import { makeAnchorer, type Anchorer } from "./anchor";
-import { estimateEarnPerDay, HOLDER_FLOOR } from "./budget";
-import { makeOrbioClient, OrbioAuthError, refreshOrbioToken, type OrbioClient } from "./orbio";
+import { estimateEarnPerDay } from "./budget";
+import { makeCreditClient, OrbioAuthError, syncActivations, type OrbioClient } from "./orbio";
 import { devOrbio } from "./orbio-dev";
 import { runMoonlet } from "./runner";
 import { CADENCE_MS, type Cadence } from "./spec";
 import * as store from "./store";
 import type { DeliverySink } from "./tools";
 import { fileSink } from "./files";
-import { bagOf } from "./bag";
+import { bagOf, stakedOf } from "./bag";
 export { bagOf } from "./bag";
 import * as tg from "./connections/telegram";
+import { reportBlocks } from "./connections/telegram-rich";
 import type { GitHubConn } from "./connections/github";
 import * as discord from "./connections/discord";
 import type { DiscordConn } from "./connections/discord";
 import * as gmail from "./connections/gmail";
 import { probeTripwires, readMetric } from "./tripwire";
 import type { GmailConn } from "./connections/gmail";
-import { telegramCallback } from "./proposals";
+import { proposeActivation, telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
 import { followup } from "./followup";
 
@@ -39,38 +40,15 @@ export type SchedulerDeps = {
 };
 
 
-/** Live ERC-20 balance read; cached per owner for 10 minutes in the owners table. */
-const ownerLocks = new Map<string, Promise<unknown>>();
-async function withOwnerLock<T>(owner: string, fn: () => Promise<T>): Promise<T> {
-  const prev = ownerLocks.get(owner) ?? Promise.resolve();
-  const next = prev.then(fn, fn);
-  ownerLocks.set(owner, next.catch(() => undefined));
-  return next;
-}
-
-/** Orbio client for an owner, refreshing the OAuth token if it's near expiry. */
+/** Orbio client for an owner: null until the wallet has signed for its gateway key. */
 export async function orbioFor(owner: string, fetchImpl: typeof fetch = fetch): Promise<OrbioClient | null> {
   const dev = devOrbio();
   if (dev) return dev;
   const o = await store.getOwner(owner);
-  if (!o?.orbioAccessToken || !o.orbioClientId) return null;
-  let token = o.orbioAccessToken;
-  if (o.orbioExpiresAt && o.orbioExpiresAt - Date.now() < 60_000 && o.orbioRefreshToken) {
-    try {
-      const t = await refreshOrbioToken(o.orbioClientId, o.orbioRefreshToken, fetchImpl);
-      token = t.access_token;
-      await store.setOwnerOrbio(owner, {
-        clientId: o.orbioClientId,
-        accessToken: t.access_token,
-        refreshToken: t.refresh_token ?? o.orbioRefreshToken,
-        expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined,
-      });
-    } catch {
-      await store.clearOwnerOrbio(owner);
-      return null;
-    }
-  }
-  return makeOrbioClient(token, fetchImpl);
+  if (o?.orbioKey) return makeCreditClient(owner, fetchImpl);
+  // A wallet that never signed can still run on the account key Orbio's dashboard issued, held by its moonlets.
+  if ((await store.listMoonlets(owner)).some((m) => m.key?.key.startsWith("sk-orbio-"))) return makeCreditClient(owner, fetchImpl);
+  return null;
 }
 
 /** Runs due moonlets with bounded concurrency so a burst never trips a model's per-minute cap. */
@@ -79,6 +57,9 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   await store.releaseStale(now() - 10 * 60_000);
   await store.reconcileStuckActions(now() - 5 * 60_000).catch(() => undefined);
   await probeTripwires(now(), deps.fetch).catch((e) => console.error("tripwire probe", (e as Error).message));
+  // A quiet moonlet is waiting for money. Look at the chain for its owner's activations every tick, so an activation made
+  // anywhere wakes it within the minute rather than at its next scheduled slot.
+  if (!deps.orbioFor) for (const owner of await store.ownersWithQuietMoonlets()) await syncActivations(owner, deps.fetch);
   const due = await store.listDue(now(), limit);
   const results: Array<{ id: string; status: string; error?: string }> = [];
   const queue = [...due];
@@ -173,38 +154,16 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
 
   const orbio = await getOrbio(m.owner);
   if (!orbio) {
-    await store.updateMoonlet(id, { status: "quiet", nextRunAt: now() + CADENCE_MS["1h"] });
-    await recordRun(m.id, now(), { status: "failed", error: "Orbio not connected; owner must approve Moonlet at orbio.so", model: "-", costUsd: 0, modelCalls: 0, durationMs: 0, keyEvents: [] });
-    return { status: "failed", error: "orbio not connected" };
+    return parkForConnection(m, "Orbio key not signed; sign once under Connections and this moonlet resumes on its own", now);
   }
 
   const bag = await getBag(m.owner);
-  // Orbio issues one key per wallet. A new moonlet borrows the key a sibling already holds
-  // instead of trying to claim a second one (which fails, or would rotate the sibling's key away).
+  // One signature key per wallet; every moonlet of that wallet uses it. A moonlet without one borrows a sibling's.
   let startKey = m.key;
   if (!startKey) {
     const sibling = (await store.listMoonlets(m.owner)).find((x) => x.id !== m.id && x.key?.key);
     if (sibling?.key) startKey = { ...sibling.key };
   }
-  // Minting retires the wallet's previous key, so concurrent moonlets must not race to mint.
-  // Serialize per owner; whoever mints first writes the secret to every sibling, and later
-  // callers reuse it instead of minting again.
-  const guardedOrbio: OrbioClient = {
-    ...orbio,
-    createKey: (label) =>
-      withOwnerLock(m.owner, async () => {
-        const fresh = (await store.listMoonlets(m.owner)).find((x) => x.key?.key.startsWith("sk-orbio-"))?.key;
-        if (fresh && fresh.key !== startKey?.key && (!m.key || fresh.key !== m.key.key)) {
-          return { key: fresh.key, raw: { reused: true } };
-        }
-        const minted = await orbio.createKey(label);
-        const bal = await orbio.getBalance().catch(() => ({ availableUsd: 0 }));
-        for (const sib of await store.listMoonlets(m.owner)) {
-          await store.updateMoonlet(sib.id, { key: { key: minted.key, limitUsd: bal.availableUsd, spentUsd: 0 } });
-        }
-        return minted;
-      }),
-  };
   const [ghConnStored, tgConn, xConn, dcConn, gmConn] = await Promise.all([
     store.getConnection<GitHubConn>(m.owner, "github"),
     store.getConnection<tg.TelegramConn>(m.owner, "telegram"),
@@ -255,7 +214,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
       delivery: { telegram: tgConn ? tgConn.data.chatId : undefined, x: xConn ? "connected" : undefined, discord: dcConn ? "connected" : undefined, email: gmConn ? "connected" : undefined },
       connections: { github: ghConn?.data, telegram: !!tgConn, x: !!xConn, discord: !!dcConn, gmail: gmConn ? { owner: m.owner, email: gmConn.data.email } : undefined },
     },
-    { orbio: guardedOrbio, fetch: deps.fetch, deliver, files, bagOf: async () => bag },
+    { orbio, fetch: deps.fetch, deliver, files, bagOf: async () => bag },
   );
 
   const cadence = (result.plan.cadence ?? m.spec.cadence) as Cadence;
@@ -265,6 +224,8 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const nextRunAt = now() + (result.status === "failed" && !failedTwice ? Math.min(CADENCE_MS[cadence], CADENCE_MS["1h"]) : result.status === "quiet" ? Math.min(CADENCE_MS[cadence], CADENCE_MS["24h"]) : CADENCE_MS[cadence]);
   const rotated = result.keyEvents.filter((e) => e.kind === "rotated").length;
   if (m.watch?.tripped) result.keyEvents.unshift({ kind: "tripwire", detail: `woke early: ${m.watch.tripped}` });
+  // The AI balance is a ledger Moonlet keeps: every run's cost comes off it the moment the run is recorded.
+  await store.debitOwnerBalance(m.owner, result.costUsd);
 
   await recordRun(m.id, now(), {
     id: runId,
@@ -297,7 +258,7 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
       : {}),
     cadence,
     perRunCapUsd: result.plan.perRunCapUsd,
-    earnPerDayUsd: result.plan.earnPerDayUsd || estimateEarnPerDay(bag),
+    earnPerDayUsd: estimateEarnPerDay(await stakedOf(m.owner, deps.fetch)),
     burnPerDayUsd: result.plan.burnPerDayUsd,
     nextRunAt,
     lastRunAt: now(),
@@ -309,6 +270,11 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   if (!(await store.getMoonlet(id))) {
     for (const p of (await store.listProposals(m.owner, "pending")).filter((p) => p.moonletId === id)) await store.decideProposal(p.id, "rejected").catch(() => undefined);
     return { status: "deleted", runId, outputHash: result.outputHash };
+  }
+
+  // Quiet for money: put one activation card in the owner's queue (and Telegram) with the amount a week of this moonlet costs.
+  if (result.status === "quiet" && result.keyEvents.some((e) => e.kind === "quiet" && /balance|credits|fund/i.test(e.detail))) {
+    await proposeActivation({ owner: m.owner, moonletId: m.id, moonletName: m.spec.name, runId, perRunCapUsd: result.plan.perRunCapUsd, cadence, fetch: deps.fetch }).catch((e) => console.error("activation proposal", (e as Error).message));
   }
 
   let txHash: string | undefined;
@@ -333,10 +299,16 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
     ];
     const proofBlock = proof.length ? `\n\n${proof.join("\n")}` : "";
     const text = `<b>${tg.esc(m.spec.name)}</b> · ${tg.esc(o.title)}\n\n${tg.esc(o.summary)}${sections}${proofBlock}\n\n<i>$${result.costUsd.toFixed(4)} · ${txHash ? "anchored on Robinhood Chain" : "hashed"} · reply to ask about any of this</i>\n${tg.esc(page)}`;
-    const sent = await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch((e) => {
-      console.error("telegram delivery failed", m.id, (e as Error).message);
-      return null;
-    });
+    // Rich blocks first (headline, pull-quote, table, expandable body, checkbox calls, buttons); the HTML text is the fallback.
+    const sent =
+      (await (async () => {
+        const rich = reportBlocks(o, { moonletName: m.spec.name, page, costUsd: result.costUsd, hashed: !!result.outputHash, anchoredUrl: txHash ? `https://robinhoodchain.blockscout.com/tx/${txHash}` : null, template: m.spec.template, at: now() });
+        return tg.sendRichMessage(tgConn.data.chatId, rich.blocks, { buttons: rich.keyboard, fetch: deps.fetch });
+      })()) ??
+      (await tg.sendMessage(tgConn.data.chatId, text, { fetch: deps.fetch }).catch((e) => {
+        console.error("telegram delivery failed", m.id, (e as Error).message);
+        return null;
+      }));
     if (sent) await store.rememberTelegramMessage(tgConn.data.chatId, Number(sent.id), m.id, runId).catch((e) => console.error("tg_messages insert failed", (e as Error).message));
   } else if (result.status === "done" && result.output && !result.output.nothingHappened && deliver && !alreadyDelivered) {
     await deliver({ channel: "telegram", text: `${result.output.title}\n\n${result.output.summary}` }).catch(() => undefined);
@@ -373,7 +345,7 @@ async function recordRun(
   r: {
     id?: string;
     status: "done" | "quiet" | "failed";
-    output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean; sections?: Array<{ check: string; finding: string; changed: boolean }>; calls?: Array<{ claim: string; check: string }>; scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }> };
+    output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean; sections?: Array<{ check: string; label?: string; finding: string; changed: boolean }>; metrics?: Array<{ label: string; value: string; delta?: string; tone?: "up" | "down" | "flat" }>; calls?: Array<{ claim: string; check: string }>; scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }> };
     outputHash?: string;
     error?: string;
     model: string;
@@ -399,6 +371,7 @@ async function recordRun(
     signal: r.output?.signal ?? "none",
     nothingHappened: r.output?.nothingHappened ?? true,
     sections: r.output?.sections ?? [],
+    metrics: r.output?.metrics ?? [],
     calls: r.output?.calls ?? [],
     scored: r.output?.scored ?? [],
     costUsd: r.costUsd,
@@ -415,4 +388,4 @@ async function recordRun(
   return id;
 }
 
-export { OrbioAuthError, HOLDER_FLOOR };
+export { OrbioAuthError };

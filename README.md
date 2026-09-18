@@ -5,7 +5,7 @@
 <p align="center">
   <a href="https://moonlet.16labs.xyz"><img alt="live" src="https://img.shields.io/badge/live-moonlet.16labs.xyz-15161d?style=flat-square"></a>
   <a href="https://github.com/daraijaola/moonlet/actions/workflows/ci.yml"><img alt="ci" src="https://github.com/daraijaola/moonlet/actions/workflows/ci.yml/badge.svg?branch=capy/onboarding"></a>
-  <img alt="tests" src="https://img.shields.io/badge/tests-177-4f7a5a?style=flat-square">
+  <img alt="tests" src="https://img.shields.io/badge/tests-181-4f7a5a?style=flat-square">
   <img alt="stack" src="https://img.shields.io/badge/Next.js%2016-TypeScript-15161d?style=flat-square">
   <a href="https://www.orbio.so/build"><img alt="Orbio Build Week" src="https://img.shields.io/badge/Orbio-Build%20Week%202026-e6b64a?style=flat-square"></a>
 </p>
@@ -20,7 +20,7 @@
 
 ---
 
-**Moonlet turns an $ORBIO bag into a worker.** A holder connects a wallet, approves Orbio once, and types a job in one sentence. About a minute later a small agent, a *moonlet*, is running on the schedule they set, paid by the inference credits that bag earns. It reads the chain, the web, GitHub and Gmail; it briefs you in Telegram, Discord or on its page; anything it wants to *do* on your behalf waits for your OK, and after it acts, Moonlet reads the result back from the provider and shows you a receipt that says *verified*, not just *done*. Every finished run is hashed (and anchored on Robinhood Chain when the deployment has an anchoring key). Sell the bag and it goes quiet.
+**Moonlet turns an $ORBIO bag into a worker.** A holder connects a wallet, signs once for their Orbio key, and types a job in one sentence. About a minute later a small agent, a *moonlet*, is running on the schedule they set, paid by the CREDIT their staked bag earns and they activate from their own wallet. It reads the chain, the web, GitHub and Gmail; it briefs you in Telegram, Discord or on its page; anything it wants to *do* on your behalf waits for your OK, and after it acts, Moonlet reads the result back from the provider and shows you a receipt that says *verified*, not just *done*. Every finished run is hashed (and anchored on Robinhood Chain when the deployment has an anchoring key). Sell the bag and it goes quiet.
 
 No card. No API key to copy. No dashboard to babysit.
 
@@ -42,20 +42,21 @@ No card. No API key to copy. No dashboard to babysit.
 
 | | |
 |---|---|
-| **Fund** | Your $ORBIO earns Orbio credits. A moonlet mints one inference key from them and runs on the schedule you set, up to the cap you set. When the credits can't pay for a run it goes quiet and wakes as the bag earns. Below 1,000 $ORBIO it stays quiet. |
+| **Fund** | Staked $ORBIO mints Orbio CREDIT every hour (1 CREDIT = $1 of inference). You activate CREDIT from your wallet into an AI balance; your signature of Orbio's key message is the gateway key. A moonlet runs on the schedule you set, up to the cap you set. When the balance can't pay for a run it goes quiet and puts one **Activate N CREDIT** card in your queue, sized to a week; you sign it in your wallet and the receipt is read back from Robinhood Chain. Moonlet never holds tokens or a private key. |
 | **Work** | Five job shapes: market watch (tokens, pools, whales on Robinhood Chain), repo mechanic (read repos, open PRs and issues), **inbox** (work in your Gmail), digest (read pages you name), custom. One sentence becomes a plan you can edit before launch. |
 | **Report** | Readable reports with a link to every source. Delivered to Telegram, Discord, the moonlet's page, and as PDF/DOCX files when asked. |
 | **Prove** | Every run: cost, model, duration, tool trace, and a sha256 of the output, anchored on Robinhood Chain when anchoring is enabled. Every action: read back from GitHub or Gmail by id and compared field by field with what you approved, stamped *verified*, *mismatch* or *not checked*. Watch jobs end each run with one checkable call about the next and grade it hit or miss when it comes (self-graded, and labelled so). |
 | **Watch cheaply** | Alert jobs get a tripwire: one number read for free every 15 minutes; the model wakes only when it moves past your line, at most once every three hours. |
 | **Ask** | Draft → approve → act. A moonlet that wants to send an email, open a PR, post, archive or spawn another moonlet puts a card in your queue (and Telegram). Each approval covers that one action; Autopilot is a separate switch on the moonlet. Spawns always ask. |
+| **Fuel** | Every public moonlet has a Fuel button. Anyone who finds it useful burns 1, 2 or 5 of their own CREDIT into its owner's balance with one wallet signature (`activate(amount, beneficiary)`); Moonlet reads the receipt from the chain, credits it once, wakes the moonlet if it was quiet, and lists the giver on the page. Patronage for agents, settled in inference, verifiable on chain. |
 | **Talk** | Reply to any report in Telegram or on the page. It answers from the run, reaches for its tools when it must, and can act (through the same approval cards). |
 
 ## Quick start
 
 For a holder, there is nothing to install:
 
-1. Open [moonlet.16labs.xyz](https://moonlet.16labs.xyz), connect the wallet that holds $ORBIO, sign one message.
-2. Approve Moonlet on Orbio (once). It can read your credit balance, mint and revoke one key, nothing else.
+1. Open [moonlet.16labs.xyz](https://moonlet.16labs.xyz), connect the wallet that holds $ORBIO, sign one message to log in.
+2. Sign Orbio's key message (once). That signature *is* your gateway key; Moonlet seals it and bills runs to it. Under **Connections**, activate a few CREDIT from your wallet.
 3. Type the job: *"Every morning tell me what came into my email that needs an answer, and draft replies."* Review the plan, launch.
 4. Under **Connections**, link Telegram (tap the bot) and whatever the job touches: Gmail, GitHub, Discord, X.
 
@@ -65,9 +66,10 @@ The first report arrives in about a minute.
 
 ```
 one sentence ──compile──▶ JobSpec (you review, you edit) ──launch──▶ your cadence, your cap
-      │                                                                 (quiet only when the credits can't pay for a run)
+      │                                                                 (quiet only when the AI balance can't pay for a run)
       ▼
- Orbio MCP: get_balance → mint one capped key for the wallet   (below 1,000 $ORBIO: quiet)
+ AI balance = CREDIT you activated (receipts read from Robinhood Chain) − what runs spent
+ key        = your wallet's signature of "Orbio API key · chain 4663 · epoch N"
       │
       ▼
  model loop (OpenRouter through Orbio's gateway, billed to that key)
@@ -83,7 +85,7 @@ one sentence ──compile──▶ JobSpec (you review, you edit) ──launch�
    → sha256 (→ Robinhood Chain when anchoring is on) → public page → Telegram / Discord / email / files
       │
       ▼
- key nearly spent? top up or rotate. Owner sold? goes quiet and says why.
+ balance can't pay? goes quiet and asks: one "Activate N CREDIT" card, signed in your wallet, verified on chain.
 ```
 
 `memory` carries the last run's cursor (ids, values, block numbers) so each run reports what *changed*.
@@ -94,7 +96,7 @@ Each connection unlocks tools. Nothing connected, nothing pretended. Tokens are 
 
 | Connection | How | Unlocks |
 |---|---|---|
-| **Orbio** | Approve once on orbio.so | the budget: `get_balance`, `create_key`, `revoke_key` |
+| **Orbio** | Sign the key message once in your wallet | the budget: the signed gateway key; CREDIT balance and activation receipts read from Robinhood Chain |
 | **Telegram** | Tap the bot, press Start | reports, Approve / Reject buttons, two-way chat, files |
 | **Gmail** | Sign in with Google (`gmail.modify`) | `gmail_read` (overview, search, message, thread, attachments, drafts, labels), `gmail_draft`, `gmail_send`, `gmail_forward`, `gmail_organize` (archive, read/unread, star, important, spam, trash, labels; by id or in bulk by search). Never deletes permanently. |
 | **GitHub** | Sign in with GitHub | `github_read`, `open_pull_request`, `open_issue`, `comment_on_issue` |
@@ -111,11 +113,12 @@ Gmail is a workspace, not a mailbox to post into. An inbox moonlet reads what ca
 
 ## Money and safety
 
-- The key belongs to the wallet, not the moonlet; several moonlets share one, and deleting a moonlet never touches credits.
-- The schedule and the per-run cap are the owner's. Nothing slows a cadence or splits income between moonlets; a moonlet goes quiet only when the Orbio balance can't pay for a run, and checks back daily. A job that fails twice in a row waits for its cadence instead of retrying hourly.
+- The key is the wallet's signature; several moonlets share it, and deleting a moonlet never touches CREDIT or balance.
+- The schedule and the per-run cap are the owner's. Nothing slows a cadence or splits income between moonlets; a moonlet goes quiet only when the activated AI balance can't pay for a run, asks once for CREDIT, and checks back daily. A job that fails twice in a row waits for its cadence instead of retrying hourly.
+- **The AI balance comes from Orbio's gateway** (`GET /api/v1/key` with your key) whenever it answers. When it can't, Moonlet falls back to its own ledger, labelled an estimate: verified activations (the `Activated` event for your wallet, once per activation id) minus every run's cost. If the gateway refuses for lack of balance, the ledger is zeroed and the moonlet asks. Activation is a transaction your wallet signs; Moonlet only reads the receipt.
 - Recommended caps follow the model (Gemini Flash 1×, GPT-5.6 Terra 4×, Claude Sonnet 5 6× of the template's base cost). The wizard warns when a cap is too small to finish and offers the recommended one. A run that hits its cap finishes with what it has and says so on the card.
 - Orbio's gateway takes one model per request; if that model is down or rate-limited the loop moves to the next one itself, and the receipt names the model that actually answered.
-- Moonlets never see your private key, never move tokens, never ask for seeds. Model calls go through Orbio's gateway under your own key.
+- Moonlets never see your private key, never move tokens, never ask for seeds. Model calls go through Orbio's gateway under your own signed key, which cannot sign transactions or move anything.
 - Acting tools always create a draft unless the moonlet is on autopilot. Spawning a new moonlet always asks, autopilot or not.
 - What you approve is what runs. The draft stored at proposal time is the exact payload executed later: every recipient (To and Cc) is parsed and listed on the card, a forward's subject and attachments are read from the real source message, a bulk tidy is pinned to the messages it matched when drafted, PR cards carry the file contents. Header values are refused if they contain line breaks or control characters.
 - Fences live in code, not in the prompt: GitHub writes only to a repository named in the job; new emails and forwards only to addresses named in the job (replies may go to people already on the thread); at most 100 emails per approval. Text inside an email, page or repo cannot widen them.
@@ -131,9 +134,9 @@ Built during Orbio Build Week 2026, live at [moonlet.16labs.xyz](https://moonlet
 
 **Runtime**
 
-- Wallet sign-in with injected wallets (MetaMask, Rabby, Robinhood Wallet; EIP-6963), WalletConnect for phone wallets, or a pasted address; Orbio approval on desktop and phone; signed session cookies.
+- Wallet sign-in with injected wallets (MetaMask, Rabby, Robinhood Wallet; EIP-6963), WalletConnect for phone wallets, or a pasted address; one signature for the Orbio key; signed session cookies.
 - Compiler (one sentence → JobSpec with a deterministic fallback), runner, scheduler, memory, per-run spend cap projected from the model's real per-token price.
-- Budget: your cadence, your cap; quiet only when the credits can't pay for a run. Below 1,000 $ORBIO a moonlet stays quiet.
+- Budget on Orbio's CREDIT protocol (15 Sep 2026): your cadence, your cap; quiet only when the activated balance can't pay for a run, then one activation card. Staked ORBIO, CREDIT tokens and activation receipts are read from Robinhood Chain.
 - Model loop on Orbio's gateway with in-process fallbacks; receipts record the model that answered.
 - Hashing on every run. Anchoring on Robinhood Chain is implemented and tested; the live deployment runs without an anchoring key, so its receipts are hashed, not anchored, and the copy says so.
 - Tripwire: a free 15-minute probe of one metric (price, liquidity, volume, wallet balance, repo activity) pulls a run forward when it moves past your line, at most once every three hours, and re-baselines after each run so a moonlet's own actions don't wake it.
@@ -141,7 +144,7 @@ Built during Orbio Build Week 2026, live at [moonlet.16labs.xyz](https://moonlet
 - Privacy: each run carries its own private flag (mailbox or private-repo access); public pages, previews, the sky and the JSON feed redact by run, receipts stay public. A report id from a client is honoured only if it belongs to the moonlet being asked.
 - Consent: acting tools create a draft; approving executes that one action; Autopilot is an explicit switch; spawning a moonlet always asks.
 
-**Connections**: Telegram (webhook, typing bubble, photos, files, approve/reject buttons, two-way chat), Discord webhooks, GitHub (OAuth), Gmail (OAuth, `gmail.modify`), X (OAuth). Tokens sealed at rest, deleted on disconnect.
+**Connections**: Orbio (signed key, activations from the wallet), Telegram (webhook, typing bubble, photos, files, approve/reject buttons, two-way chat), Discord webhooks, GitHub (OAuth), Gmail (OAuth, `gmail.modify`), X (OAuth). Tokens and the key sealed at rest, deleted on disconnect.
 
 **Gmail as a workspace**: read, search, attachments, threads, drafts in-thread, send, forward, tidy (archive, labels, spam, trash, bulk by search), PDF inbox reports. The concierge answers "what's in my email?" from the real inbox and queues replies for approval.
 
@@ -153,7 +156,7 @@ Built during Orbio Build Week 2026, live at [moonlet.16labs.xyz](https://moonlet
 - The approved mascot everywhere: logo, favicon, app icons, ten moonlet faces, ten owner profile pictures, and the thinking animation on pending replies (an inline SVG port of the approved motion, static under reduced motion).
 - Overview panel: next run, runs, cap, model, call record; spend from real runs; the bag's income; delivery and autopilot.
 - Wizard with template tiles, a review step you can edit, missing-connection prompts that resume the draft after connecting, and "Use this job" to fork any public moonlet.
-- Public pages: every moonlet has a page with its receipts; IDs visible with a share menu; the sky shows every moonlet alive with a search across all of them.
+- Public pages: every moonlet has a page that leads with its latest report, its receipts, and a Fuel button; the sky shows every moonlet alive with its latest headline and a search across all of them.
 - Phone layout throughout: rail of moonlets, bottom tabs, composer that clears the tab bar, model picker as a bottom sheet.
 
 **Landing**: hero with the mascot, How it works, "Three jobs, running right now" (three scripted scenes on real data: Sentry's report, Postie's inbox draft approved by a cursor, Scribe's merged PR #14), the tools panel with draggable tiles, the faces of the moonlets in the sky, footer.
@@ -178,7 +181,7 @@ src/moonlet/            the runtime
   spec.ts               JobSpec, RunOutput, templates, tools, recommended caps
   compile.ts            one sentence → JobSpec (real model, deterministic fallback)
   personality.ts        the moonlet character, per-template craft, compiler rules
-  budget.ts             the owner's cadence and cap; quiet under the holder floor; income estimate
+  budget.ts             the owner's cadence and cap; activation sizing; income estimate from staked ORBIO
   runner.ts             one run: key, tools, model loop, output, hashing
   scheduler.ts          the tick: due moonlets, delivery to every channel, anchoring
   llm.ts                Orbio gateway chat loop with tools, budget projection, in-process model fallbacks
@@ -190,7 +193,8 @@ src/moonlet/            the runtime
   documents.ts files.ts PDF/DOCX/TXT/MD rendering and the file sink
   connections/          telegram, discord, github, gmail, x
   store.ts              libsql; secrets sealed at rest
-  anchor.ts orbio.ts    Robinhood Chain writes; Orbio MCP client
+  anchor.ts orbio.ts    Robinhood Chain writes; Orbio CREDIT protocol: signature key, chain reads, activation receipts
+  bag.ts                staked and held ORBIO
 src/app/                Next.js app: landing, sign-in, /app, /app/new, /app/connections, /s/[id], /sky, /privacy, /terms, /api/*
 src/components/         UI: landing (hero, how, usecases, rails, faces, footer), app shell, overview panel, composer model picker, thinking mark, run cards, marks
 tests/                  vitest; most suites run real models against fake services
@@ -206,9 +210,9 @@ pnpm exec vitest run --no-file-parallelism                        # everything, 
 OPENROUTER_API_KEY=sk-… pnpm exec vitest run --no-file-parallelism
 ```
 
-`tests/acceptance.test.ts` is the index: twenty-four named cases, one per promise the README makes (foreign report ids denied, rejected approvals have no effect, approvals act once, provider timeouts are *uncertain*, read-back mismatches are flagged, empty bulk sets stay empty, email text cannot widen recipients or repos, header injection refused, private content never public, foreign-site signatures refused, no fetching the box, quiet runs cost nothing, failed runs still report spend, launch cap holds under a race, spawns always ask, delete withdraws every draft). CI runs the deterministic suites (fakes, no credits) on every push; the real-model suites run on manual dispatch.
+`tests/acceptance.test.ts` is the index: twenty-four named cases, one per promise the README makes (foreign report ids denied, rejected approvals have no effect, approvals act once, provider timeouts are *uncertain*, read-back mismatches are flagged, empty bulk sets stay empty, email text cannot widen recipients or repos, header injection refused, private content never public, foreign-site signatures refused, no fetching the box, quiet runs cost nothing, failed runs still report spend, launch cap holds under a race, spawns always ask, delete withdraws every draft). `tests/credit.test.ts` covers the CREDIT protocol against a fake chain: the signature is the key and only that wallet's, an activation funds the ledger once and a stranger's never, runs debit it, a dry moonlet asks with one card, less than approved is a mismatch. CI runs the deterministic suites (fakes, no credits) on every push; the real-model suites run on manual dispatch.
 
-25 files, 177 tests. Fakes for Telegram, Discord, GitHub, Google/Gmail and Orbio; real models for the parts that matter: compiling sentences, running market-watch and inbox moonlets end to end, the concierge reading a fake inbox and queuing a reply for approval, spend-cap cut-offs, key rotation, model fallback, tripwire cooldown, twenty concurrent runs. Run sequentially: the gateway rate-limits bursts. About $1 and ten minutes for a full run.
+26 files, 181 tests. Fakes for Telegram, Discord, GitHub, Google/Gmail and Orbio; real models for the parts that matter: compiling sentences, running market-watch and inbox moonlets end to end, the concierge reading a fake inbox and queuing a reply for approval, spend-cap cut-offs, key rotation, model fallback, tripwire cooldown, twenty concurrent runs. Run sequentially: the gateway rate-limits bursts. About $1 and ten minutes for a full run.
 
 ## Public API
 
@@ -216,4 +220,4 @@ OPENROUTER_API_KEY=sk-… pnpm exec vitest run --no-file-parallelism
 
 ---
 
-<p align="center"><sub>Built for <a href="https://www.orbio.so/build">Orbio Build Week</a> · credits by Orbio · models via OpenRouter · receipts hashed, anchorable on Robinhood Chain</sub></p>
+<p align="center"><sub>Built for <a href="https://www.orbio.so/build">Orbio Build Week</a> · CREDIT by Orbio · models via OpenRouter · receipts hashed, anchorable on Robinhood Chain</sub></p>

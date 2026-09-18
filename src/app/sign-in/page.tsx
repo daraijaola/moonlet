@@ -14,11 +14,6 @@ import { detectWallets, type WalletId } from "@/lib/auth";
 function SignInInner() {
   const { ready, address, orbioApproved, orbioChecked, connect, approveOrbio } = useAuth();
   const host = typeof window !== "undefined" ? window.location.host : "moonlet.16labs.xyz";
-  const [isPhone, setIsPhone] = useState(false);
-  useEffect(() => {
-    const t = setTimeout(() => setIsPhone(window.matchMedia("(max-width: 639px), (pointer: coarse)").matches), 0);
-    return () => clearTimeout(t);
-  }, []);
   const [wallets, setWallets] = useState<WalletId[]>([]);
   useEffect(() => {
     // Announcements arrive asynchronously after the request event; look again for a moment.
@@ -30,11 +25,8 @@ function SignInInner() {
   const router = useRouter();
   const params = useSearchParams();
   const next = params.get("next") || "/app";
-  const orbioResult = params.get("orbio");
-  const [busy, setBusy] = useState<"wallet" | "orbio" | "handoff" | null>(null);
-  const [err, setErr] = useState<string | null>(
-    orbioResult && orbioResult !== "ok" ? `Orbio approval ${orbioResult.replace("_", " ")}. Try again.` : null,
-  );
+  const [busy, setBusy] = useState<"wallet" | "orbio" | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const skipOrbio = process.env.NEXT_PUBLIC_DEV_ORBIO === "1";
   const inApp = !!address && (orbioApproved || skipOrbio);
 
@@ -63,7 +55,7 @@ function SignInInner() {
             Sign in to moonlet
           </h1>
           <p className="mt-1.5 text-center text-[13.5px] leading-[1.55] text-ink-soft">
-            Your wallet is the account. The credits your $ORBIO earns are the budget.
+            Your wallet is the account. The CREDIT your staked $ORBIO earns is the budget.
           </p>
 
           <ol className="mt-8 space-y-3">
@@ -71,7 +63,7 @@ function SignInInner() {
               n={1}
               state={step > 1 ? "done" : "active"}
               title={address ? `Connected ${shortAddr(address)}` : "Connect the wallet that holds $ORBIO"}
-              hint={address ? "Signed in. This signature is your login; it never moves tokens." : "Robinhood Chain · needs 1,000+ $ORBIO to earn · you sign one message, no gas"}
+              hint={address ? "Signed in. This signature is your login; it never moves tokens." : "Robinhood Chain · stake $ORBIO to earn CREDIT · you sign one message, no gas"}
             >
               {!address && (
                 <>
@@ -123,8 +115,8 @@ function SignInInner() {
             <Step
               n={2}
               state={step > 2 ? "done" : step === 2 ? "active" : "todo"}
-              title="Let moonlet manage your Orbio credits"
-              hint={`Opens orbio.so, where you connect the same wallet and approve once. Moonlet can read your balance, mint one capped key and revoke it, nothing else.${isPhone && wallets.length === 0 ? " On a phone this opens inside the MetaMask app’s browser, where your wallet is; other wallets: open moonlet.16labs.xyz from inside the wallet’s own browser." : ""}`}
+              title="Sign once for your Orbio key"
+              hint="Your wallet signs Orbio's key message; that signature is the gateway key your moonlets bill. No account, no checkout. You activate CREDIT from the same wallet whenever a moonlet asks."
             >
               {address && !orbioChecked && !skipOrbio && (
                 <p className="mt-3 font-mono text-[12px] text-ink-soft">Checking Orbio…</p>
@@ -137,7 +129,7 @@ function SignInInner() {
                       setBusy("orbio");
                       setErr(null);
                       try {
-                        if ((await approveOrbio(next)) === "handoff") setBusy("handoff");
+                        await approveOrbio(next);
                       } catch (e) {
                         setErr((e as Error).message);
                         setBusy(null);
@@ -146,17 +138,10 @@ function SignInInner() {
                     className="btn-hard mt-3 inline-flex w-full items-center justify-center gap-2 rounded-md border-2 border-ink bg-white px-4 py-2.5 font-mono text-[13.5px] font-medium text-ink disabled:opacity-60"
                   >
                     <OrbioMark size={16} />
-                    {busy === "handoff" ? "Waiting for MetaMask…" : busy === "orbio" ? "Waiting for Orbio…" : isPhone && wallets.length === 0 ? "Approve in MetaMask" : "Approve on Orbio"}
+                    {busy === "orbio" ? "Waiting for your wallet…" : "Sign for key"}
                   </button>
-                  {busy === "handoff" && (
-                    <div className="mt-3 rounded-md border border-ink/10 bg-paper px-3 py-2.5 text-[11.5px] leading-[1.55] text-ink-soft">
-                      <p className="font-medium text-ink">Finish in MetaMask, then come back here.</p>
-                      <p className="mt-0.5">Orbio opened inside the MetaMask browser. Connect the same wallet there and tap Approve; this tab notices on its own and carries on.</p>
-                      <button onClick={() => setBusy(null)} className="mt-2 font-mono text-[11.5px] text-ink-faint underline hover:text-ink">didn’t open? try again</button>
-                    </div>
-                  )}
                   <button onClick={() => router.replace(next)} className="mt-2 w-full font-mono text-[11.5px] text-ink-faint hover:text-ink">
-                    skip for now — moonlets stay quiet until approved
+                    skip for now — moonlets stay quiet until signed
                   </button>
                 </>
               )}
@@ -166,17 +151,13 @@ function SignInInner() {
           {err && <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 font-mono text-[12px] text-red-800">{err}</p>}
 
           <div className="mt-8 flex items-center justify-center gap-5 text-ink-faint">
-            <span className="inline-flex items-center gap-1.5 font-mono text-[11px]"><OrbioMark size={14} /> Orbio credits</span>
+            <span className="inline-flex items-center gap-1.5 font-mono text-[11px]"><OrbioMark size={14} /> Orbio CREDIT</span>
             <span className="inline-flex items-center gap-1.5 font-mono text-[11px]"><OpenRouterMark size={14} /> OpenRouter</span>
             <span className="inline-flex items-center gap-1.5 font-mono text-[11px]"><RobinhoodMark size={14} /> Robinhood Chain</span>
           </div>
           <p className="mt-4 text-center text-[12px] leading-[1.6] text-ink-faint">
             No email, no password. Moonlet never sees your private key and never moves your
-            tokens. Revoke access any time at{" "}
-            <a href="https://www.orbio.so/mcp" target="_blank" rel="noreferrer" className="text-ink-soft underline">
-              orbio.so/mcp
-            </a>
-            .
+            tokens. Forget the signed key any time under Connections; rotate it on Orbio by signing a higher epoch.
           </p>
         </div>
       </section>
@@ -187,12 +168,11 @@ function SignInInner() {
           <div className="max-w-[26rem]">
             <p className="font-mono text-[11px] uppercase tracking-[0.16em] text-ink-soft">The loop</p>
             <p className="mt-3 text-[2.2rem] font-medium leading-[1.05] tracking-[-0.03em] text-ink">
-              Trading fees → credits → your moonlet works → proof on chain → repeat.
+              Stake → CREDIT → your moonlet works → proof on chain → repeat.
             </p>
             <p className="mt-4 text-[13.5px] leading-[1.6] text-ink-soft">
-              You approve once. From then on the moonlet keeps itself funded off your bag, and
-              every finished run is hashed, and anchored on Robinhood Chain once anchoring is switched on, so anyone can check it did the
-              work.
+              You sign once. Your moonlets bill the CREDIT you activate, ask you when it runs low, and every finished run is
+              hashed, and anchored on Robinhood Chain once anchoring is switched on, so anyone can check it did the work.
             </p>
           </div>
           <Image
