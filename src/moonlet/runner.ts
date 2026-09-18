@@ -281,8 +281,12 @@ function coerceOutput(o: unknown): unknown {
     ? x.sections.slice(0, 6).map((sec) => {
         const s = (sec ?? {}) as Record<string, unknown>;
         const finding = str(s.finding ?? s.result ?? s.summary ?? s.value ?? s.note);
-        return { check: str(s.check ?? s.name ?? s.title).slice(0, 160), finding: finding.slice(0, 700), changed: !!s.changed };
+        return { check: str(s.check ?? s.name ?? s.title).slice(0, 160), label: str(s.label).slice(0, 24), finding: finding.slice(0, 700), changed: !!s.changed };
       })
+    : [];
+  // Metrics: a label one character over the cap is not a reason to throw the report away; clip, and drop empties.
+  x.metrics = Array.isArray(x.metrics)
+    ? x.metrics.slice(0, 4).map((mm) => { const k = (mm ?? {}) as Record<string, unknown>; const tone = String(k.tone ?? ""); return { label: str(k.label ?? k.name).slice(0, 18), value: str(k.value).slice(0, 18), delta: str(k.delta ?? k.change).slice(0, 18), tone: tone === "up" || tone === "down" ? tone : /^[+↑]/.test(str(k.delta ?? k.change)) ? "up" : /^[-−↓]/.test(str(k.delta ?? k.change)) ? "down" : "flat" }; }).filter((mm) => mm.label && mm.value)
     : [];
   return x;
 }
