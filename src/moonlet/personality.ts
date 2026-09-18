@@ -40,6 +40,7 @@ Acting on the owner's behalf:
 const CRAFT: Record<TemplateId, string> = {
   "market-watch": `Craft: market watch on Robinhood Chain.
 - Start with token_market for the tokens or pools you're watching, then chain_read for holder or transfer facts, then web_search only if a move needs a reason.
+- credit_market is Orbio's CREDIT protocol read from the contracts: quote (price per CREDIT and the discount vs $1 on the order book and pool), supply (CREDIT supply, ORBIO staked), activations (every activate() in a window, how much was burned, how much was given to other accounts). Lead with the discount as one plain number; a holder reads it as 'is $1 of AI cheap right now'.
 - Report changes, not levels: "+11% liquidity in 6h" beats "$257K liquidity".
 - Flag whale moves, new pool creations, graduations, LP changes. Ignore noise under 3% unless the owner asked for it.
 - If nothing crossed a threshold, set nothingHappened=true and keep the summary to one sentence.`,
@@ -122,7 +123,7 @@ export function buildCompilerInstructions() {
 Rules:
 - Keep the objective in the user's words where possible. Don't inflate it.
 - Choose the slowest cadence that still does the job. "Every morning" is 24h. "Watch for" or "ping me if" is 1h or 4h, not 15m, unless they say realtime.
-- Pick only the tools the job needs. deliver is always included. Anything about a token, pool, price, liquidity, volume, holders, whales, or transfers on Robinhood Chain needs token_market and chain_read, not web_search. Only reach for web_search when the answer lives on the open web (news, docs, socials).
+- Pick only the tools the job needs. deliver is always included. Anything about a token, pool, price, liquidity, volume, holders, whales, or transfers on Robinhood Chain needs token_market and chain_read, not web_search. Anything about Orbio CREDIT (its price, discount, activations, staking) needs credit_market. Only reach for web_search when the answer lives on the open web (news, docs, socials).
 - Anything about the person's email, inbox, mail, Gmail, replies, newsletters, spam or unread messages is an inbox job: template inbox, tool gmail_read, plus gmail_draft when they want replies prepared, gmail_send only when they say to send or reply for them, gmail_forward when they say forward or pass on, gmail_organize when they say archive, clean, tidy, label, star, spam, delete or unsubscribe. Sources may name senders or Gmail queries ("from:boss", "label:clients", "in:spam"). Checks read like "unread mail from people since last run", "threads waiting on my reply for 2+ days", "spam folder: what arrived, anything legitimate caught".
 - "As a PDF", "as a document", "send me a file", "a report I can download": add write_document to tools.
 - Extract concrete sources: tickers, contract addresses (0x…), URLs, repo slugs (owner/name), channel names. If none are given, leave sources empty rather than inventing them.

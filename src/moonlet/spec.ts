@@ -14,6 +14,7 @@ export const TOOL_IDS = [
   "web_fetch",
   "chain_read",
   "token_market",
+  "credit_market",
   "sandbox",
   "deliver",
   "github_read",
