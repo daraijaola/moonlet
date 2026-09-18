@@ -5,6 +5,26 @@ import { useState } from "react";
 import { ChevronDown, ChevronUp, FileText, Hash, ShieldCheck } from "lucide-react";
 import { fmtUsd, shortenHexes, timeAgo, type ApiRun } from "@/lib/api";
 
+/** A two-word label for a check the model did not label: the first meaningful words before any punctuation. */
+export const labelFor = (check: string, label?: string) => (label?.trim() || check.replace(/[:;,(].*$/, "").split(/\s+/).filter((w) => !/^(the|a|an|and|of|on|in|vs|for|with|to|how|it|its)$/i.test(w)).slice(0, 3).join(" ")).slice(0, 24);
+
+export function MetricsStrip({ metrics, size = "md" }: { metrics: NonNullable<ApiRun["metrics"]>; size?: "sm" | "md" }) {
+  if (!metrics.length) return null;
+  return (
+    <dl className={`grid gap-2 ${metrics.length >= 4 ? "grid-cols-2 sm:grid-cols-4" : `grid-cols-${metrics.length}`}`}>
+      {metrics.slice(0, 4).map((m, i) => (
+        <div key={i} className="rounded-md border border-ink/[0.07] bg-paper/70 px-2.5 py-1.5">
+          <dt className="truncate font-mono text-[10px] uppercase tracking-[0.12em] text-ink-soft">{m.label}</dt>
+          <dd className={`mt-0.5 flex items-baseline gap-1.5 ${size === "sm" ? "text-[15px]" : "text-[18px]"} font-semibold leading-none tracking-[-0.01em] text-ink tabular-nums`}>
+            {m.value}
+            {m.delta && <span className={`text-[11px] font-medium ${m.tone === "up" ? "text-moss" : m.tone === "down" ? "text-red-700" : "text-ink-faint"}`}>{m.delta}</span>}
+          </dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: boolean }) {
   const [open, setOpen] = useState(false);
   const tone = run.status === "failed" ? "border-red-700/30" : run.status === "quiet" ? "border-ink/10 opacity-80" : "border-ink/10";
@@ -21,18 +41,15 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
           </div>
           <h4 className="mt-1 text-[15.5px] font-semibold leading-[1.3] tracking-[-0.01em] text-ink [overflow-wrap:anywhere]" title={run.title}>{shortenHexes(run.title)}</h4>
           <p className={`mt-1.5 text-[13.5px] leading-[1.6] text-ink-soft [overflow-wrap:anywhere] ${open ? "" : "line-clamp-3"}`}>{shortenHexes(run.summary)}</p>
+          {(run.metrics?.length ?? 0) > 0 && <div className="mt-3"><MetricsStrip metrics={run.metrics!} size="sm" /></div>}
           {(run.sections?.length ?? 0) > 0 && (
-            <ul className="mt-3 space-y-2">
-              {run.sections!.slice(0, open ? 6 : 3).map((sec, i) => (
-                <li key={i} className="flex gap-2.5 text-[13px] leading-[1.5] [overflow-wrap:anywhere]">
-                  <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${sec.changed ? "bg-gold" : "bg-ink/20"}`} title={sec.changed ? "changed since last run" : "unchanged"} />
-                  <span className="min-w-0">
-                    <span className="font-medium text-ink">{shortenHexes(sec.check)}</span>
-                    <span className={`block text-ink-soft ${open ? "" : "line-clamp-2"}`}>{shortenHexes(sec.finding)}</span>
-                  </span>
+            <ul className="mt-3 divide-y divide-ink/[0.05] rounded-md border border-ink/[0.07]">
+              {run.sections!.slice(0, 6).map((sec, i) => (
+                <li key={i} className="grid grid-cols-[6.5rem_1fr] gap-x-3 px-3 py-2 text-[13px] leading-[1.5] [overflow-wrap:anywhere] sm:grid-cols-[8rem_1fr]" title={sec.check}>
+                  <span className="flex items-start gap-1.5 font-medium text-ink"><span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${sec.changed ? "bg-gold" : "bg-ink/20"}`} title={sec.changed ? "changed since last run" : "unchanged"} /><span className="min-w-0 truncate">{labelFor(sec.check, sec.label)}</span></span>
+                  <span className={`min-w-0 text-ink-soft ${open ? "" : "line-clamp-3"}`}>{shortenHexes(sec.finding)}</span>
                 </li>
               ))}
-              {!open && run.sections!.length > 3 && <li className="text-[11.5px] text-ink-faint">+{run.sections!.length - 3} more</li>}
             </ul>
           )}
           {(run.files?.length ?? 0) > 0 && (
@@ -80,7 +97,7 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
               {run.calls?.map((c, i) => (
                 <li key={`c${i}`} className="flex items-start gap-2 text-[12.5px] leading-[1.5]">
                   <span className="mt-0.5 shrink-0 rounded-full bg-gold/25 px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.1em] text-ink">calls it</span>
-                  <span className="min-w-0 break-words text-ink">{c.claim}<span className="text-ink-soft"> · scored next run{c.check ? ` by ${c.check}` : ""}</span></span>
+                  <span className="min-w-0 break-words text-ink">{c.claim}<span className="text-ink-faint"> · scored next run</span></span>
                 </li>
               ))}
             </ul>
@@ -102,7 +119,7 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
       </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-ink/[0.06] pt-3 text-[12px] text-ink-soft">
-        {(hasBody || run.sources.length > 0 || run.keyEvents.length > 0 || (run.sections?.length ?? 0) > 3 || (run.trace?.length ?? 0) > 0) && (
+        {(hasBody || run.sources.length > 0 || run.keyEvents.length > 0 || (run.trace?.length ?? 0) > 0) && (
           <button onClick={() => setOpen((o) => !o)} className="inline-flex items-center gap-1 font-medium text-ink hover:text-ink-soft">
             {open ? <><ChevronUp size={13} strokeWidth={2} /> Collapse</> : <><ChevronDown size={13} strokeWidth={2} /> {hasBody ? "Read the report" : "Details"}</>}
           </button>

@@ -79,7 +79,8 @@ export type RunRow = {
   txHash: string | null;
   keyEvents: KeyEvent[];
   trace?: TraceEvent[];
-  sections?: Array<{ check: string; finding: string; changed: boolean }>;
+  sections?: Array<{ check: string; label?: string; finding: string; changed: boolean }>;
+  metrics?: Array<{ label: string; value: string; delta?: string; tone?: "up" | "down" | "flat" }>;
   calls?: Array<{ claim: string; check: string }>;
   scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }>;
   error: string | null;
@@ -172,6 +173,7 @@ export function migrate() {
     await c.execute(`ALTER TABLE runs ADD COLUMN trace TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN memory TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN sections TEXT`).catch(() => undefined);
+    await c.execute(`ALTER TABLE runs ADD COLUMN metrics TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN calls TEXT`).catch(() => undefined);
     await c.execute(`ALTER TABLE runs ADD COLUMN scored TEXT`).catch(() => undefined);
     // Privacy is a property of the run, decided when it happened, never of the job as it is edited later.
@@ -524,12 +526,12 @@ export async function reconcileStuckActions(olderThan: number) {
 export async function insertRun(r: Omit<RunRow, "private"> & { private?: boolean }) {
   await migrate();
   await db().execute({
-    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace,sections,calls,scored,private)
-          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    sql: `INSERT INTO runs(id,moonlet_id,at,status,title,summary,body,sources,signal,nothing_happened,cost_usd,model,model_calls,duration_ms,output_hash,tx_hash,key_events,error,trace,sections,calls,scored,private,metrics)
+          VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     args: [
       r.id, r.moonletId, r.at, r.status, r.title, r.summary, r.body, JSON.stringify(r.sources), r.signal, r.nothingHappened ? 1 : 0,
       r.costUsd, r.model, r.modelCalls, r.durationMs, r.outputHash, r.txHash, JSON.stringify(r.keyEvents), r.error, JSON.stringify(r.trace ?? []), JSON.stringify(r.sections ?? []),
-      JSON.stringify(r.calls ?? []), JSON.stringify(r.scored ?? []), r.private ? 1 : 0,
+      JSON.stringify(r.calls ?? []), JSON.stringify(r.scored ?? []), r.private ? 1 : 0, JSON.stringify(r.metrics ?? []),
     ],
   });
   // The counter on the moonlet is the number of run rows, whichever path wrote them, so no two surfaces can disagree.
@@ -563,6 +565,7 @@ function rowToRun(row: Record<string, unknown>): RunRow {
     keyEvents: JSON.parse(row.key_events as string),
     trace: row.trace ? JSON.parse(row.trace as string) : [],
     sections: row.sections ? JSON.parse(row.sections as string) : [],
+    metrics: row.metrics ? JSON.parse(row.metrics as string) : [],
     calls: row.calls ? JSON.parse(row.calls as string) : [],
     scored: row.scored ? JSON.parse(row.scored as string) : [],
     error: (row.error as string) ?? null,

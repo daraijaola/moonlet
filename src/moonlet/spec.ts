@@ -167,6 +167,11 @@ export const RunOutput = z.object({
     .array(z.object({ check: z.string().max(160), label: z.string().max(24).default("").describe("Two or three words naming this check for a phone screen: 'Price', 'Staked', 'Activations 6h', 'Verdict'."), finding: z.string().max(700).describe("The finding in one or two short sentences, numbers first, no restating the check. Under 30 words unless the job is a written brief."), changed: z.boolean() }))
     .max(6)
     .describe("One entry per check in the plan, in order: what you found, and whether it changed since the last run. Empty when the plan has no checks."),
+  metrics: z
+    .array(z.object({ label: z.string().max(18), value: z.string().max(18), delta: z.string().max(18).default("").describe("Change since last run, e.g. '+2.8%', '−$23', 'new'. Empty if none or first run."), tone: z.enum(["up", "down", "flat"]).default("flat") }))
+    .max(4)
+    .default([])
+    .describe("The numbers that matter, at a glance: up to four label/value pairs ('CREDIT' '74¢', 'Discount' '26%', 'Staked' '303.8M', 'Burned 6h' '$589'). Only real figures you read this run."),
   remember: z
     .string()
     .max(1200)

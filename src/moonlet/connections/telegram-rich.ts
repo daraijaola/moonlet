@@ -35,6 +35,8 @@ const labelFor = (check: string, label?: string) => (label?.trim() || check.repl
 export function reportBlocks(o: RunOutput, ctx: { moonletName: string; page: string; costUsd: number; hashed: boolean; anchoredUrl?: string | null; template: string; at: number }): { blocks: Block[]; keyboard: Keyboard } {
   const blocks: Block[] = [];
   blocks.push({ type: "heading", size: 4, text: headline(o.title) });
+  const metrics = ((o as { metrics?: Array<{ label: string; value: string; delta?: string }> }).metrics ?? []).slice(0, 4);
+  if (metrics.length) blocks.push(para(metrics.flatMap((m, i) => [...(i ? ["   "] : []), m.label, " ", bold(m.value), ...(m.delta ? [" ", italic(m.delta)] : [])])));
   blocks.push({ type: "pullquote", text: short(o.summary).slice(0, 320), credit: [ctx.moonletName, o.signal === "high" ? " · high signal · " : " · ", ago(ctx.at)] });
 
   const sections = (o.sections ?? []).filter((s) => s.finding?.trim());

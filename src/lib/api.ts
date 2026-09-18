@@ -54,7 +54,8 @@ export type ApiRun = {
   explorerUrl: string | null;
   keyEvents: Array<{ kind: string; detail: string; amountUsd?: number }>;
   trace?: Array<{ at: number; tool: string; summary: string }>;
-  sections?: Array<{ check: string; finding: string; changed: boolean }>;
+  sections?: Array<{ check: string; label?: string; finding: string; changed: boolean }>;
+  metrics?: Array<{ label: string; value: string; delta?: string; tone?: "up" | "down" | "flat" }>;
   calls?: Array<{ claim: string; check: string }>;
   scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }>;
   error: string | null;

@@ -306,7 +306,7 @@ function salvageOutput(text: string, name: string): RunOutput | null {
 }
 
 /** The receipt hash covers what the owner sees; private carry-over notes are not part of it. */
-export function hashOutput(o: Omit<RunOutput, "calls" | "scored"> & Partial<Pick<RunOutput, "calls" | "scored">>) {
+export function hashOutput(o: Omit<RunOutput, "calls" | "scored" | "metrics"> & Partial<Pick<RunOutput, "calls" | "scored" | "metrics">>) {
   const { remember: _remember, ...pub } = o;
   void _remember;
   return "0x" + createHash("sha256").update(JSON.stringify(pub)).digest("hex");

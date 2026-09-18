@@ -8,7 +8,7 @@ import { PublicHeader } from "@/components/public-header";
 import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
 import { FuelGauge, StatusDot, fuelTone } from "@/components/fuel-gauge";
 import { FuelButton } from "@/components/fuel-button";
-import { RunCard } from "@/components/run-card";
+import { MetricsStrip, RunCard } from "@/components/run-card";
 import { Receipts } from "@/components/receipts";
 import { CADENCE_LABEL, TEMPLATE_LABEL, TOOL_LABEL } from "@/components/labels";
 import { explorerTx } from "@/moonlet/anchor";
@@ -76,6 +76,7 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
                   <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-ink-soft">latest · {timeAgo(latest.at)}{latest.signal === "high" ? " · high signal" : ""}</p>
                   <p className="mt-1 text-[15px] font-semibold leading-[1.3] text-ink [overflow-wrap:anywhere]">{shortenHexes(latest.title)}</p>
                   <p className="mt-1 line-clamp-2 text-[13px] leading-[1.55] text-ink-soft [overflow-wrap:anywhere]">{shortenHexes(latest.summary)}</p>
+                  {(latest.metrics?.length ?? 0) > 0 && <div className="mt-3"><MetricsStrip metrics={latest.metrics!} /></div>}
                 </div>
               )}
               {hidden && (

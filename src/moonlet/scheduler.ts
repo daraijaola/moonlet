@@ -345,7 +345,7 @@ async function recordRun(
   r: {
     id?: string;
     status: "done" | "quiet" | "failed";
-    output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean; sections?: Array<{ check: string; finding: string; changed: boolean }>; calls?: Array<{ claim: string; check: string }>; scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }> };
+    output?: { title: string; summary: string; body: string; sources: string[]; signal: string; nothingHappened: boolean; sections?: Array<{ check: string; label?: string; finding: string; changed: boolean }>; metrics?: Array<{ label: string; value: string; delta?: string; tone?: "up" | "down" | "flat" }>; calls?: Array<{ claim: string; check: string }>; scored?: Array<{ claim: string; result: "hit" | "miss" | "void"; evidence: string }> };
     outputHash?: string;
     error?: string;
     model: string;
@@ -371,6 +371,7 @@ async function recordRun(
     signal: r.output?.signal ?? "none",
     nothingHappened: r.output?.nothingHappened ?? true,
     sections: r.output?.sections ?? [],
+    metrics: r.output?.metrics ?? [],
     calls: r.output?.calls ?? [],
     scored: r.output?.scored ?? [],
     costUsd: r.costUsd,
