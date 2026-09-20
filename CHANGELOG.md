@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-20 · Build Week day 19 · fresh-holder path, anchoring on, CI honest
+
+A first-time holder signing in with a wallet that had never launched anything exposed three faults, all fixed and live:
+
+- **Compile used a revoked platform key** for a holder with no moonlets, so the first "Plan it" silently returned the template default. Compile now bills the wallet's own signed Orbio key first.
+- **Wallet-signed keys (`sk-orb-<epoch>-…`) refuse OpenRouter's server-side web plugin**; any job with `web_search` failed on them. The plugin is skipped on wallet keys; the test pins it.
+- **The dashboard showed the empty state after a launch** until the next 15 s poll. The shared data reloads before the redirect.
+- **Anchoring is on in production.** A funded platform wallet writes every completed run's sha256 to Robinhood Chain; 150 runs anchored, receipts read "anchored on chain" with the explorer link.
+- **CI typechecks for real**: `next typegen` runs before `tsc`, and the grep that hid `PageProps`/`LayoutProps` errors is gone.
+
 ## 2026-09-15 · Build Week day 14 · Orbio moved to the CREDIT protocol; Moonlet moved with it
 
 Orbio replaced passive credits and the MCP approve flow with $CREDIT on Robinhood Chain: stake ORBIO to earn CREDIT, `activate` burns it into an AI balance, and the gateway key is the wallet's signature of a fixed message. Every moonlet in production had been failing since 14:06 UTC.

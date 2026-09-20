@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/lib/auth";
+import { useAppData } from "@/lib/app-data";
 import { api, fmtBag, fmtUsd, type Connections, type OrbioStatus } from "@/lib/api";
 import { plan } from "@/moonlet/budget";
 import { MODEL_CHOICES, TEMPLATE_DEFAULTS, TOOL_IDS, recommendedCapUsd, TOOL_REQUIRES, type Cadence, type JobSpec, type ModelChoice, type TemplateId, type ToolId } from "@/moonlet/spec";
@@ -20,6 +21,7 @@ const STEPS = ["The job", "Review", "Delivery", "Confirm"] as const;
 
 function NewInner() {
   const { address } = useAuth();
+  const { reload } = useAppData();
   const router = useRouter();
   const params = useSearchParams();
   const editId = params.get("edit");
@@ -114,10 +116,13 @@ function NewInner() {
       const delivery = { telegram: linked("telegram") ? "connected" : undefined, x: linked("x") ? "connected" : undefined };
       if (editId) {
         await api.patch(address, editId, { action: "edit", spec, delivery, autopilot });
+        await reload().catch(() => undefined);
         router.push(`/app?m=${editId}`);
         return;
       }
       const r = await api.launch(address, { spec, delivery, autopilot, runNow: true });
+      // The sidebar and dashboard share one fetch; refresh it now so a first launch lands on the moonlet, not on the empty state until the next poll.
+      await reload().catch(() => undefined);
       router.push(`/app?m=${r.moonlet.id}&launched=1`);
     } catch (e) {
       setErr((e as Error).message);
