@@ -232,3 +232,19 @@ describe("CREDIT protocol", () => {
     expect((await real.getBalance()).availableUsd).toBe(0);
   });
 });
+
+describe("wallet-signed keys and OpenRouter plugins", () => {
+  it("sends the web plugin on an account key but not on a wallet-signed key", async () => {
+    const { runLoop } = await import("@/moonlet/llm");
+    const seen: Array<Record<string, unknown>> = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      seen.push(JSON.parse(String(init?.body)));
+      return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: "ok" }, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, cost: 0.0001 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    for (const key of ["sk-orbio-account-key", "sk-orb-0-walletsignature"]) {
+      await runLoop({ key, model: "google/gemini-3.8-flash", instructions: "x", input: "y", webSearch: true, maxCostUsd: 0.01, maxSteps: 2, fetch: fetchImpl });
+    }
+    expect(seen[0].plugins).toEqual([{ id: "web", max_results: 2 }]);
+    expect(seen.slice(seen.length / 2).every((r) => r.plugins === undefined)).toBe(true);
+  });
+});

@@ -18,7 +18,9 @@ export async function POST(req: Request) {
   if (!owner) return bad("sign in with your wallet first", 401);
   const body = Body.safeParse(await req.json().catch(() => null));
   if (!body.success) return bad(body.error.message);
-  const ownKey = (await store.listMoonlets(owner)).find((m) => m.key?.key)?.key?.key;
+  // The wallet's own signed key first (a fresh holder has no moonlets yet), then a key one of their moonlets holds, then the platform key.
+  const signedKey = (await store.getOwner(owner))?.orbioKey ?? null;
+  const ownKey = signedKey ?? (await store.listMoonlets(owner)).find((m) => m.key?.key)?.key?.key;
   const key = ownKey ?? process.env.COMPILE_API_KEY ?? process.env.OPENROUTER_API_KEY;
   if (!key) return NextResponse.json({ spec: fallbackSpec(body.data), compiled: false });
   try {

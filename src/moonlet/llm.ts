@@ -105,7 +105,8 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
       ...(maxTokens ? { max_tokens: Math.min(maxTokens, 8192) } : {}),
       usage: { include: true },
       ...(tools.length && !lastStep ? { tools, tool_choice: "auto" } : {}),
-      ...(o.webSearch && !lastStep && step === 0 ? { plugins: [{ id: "web", max_results: 2 }] } : {}),
+      // Orbio's wallet-signed keys (sk-orb-<epoch>-…) refuse server-side plugins ("needs a supported usage limit"); the web plugin only rides on account keys.
+      ...(o.webSearch && !lastStep && step === 0 && !/^sk-orb-\d/.test(o.key) ? { plugins: [{ id: "web", max_results: 2 }] } : {}),
       ...(o.jsonSchema && (lastStep || !tools.length) ? { response_format: { type: "json_schema", json_schema: { name: o.jsonSchema.name, strict: true, schema: o.jsonSchema.schema } } } : {}),
     };
     if (lastStep && tools.length && messages[messages.length - 1].role !== "user") {
