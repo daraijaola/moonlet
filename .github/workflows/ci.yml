@@ -25,8 +25,9 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
+      # Next 16 declares PageProps/LayoutProps in .next/types; generate them first so tsc sees the real thing, then fail on any error.
       - name: typecheck
-        run: pnpm exec tsc --noEmit 2>&1 | grep -v 'LayoutProps\|PageProps\|validator.ts\|AppRoutes' | tee tsc.log; test ! -s tsc.log
+        run: pnpm exec next typegen && pnpm exec tsc --noEmit
       - name: lint
         run: pnpm lint
       - name: build
