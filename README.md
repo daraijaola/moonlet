@@ -138,7 +138,7 @@ Built during Orbio Build Week 2026, live at [moonlet.16labs.xyz](https://moonlet
 - Compiler (one sentence → JobSpec with a deterministic fallback), runner, scheduler, memory, per-run spend cap projected from the model's real per-token price.
 - Budget on Orbio's CREDIT protocol (15 Sep 2026): your cadence, your cap; quiet only when the activated balance can't pay for a run, then one activation card. Staked ORBIO, CREDIT tokens and activation receipts are read from Robinhood Chain.
 - Model loop on Orbio's gateway with in-process fallbacks; receipts record the model that answered.
-- Hashing on every run. Anchoring on Robinhood Chain is implemented and tested; the live deployment runs without an anchoring key, so its receipts are hashed, not anchored, and the copy says so.
+- Hashing and anchoring on every run. Each completed run's sha256 is written as calldata to Robinhood Chain (`moonletId, runId, outputHash, costMicroUsd, timestamp`; decodable from the explorer) by a platform wallet that pays the gas, about $0.01 a run. The live deployment anchors; a deployment without `ANCHOR_PRIVATE_KEY` labels its receipts "hashed" instead.
 - Tripwire: a free 15-minute probe of one metric (price, liquidity, volume, wallet balance, repo activity) pulls a run forward when it moves past your line, at most once every three hours, and re-baselines after each run so a moonlet's own actions don't wake it.
 - Prove: each watch run makes one checkable call, the next scores it hit or miss, both inside the hash; a lifetime record per moonlet, labelled self-graded. Income figures are labelled as estimates.
 - Privacy: each run carries its own private flag (mailbox or private-repo access); public pages, previews, the sky and the JSON feed redact by run, receipts stay public. A report id from a client is honoured only if it belongs to the moonlet being asked.
@@ -220,4 +220,4 @@ OPENROUTER_API_KEY=sk-… pnpm exec vitest run --no-file-parallelism
 
 ---
 
-<p align="center"><sub>Built for <a href="https://www.orbio.so/build">Orbio Build Week</a> · CREDIT by Orbio · models via OpenRouter · receipts hashed, anchorable on Robinhood Chain</sub></p>
+<p align="center"><sub>Built for <a href="https://www.orbio.so/build">Orbio Build Week</a> · CREDIT by Orbio · models via OpenRouter · receipts hashed and anchored on Robinhood Chain</sub></p>

@@ -129,7 +129,7 @@ export function RunCard({ run, anchoring = true }: { run: ApiRun; anchoring?: bo
         <span className="hidden font-mono text-[11.5px] tabular-nums text-ink-faint sm:inline">{(run.durationMs / 1000).toFixed(1)}s</span>
         {run.txHash ? (
           <a href={run.explorerUrl ?? "#"} target="_blank" rel="noreferrer" className="ml-auto inline-flex items-center gap-1 font-medium text-moss hover:underline" title={`output hash ${run.outputHash}`}>
-            <ShieldCheck size={13} strokeWidth={2} /> verified on chain
+            <ShieldCheck size={13} strokeWidth={2} /> anchored on chain
           </a>
         ) : run.outputHash ? (
           <span className="ml-auto inline-flex items-center gap-1 text-ink-faint" title={run.outputHash}><Hash size={12} strokeWidth={2} /> {anchoring ? "anchoring…" : "hashed"}</span>

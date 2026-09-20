@@ -37,9 +37,9 @@ Each row names the mechanism and the evidence, so a reader can check rather than
 | Privacy | each run carries its own private flag; public pages, previews, sky and JSON feed redact by run; a client-supplied run id is honoured only if it belongs to the moonlet asked | `privacy.ts`; `tests/privacy.test.ts`; acceptance "private content never public", "foreign report ids denied" |
 | Tripwire | free 15-minute probe of one metric wakes the model only past the line, at most once every 3h, re-baselines after each run | `tripwire.ts`; `tests/tripwire.test.ts` (zero is a value, missing data is not) |
 | Prove | each watch run makes one checkable call, scored hit/miss next run, inside the hash, labelled self-graded | `tests/prove.test.ts` |
-| Hashing / anchoring | sha256 of every run; anchoring to Robinhood Chain is implemented and tested but **off in production** (no `ANCHOR_PRIVATE_KEY`); all copy says "hashed" | `anchor.ts`; `tests/anchor.test.ts` |
+| Hashing / anchoring | sha256 of every run, written to Robinhood Chain as calldata by a funded platform wallet; **on in production** since 20 Sep, 150 runs anchored, 0 pending; a deployment without `ANCHOR_PRIVATE_KEY` labels receipts "hashed" | `anchor.ts`; `tests/anchor.test.ts` |
 | Connections | Telegram (webhook, buttons, photos, files, two-way chat), Discord webhooks, GitHub OAuth, Gmail OAuth (`gmail.modify`), X OAuth, WalletConnect (compiled in with the project id as a build arg) | `connections/*`; `tests/connections.test.ts`, `gmail.test.ts`, `discord.test.ts` |
-| Honest labels | income "(estimate)", spend "can spend", calls "self-graded", sky says "hashed" when nothing is anchored | overview panel, sky stats, run cards |
+| Honest labels | income "(estimate)", spend "can spend", calls "self-graded", run cards say "anchored on chain" only when a tx exists, "hashed" when anchoring is off | overview panel, sky stats, run cards |
 
 **Tests**: 26 files, 181 cases. 16 files (129 cases) are deterministic and run in CI on every push with fakes for Telegram, Discord, GitHub, Google and Orbio. 10 files need the Orbio gateway or a live RPC and run on dispatch (about $1 of credits per run). The last full local run was 177/177 on 10 September. `tests/acceptance.test.ts` indexes 24 named promises.
 
@@ -52,7 +52,7 @@ Each row names the mechanism and the evidence, so a reader can check rather than
 
 ## 5. What is deliberately not done
 
-- **Anchoring is off.** No funded key on Robinhood Chain. The code path is tested; the copy is honest about it.
+- **Anchor wallet is small.** ~0.0001 ETH funds roughly 30 more anchors at current gas; top it up or runs fall back to "anchoring…" until the next tick that can pay.
 - **Spend cap is a projection**, not a hard pre-reservation with the provider; a single call can overshoot by one call's worth. Described as such in the UI.
 - **Duplicate delivery on restart** across a crash mid-delivery is possible in theory; not observed.
 - **Google OAuth consent screen** is unverified (test-user mode).
