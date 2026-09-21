@@ -248,3 +248,25 @@ describe("wallet-signed keys and OpenRouter plugins", () => {
     expect(seen.slice(seen.length / 2).every((r) => r.plugins === undefined)).toBe(true);
   });
 });
+
+describe("a rotated dashboard key", () => {
+  it("a moonlet still holding a dashboard key runs on the wallet's signed key once the wallet has signed, so Orbio rotating the dashboard key cannot park it", async () => {
+    const { runMoonlet } = await import("@/moonlet/runner");
+    const { fallbackSpec } = await import("@/moonlet/compile");
+    const spec = fallbackSpec({ sentence: "Ping me if $ORBIO liquidity moves 10%", template: "market-watch" });
+    const fake = fakeOrbio({ realKey: "sk-orb-0-signed", balanceUsd: 5 });
+    const keysSeen: string[] = [];
+    const fetchImpl = (async (_url: string, init?: RequestInit) => {
+      const auth = String((init?.headers as Record<string, string>)?.authorization ?? (init?.headers as Record<string, string>)?.Authorization ?? "");
+      const key = auth.replace(/^Bearer /, ""); keysSeen.push(key);
+      if (key.startsWith("sk-orbio-")) return new Response(JSON.stringify({ error: { message: "This key has been rotated. Use your new API key.", code: "key_rotated" } }), { status: 401, headers: { "content-type": "application/json" } });
+      return new Response(JSON.stringify({ choices: [{ message: { role: "assistant", content: JSON.stringify({ title: "Quiet market", summary: "Nothing moved.", body: "Nothing moved in the last window.", nothingHappened: true, signal: "low", sources: [], sections: [], calls: [] }) }, finish_reason: "stop" }], usage: { prompt_tokens: 10, completion_tokens: 10, cost: 0.0004 } }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as unknown as typeof fetch;
+    const r = await runMoonlet({ id: "m_rot", owner: OWNER, bag: 1000, spec, delivery: {}, key: { key: "sk-orbio-dead", limitUsd: 5, spentUsd: 0 } }, { orbio: fake.client, fetch: fetchImpl });
+    expect(keysSeen.every((k) => k === "sk-orb-0-signed")).toBe(true);
+    expect(r.status).not.toBe("quiet");
+    expect(r.keyEvents.some((e) => e.kind === "claimed" && /re-signed|signed Orbio key/.test(e.detail))).toBe(true);
+    expect(r.key?.key).toBe("sk-orb-0-signed");
+    expect(fake.state.exhausted).toBe(0);
+  });
+});
