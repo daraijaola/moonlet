@@ -151,6 +151,20 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
   } catch (e0) {
     let e: unknown = e0;
     if (!isKeyExhausted(e)) return fail(e, "run", { t0, model, p, keyEvents, trace, key, cost: spentSoFar, calls: callsSoFar, isPrivate });
+    // A dashboard key Orbio has rotated or revoked is dead for good; if the wallet has signed for its own key, run on that.
+    if (isRotatedKey(e) && key.key.startsWith("sk-orbio-")) {
+      const signed = await deps.orbio.createKey().catch(() => null);
+      if (signed && signed.key !== key.key) {
+        try {
+          keyEvents.push({ kind: "rotated", detail: "Orbio rotated the dashboard key; using the wallet's signed key" });
+          key = { key: signed.key, limitUsd: key.limitUsd, spentUsd: 0 };
+          ({ text, cost, calls, model } = await attemptWithBackoff(key));
+          return await finish();
+        } catch (e2) {
+          e = e2;
+        }
+      }
+    }
     // Orbio's dashboard still issues account keys (sk-orbio-…) that spend the same activated balance. If the signed key is
     // not recognised yet and this wallet's moonlets already hold a dashboard key, run on that one rather than go quiet.
     if (isUnknownKey(e) && m.key?.key.startsWith("sk-orbio-") && m.key.key !== key.key) {
@@ -162,6 +176,11 @@ export async function runMoonlet(m: MoonletState, deps: RunDeps): Promise<RunRes
       } catch (e2) {
         e = e2;
       }
+    }
+    // A dead key is not an empty balance: say so, leave the ledger alone, and let the owner re-sign under Connections.
+    if (isRotatedKey(e) && !isUnknownKey(e)) {
+      keyEvents.push({ kind: "quiet", detail: "Orbio rotated this key; sign for your key again under Connections and the moonlet resumes" });
+      return { ok: true, status: "quiet", costUsd: spentSoFar, model, modelCalls: callsSoFar, durationMs: Date.now() - t0, plan: p, keyEvents, trace, key, private: isPrivate };
     }
     // The gateway knows better than our ledger: it refused, so the activated balance is gone. Zero it and go quiet; the
     // owner gets an activation card. A key the gateway does not recognise yet (activation still settling) lands here too.
@@ -210,9 +229,11 @@ async function ensureFunded(key: KeyState, p: Plan, orbio: OrbioClient, events: 
     events.push({ kind: "quiet", detail: bal.creditTokens && bal.creditTokens >= floor ? `AI balance can't fund a run; $${bal.creditTokens.toFixed(2)} of CREDIT is in the wallet, unactivated` : "AI balance can't fund a run; no credits to activate" });
     return null;
   }
-  // A dashboard-issued account key (sk-orbio-…) spends the same activated balance; if the moonlet already holds one, keep it.
-  if (key?.key.startsWith("sk-orbio-")) return { ...key, limitUsd: bal.availableUsd };
-  const signed = await orbio.createKey();
+  // A dashboard-issued account key (sk-orbio-…) spends the same activated balance. Keep it only while the wallet has not
+  // signed for its own key: Orbio rotates the dashboard key the moment the wallet signs, and a moonlet still holding the old
+  // one would be refused on every run.
+  const signed = await orbio.createKey().catch((e) => { if (key?.key.startsWith("sk-orbio-") && e instanceof OrbioAuthError) return null; throw e; });
+  if (!signed) return { ...key!, limitUsd: bal.availableUsd };
   if (!key || key.key !== signed.key) events.push({ kind: "claimed", detail: key ? "using the wallet's re-signed Orbio key" : "using the wallet's signed Orbio key; it spends the activated balance", amountUsd: bal.availableUsd });
   return { key: signed.key, limitUsd: bal.availableUsd, spentUsd: key?.key === signed.key ? key.spentUsd : 0 };
 }
@@ -232,6 +253,11 @@ function isTransient(e: unknown) {
 function isRateLimited(e: unknown) {
   const msg = String((e as Error)?.message ?? e).toLowerCase();
   return httpStatus(e) === 429 || /rate limit|too many requests|429/.test(msg);
+}
+
+/** Orbio's dashboard key was rotated (the wallet signed for its own key) or revoked: it will never work again. */
+function isRotatedKey(e: unknown) {
+  return /key_rotated|has been rotated/i.test(String((e as Error)?.message ?? e));
 }
 
 function isUnknownKey(e: unknown) {
