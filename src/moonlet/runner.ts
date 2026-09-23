@@ -278,6 +278,7 @@ function safeParseOutput(text: string): RunOutput | null {
   if (fenced) candidates.unshift(fenced.trim());
   const first = text.indexOf("{"), last = text.lastIndexOf("}");
   if (first >= 0 && last > first) candidates.push(text.slice(first, last + 1));
+  if (first >= 0) candidates.push(closeJson(text.slice(first)));
   for (const c of candidates) {
     try {
       const r = RunOutput.safeParse(coerceOutput(JSON.parse(c)));
@@ -287,6 +288,32 @@ function safeParseOutput(text: string): RunOutput | null {
     }
   }
   return null;
+}
+
+/**
+ * A provider clipped the answer mid-JSON (max_tokens, a dropped stream). Close whatever is open, dropping the dangling
+ * key or value at the cut, so the fields that did arrive survive instead of the whole report degrading to raw text.
+ */
+export function closeJson(s: string): string {
+  const stack: string[] = [];
+  let inStr = false, esc = false, lastGood = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') { inStr = false; lastGood = i + 1; }
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{" || ch === "[") { stack.push(ch === "{" ? "}" : "]"); lastGood = i + 1; }
+    else if (ch === "}" || ch === "]") { stack.pop(); lastGood = i + 1; }
+    else if (ch === "," ) lastGood = i;
+    else if (/[\d\]a-z]/i.test(ch)) lastGood = i + 1;
+  }
+  // A key with no value yet ("label" or "label":) cannot stand; a key is a string that follows { or , rather than :.
+  const out = s.slice(0, lastGood).replace(/([{,])\s*"(?:[^"\\]|\\.)*"\s*:?\s*$/, "$1").replace(/,\s*$/, "");
+  return out + stack.reverse().join("");
 }
 
 /** Models drift from the schema in small, predictable ways; repair those before validating. */
