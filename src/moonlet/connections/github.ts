@@ -8,7 +8,7 @@ import * as store from "../store";
  * that adds or changes files on a fresh branch.
  */
 
-export type GitHubConn = { token: string; login: string; scopes?: string };
+export type GitHubConn = { token: string; login: string; scopes?: string; refreshToken?: string; expiresAt?: number; connectedAt?: number };
 
 const GH = "https://api.github.com";
 
@@ -53,10 +53,15 @@ export async function finishOAuth(code: string, state: string, sessionOwner: str
     headers: { accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify({ client_id: saved.clientId, client_secret: process.env.GITHUB_CLIENT_SECRET, code, redirect_uri: saved.redirectUri }),
   });
-  const t = (await res.json().catch(() => ({}))) as { access_token?: string; error_description?: string; scope?: string };
+  const t = (await res.json().catch(() => ({}))) as { access_token?: string; error_description?: string; scope?: string; refresh_token?: string; expires_in?: number };
   if (!res.ok || !t.access_token) throw new Error(`GitHub token exchange failed: ${t.error_description ?? res.status}`);
   const conn = await verifyToken(t.access_token, fetchImpl);
   conn.scopes = t.scope;
+  conn.connectedAt = Date.now();
+  // A GitHub App issues user tokens that expire in 8h with a refresh token; an OAuth App issues neither. Keep what came.
+  if (t.refresh_token) conn.refreshToken = t.refresh_token;
+  if (t.expires_in) conn.expiresAt = Date.now() + t.expires_in * 1000;
+  console.log(`github connected @${conn.login} token=${t.access_token.slice(0, 4)}… scope=${t.scope ?? "-"} expires_in=${t.expires_in ?? "never"}`);
   await store.setConnection(saved.address, "github", `@${conn.login}`, conn);
   return { owner: saved.address, redirectTo: saved.redirectTo, login: conn.login };
 }
@@ -68,6 +73,45 @@ export async function verifyToken(token: string, fetchImpl?: typeof fetch): Prom
 
 export async function connectionFor(owner: string) {
   return store.getConnection<GitHubConn>(owner, "github");
+}
+
+/** A refresh token (GitHub App user tokens) buys a new access token before the old one lapses. Returns the new connection, or null if GitHub refused. */
+export async function refreshConnection(owner: string, conn: GitHubConn, fetchImpl: typeof fetch = fetch): Promise<GitHubConn | null> {
+  if (!conn.refreshToken) return null;
+  const res = await fetchImpl("https://github.com/login/oauth/access_token", {
+    method: "POST",
+    headers: { accept: "application/json", "content-type": "application/json" },
+    body: JSON.stringify({ client_id: process.env.GITHUB_CLIENT_ID, client_secret: process.env.GITHUB_CLIENT_SECRET, grant_type: "refresh_token", refresh_token: conn.refreshToken }),
+    signal: AbortSignal.timeout(15_000),
+  }).catch(() => null);
+  const t = ((await res?.json().catch(() => ({}))) ?? {}) as { access_token?: string; refresh_token?: string; expires_in?: number; error?: string; error_description?: string };
+  if (!res?.ok || !t.access_token) {
+    console.error(`github refresh failed for @${conn.login}: ${t.error ?? res?.status} ${t.error_description ?? ""}`.trim());
+    return null;
+  }
+  const next: GitHubConn = { ...conn, token: t.access_token, refreshToken: t.refresh_token ?? conn.refreshToken, expiresAt: t.expires_in ? Date.now() + t.expires_in * 1000 : undefined };
+  await store.setConnection(owner, "github", `@${conn.login}`, next);
+  return next;
+}
+
+/**
+ * Is the stored token still accepted? "alive" on 2xx; "revoked" only when GitHub itself says Bad credentials twice in a row
+ * (a single 401 can be a GitHub hiccup, and deleting the owner's connection on it is worse than one failed run); "unknown" on
+ * anything else (network, 5xx, rate limit), which is never a reason to drop the connection. The response is logged either way.
+ */
+export async function probeToken(conn: GitHubConn, fetchImpl: typeof fetch = fetch): Promise<"alive" | "revoked" | "unknown"> {
+  let last = "";
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const res = await fetchImpl(`${GH}/user`, { headers: { accept: "application/vnd.github+json", authorization: `Bearer ${conn.token}`, "user-agent": "moonlet", "x-github-api-version": "2022-11-28" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
+    if (!res) return "unknown";
+    if (res.ok) return "alive";
+    const body = (await res.text().catch(() => "")).slice(0, 200);
+    last = `${res.status} ${body} req=${res.headers.get("x-github-request-id") ?? "-"}`;
+    console.error(`github probe @${conn.login} token=${conn.token.slice(0, 4)}… connected=${conn.connectedAt ? new Date(conn.connectedAt).toISOString() : "?"}: ${last}`);
+    if (res.status !== 401 || !/bad credentials/i.test(body)) return "unknown";
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return "revoked";
 }
 
 export type RepoRead =
