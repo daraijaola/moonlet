@@ -18,3 +18,4 @@ describe("closeJson", () => {
     expect(JSON.parse(closeJson(src))).toEqual(JSON.parse(src));
   });
 });
+

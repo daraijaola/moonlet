@@ -272,7 +272,7 @@ function isKeyExhausted(e: unknown) {
   return status === 401 || status === 402 || status === 403 || /insufficient credits|credit limit|key limit|quota exceeded|insufficient_quota|no available balance|unauthorized|invalid api key|invalid_api_key|user not found|\b40[123]\b/.test(msg);
 }
 
-function safeParseOutput(text: string): RunOutput | null {
+export function safeParseOutput(text: string): RunOutput | null {
   const candidates: string[] = [text.trim()];
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
   if (fenced) candidates.unshift(fenced.trim());
@@ -328,7 +328,8 @@ function coerceOutput(o: unknown): unknown {
   x.sources = Array.isArray(x.sources) ? x.sources.filter((u) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 12) : [];
   if (!["none", "low", "medium", "high"].includes(x.signal as string)) x.signal = "low";
   x.nothingHappened = !!x.nothingHappened;
-  x.calls = Array.isArray(x.calls) ? x.calls.slice(0, 2).map((c) => { const k = (c ?? {}) as Record<string, unknown>; return { claim: str(k.claim ?? k.call ?? k.prediction).slice(0, 200).padEnd(8, "."), check: str(k.check ?? k.how ?? k.verify ?? "compare next run").slice(0, 200).padEnd(4, ".") }; }) : [];
+  // A call with no claim is not a call: drop it rather than pad it into "........" that the next run then grades as void.
+  x.calls = Array.isArray(x.calls) ? x.calls.map((c) => { const k = (c ?? {}) as Record<string, unknown>; return { claim: str(k.claim ?? k.call ?? k.prediction).trim().slice(0, 200), check: str(k.check ?? k.how ?? k.verify ?? "compare next run").trim().slice(0, 200) || "compare next run" }; }).filter((c) => c.claim.replace(/[.\s…-]/g, "").length >= 3).slice(0, 2).map((c) => ({ claim: c.claim.padEnd(8, "."), check: c.check.padEnd(4, ".") })) : [];
   x.scored = Array.isArray(x.scored) ? x.scored.slice(0, 2).map((c) => { const k = (c ?? {}) as Record<string, unknown>; const res = String(k.result ?? k.outcome ?? "").toLowerCase(); return { claim: str(k.claim).slice(0, 200), result: res.startsWith("hit") || res === "true" || res === "correct" ? "hit" : res.startsWith("miss") || res === "false" || res === "wrong" ? "miss" : "void", evidence: str(k.evidence ?? k.observed ?? k.note).slice(0, 300) }; }) : [];
   x.sections = Array.isArray(x.sections)
     ? x.sections.slice(0, 6).map((sec) => {
