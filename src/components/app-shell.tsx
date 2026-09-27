@@ -8,7 +8,8 @@ import { fmtBag, shortAddr, timeUntil, type ApiMoonlet } from "@/lib/api";
 import { AppDataProvider, useAppData } from "@/lib/app-data";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
-import { Orbit, Rocket, Cable, Telescope, MessagesSquare, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, ExternalLink, Trash2, type LucideIcon } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { PanelLeft, Orbit, Rocket, Cable, Telescope, MessagesSquare, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, ExternalLink, Trash2, type LucideIcon } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -34,6 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // A signed wallet is the account; Orbio approval is prompted inside the app.
   const allowed = !!address && signed;
   const immersive = pathname.startsWith("/app/threads");
+  const [drawer, setDrawer] = useState(false);
 
   useEffect(() => {
     if (!ready) return;
@@ -59,40 +61,66 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Suspense>
 
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          <header className={`z-30 flex h-14 shrink-0 items-center justify-between border-b border-ink/10 bg-cream px-4 lg:hidden ${immersive ? "!hidden" : ""}`}>
-            <Link href="/app" className="inline-flex items-center gap-2">
-              <MoonletMark size={28} face="var(--cream)" />
-              <Wordmark className="text-[1.2rem] text-ink" />
+          <header className={`z-30 flex h-12 shrink-0 items-center gap-1 bg-cream pl-2 pr-3 pt-[env(safe-area-inset-top)] box-content lg:hidden ${immersive ? "!hidden" : ""}`}>
+            <button type="button" onClick={() => setDrawer(true)} className="ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg" aria-label="Menu">
+              <PanelLeft size={17} strokeWidth={1.7} />
+            </button>
+            <Link href="/app" className="mr-auto inline-flex items-center gap-2 px-1">
+              <MoonletMark size={24} face="var(--cream)" />
+              <Wordmark className="text-[1.08rem] text-ink" />
             </Link>
             <Suspense><PhoneAccount address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} /></Suspense>
           </header>
-          <main className={`min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto lg:pb-0 ${immersive ? "pt-[env(safe-area-inset-top)] lg:pt-0" : "pb-[calc(4rem+env(safe-area-inset-bottom))]"} [scrollbar-width:thin]`}>{children}</main>
-          {!immersive && <MobileTabs pathname={pathname} />}
+          <main className={`min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto lg:pb-0 ${immersive ? "pt-[env(safe-area-inset-top)] lg:pt-0" : "pb-[env(safe-area-inset-bottom)]"} [scrollbar-width:thin]`}>{children}</main>
+          <AnimatePresence>
+            {drawer && (
+              <div className="fixed inset-0 z-50 lg:hidden">
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="absolute inset-0 bg-ink/30" onClick={() => setDrawer(false)} />
+                <motion.div
+                  initial={{ x: "-100%" }}
+                  animate={{ x: 0 }}
+                  exit={{ x: "-100%" }}
+                  transition={{ type: "spring", stiffness: 420, damping: 40 }}
+                  onClick={(e) => { if ((e.target as HTMLElement).closest("a")) setDrawer(false); }}
+                  className="absolute inset-y-0 left-0 w-[86vw] max-w-[340px] bg-paper pt-[env(safe-area-inset-top)] shadow-[8px_0_30px_-12px_rgba(21,22,29,0.35)]"
+                >
+                  <Suspense>
+                    <Sidebar pathname={pathname} address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} onClose={() => setDrawer(false)} />
+                  </Suspense>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
         </div>
       </div>
     </AppDataProvider>
   );
 }
 
-function Sidebar({ pathname, address, onDisconnect }: { pathname: string; address: string; onDisconnect: () => void }) {
+function Sidebar({ pathname, address, onDisconnect, onClose }: { pathname: string; address: string; onDisconnect: () => void; onClose?: () => void }) {
   const { moonlets, status } = useAppData();
   const params = useSearchParams();
   const selected = pathname === "/app" ? (params.get("m") ?? moonlets?.[0]?.id ?? null) : null;
   const groups = groupMoonlets(moonlets ?? []);
   const launching = pathname.startsWith("/app/new");
   return (
-    <aside className="hidden min-h-0 lg:flex lg:h-full lg:flex-col lg:border-r lg:border-ink/[0.07] lg:bg-paper">
-      <div className="flex h-14 items-center px-4">
+    <aside className={onClose ? "flex h-full min-h-0 flex-col" : "hidden min-h-0 lg:flex lg:h-full lg:flex-col lg:border-r lg:border-ink/[0.07] lg:bg-paper"}>
+      <div className="flex h-14 items-center justify-between pl-4 pr-2">
         <Link href="/app" className="inline-flex items-center gap-2">
           <MoonletMark size={24} face="var(--cream)" />
           <Wordmark className="text-[1.05rem] text-ink" />
         </Link>
+        {onClose && (
+          <button type="button" onClick={onClose} className="ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg" aria-label="Close menu">
+            <PanelLeft size={17} strokeWidth={1.7} />
+          </button>
+        )}
       </div>
 
       <div className="px-3">
         <Link
           href="/app/new"
-          className={`flex h-8 items-center gap-2 rounded-lg border px-2 text-[13px] font-medium transition-colors ${launching ? "border-ink bg-ink text-cream" : "border-ink/[0.12] bg-white text-ink shadow-[0_1px_1px_rgba(21,22,29,0.04)] hover:border-ink/[0.28]"}`}
+          className={`flex h-8 items-center gap-2 rounded-lg border px-2 text-[13px] font-medium transition-colors max-lg:h-10 max-lg:px-3 max-lg:text-[14.5px] ${launching ? "border-ink bg-ink text-cream" : "border-ink/[0.12] bg-white text-ink shadow-[0_1px_1px_rgba(21,22,29,0.04)] hover:border-ink/[0.28]"}`}
         >
           <Plus size={15} strokeWidth={2} />
           New moonlet
@@ -103,7 +131,7 @@ function Sidebar({ pathname, address, onDisconnect }: { pathname: string; addres
         {NAV.map((t) => {
           const active = t.match(pathname);
           return (
-            <Link key={t.href} href={t.href} className={`flex h-8 items-center gap-2.5 rounded-lg px-2 text-[13px] transition-colors ${active ? "bg-ink/[0.06] font-medium text-ink" : "text-ink-soft hover:bg-ink/[0.04] hover:text-ink"}`}>
+            <Link key={t.href} href={t.href} className={`flex h-8 items-center gap-2.5 rounded-lg px-2 text-[13px] transition-colors max-lg:h-11 max-lg:gap-3 max-lg:px-3 max-lg:text-[15px] ${active ? "bg-ink/[0.06] font-medium text-ink" : "text-ink-soft hover:bg-ink/[0.04] hover:text-ink"}`}>
               <t.icon size={16} strokeWidth={1.75} className={active ? "text-ink" : "text-ink-faint"} />
               {t.label}
             </Link>

@@ -5,7 +5,7 @@ import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { MoonletMark, Wordmark } from "@/components/logo";
 import { Cable, Orbit, Rocket, Telescope } from "lucide-react";
-import { ChartLine, ChevronLeft, CircleDollarSign, MessageCircle, PanelLeft, Check, ChevronRight, Copy, Download, Ellipsis, Files, Pencil, RotateCw, Trash2, Globe, ListTree, Monitor, PanelLeftClose, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
+import { ArrowDown, ChartLine, ChevronLeft, CircleDollarSign, MessageCircle, PanelLeft, Check, ChevronRight, Copy, Download, Ellipsis, Files, Pencil, RotateCw, Trash2, Globe, ListTree, Monitor, PanelLeftClose, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api, type ApiThread, type ApiThreadMessage, type ApiThreadStep } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
@@ -103,13 +103,36 @@ export default function ThreadsPage() {
   useEffect(() => {
     if (!working || activeId === "pending") return;
     if (!window.matchMedia("(min-width: 1280px)").matches) return;
-    const id = setTimeout(() => setPane((p) => p ?? "computer"), 0);
+    const id = setTimeout(() => { if (window.matchMedia("(min-width: 1280px)").matches) setPane((p) => p ?? "computer"); }, 0);
     return () => clearTimeout(id);
   }, [working, activeId]);
 
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const atBottom = useRef(true);
+  const seen = useRef<{ id: string | null; n: number }>({ id: null, n: 0 });
+  const [away, setAway] = useState(false);
+  const [unread, setUnread] = useState(0);
+  const toEnd = (smooth = true) => endRef.current?.scrollIntoView({ behavior: smooth ? "smooth" : "auto", block: "end" });
+  const onScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+    atBottom.current = bottom;
+    setAway(!bottom);
+    if (bottom) setUnread(0);
+  };
   useEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [detail?.messages.length, detail?.steps.length]);
+    const n = detail?.messages.length ?? 0;
+    const id = detail?.thread.id ?? null;
+    const fresh = seen.current.id !== id;
+    const added = fresh ? 0 : n - seen.current.n;
+    seen.current = { id, n };
+    const t = setTimeout(() => {
+      if (fresh || atBottom.current) toEnd(!fresh);
+      else if (added > 0) setUnread((u) => u + added);
+    }, 0);
+    return () => clearTimeout(t);
+  }, [detail?.messages.length, detail?.steps.length, detail?.thread.id]);
 
   const newThread = () => {
     setActiveId(null);
@@ -354,7 +377,7 @@ export default function ThreadsPage() {
           </div>
         ) : (
           <div className={`flex min-h-0 flex-1 flex-col ${pane === "computer" || pane === "files" ? "max-xl:hidden" : ""}`}>
-            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 [scrollbar-width:thin] sm:px-6">
+            <div ref={scrollRef} onScroll={onScroll} className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 [scrollbar-width:thin] sm:px-6">
               <ul className="mx-auto flex w-full min-w-0 max-w-[720px] flex-col gap-5 pb-6 pt-2">
                 {turns.map(({ msg, steps, startedAt }) =>
                   msg.role === "user" ? (
@@ -409,7 +432,19 @@ export default function ThreadsPage() {
               <div ref={endRef} />
             </div>
             <div className="shrink-0 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-6">
-              <div className="mx-auto w-full max-w-[720px]">
+              <div className="relative mx-auto w-full max-w-[720px]">
+                {away && (
+                  <div className="pointer-events-none absolute bottom-full left-1/2 z-10 mb-2 flex -translate-x-1/2 flex-col items-center gap-1.5">
+                    {unread > 0 && (
+                      <button type="button" onClick={() => toEnd()} className="pointer-events-auto h-8 whitespace-nowrap rounded-full bg-ink px-3.5 text-[12.5px] font-medium text-cream shadow-[0_6px_18px_-8px_rgba(21,22,29,0.5)]">
+                        +{unread} {unread === 1 ? "message" : "messages"}
+                      </button>
+                    )}
+                    <button type="button" onClick={() => toEnd()} className="pointer-events-auto inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-full border border-ink/[0.1] bg-white/95 px-3.5 text-[12.5px] text-ink-soft shadow-[0_6px_18px_-10px_rgba(21,22,29,0.45)] backdrop-blur">
+                      <ArrowDown size={13} strokeWidth={2} /> Scroll to end
+                    </button>
+                  </div>
+                )}
                 {error && <p className="mb-1.5 px-1 text-[12.5px] text-[#b91c1c]">{error}</p>}
                 {composer}
               </div>
