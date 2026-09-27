@@ -7,7 +7,7 @@ export const THREAD_MODELS = [
   { id: "auto", name: "Auto", vendor: "auto", price: "Gemini Flash", vision: true },
   { id: "google/gemini-3.8-flash", name: "Gemini 3.8 Flash", vendor: "google", price: "$0.75 / $3.75", vision: true },
   { id: "anthropic/claude-sonnet-5", name: "Claude Sonnet 5", vendor: "anthropic", price: "$2 / $10", vision: false },
-  { id: "moonshotai/kimi-k3", name: "Kimi K3", vendor: "moonshot", price: "$3 / $15", vision: true },
+  { id: "moonshotai/kimi-k3", name: "Kimi K3", vendor: "moonshot", price: "$3 / $15", vision: false },
   { id: "anthropic/claude-opus-5.5", name: "Claude Opus 5.5", vendor: "anthropic", price: "$4 / $20", vision: false },
   { id: "openai/gpt-6-astra", name: "GPT-6 Astra", vendor: "openai", price: "$10 / $50", vision: false },
 ] as const;

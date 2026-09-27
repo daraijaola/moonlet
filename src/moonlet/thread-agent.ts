@@ -26,7 +26,10 @@ Get the task done end to end. Never ask the owner for permission or confirmation
 
 How to work, fastest first:
 1. shell for anything code can do: fetching JSON or pages with curl, analysis and charts with python, reading files (pdftotext for PDFs, pandas for CSV/XLSX).
-2. browser_open / browser_read / browser_click to use websites by element number.
+2. For websites, script the visible browser with Playwright through the \`step\` command in shell, e.g.
+   step "await page.goto('https://example.com'); await page.getByRole('button', {name: 'Sign in'}).click(); await page.waitForTimeout(2000); console.log(await page.title())"
+   \`page\`, \`context\` and \`browser\` are in scope, the browser stays open between steps, and the owner watches it live. Chain several actions per step, wait for what you need, and print what you learn. page.screenshot({path: '/home/moon/work/x.png'}) works too. browser_open / browser_read / browser_click are a quick alternative for simple pages.
+   If a site shows a bot check (Cloudflare "Just a moment", captcha) that doesn't clear in ~15 seconds, don't wait on it: use the site's public API instead (for example api.dexscreener.com, api.coingecko.com, the GitHub API) and say the page itself was blocked.
 3. screenshot only when you must see the screen (a canvas, a visual layout, or something browser_read can't show). Don't take screenshots to check progress.
 If the owner wants to see a page, take one clean screenshot at the end, after the page has loaded, and show it. Charts and files go in ~/work; show anything the owner should see.
 
@@ -123,7 +126,8 @@ export async function runTurn(threadId: string) {
   const started = Date.now();
   const key = await ownerKey(t.owner);
   const model = t.model === "auto" ? AUTO_MODEL : t.model;
-  const direct = threadModel(t.model).vision;
+  let direct = model === VISION_MODEL;
+  let maxTokens = MAX_TOKENS[t.effort];
   let cost = 0;
   const shown: string[] = [];
   const firstTurn = (await ts.listMessages(threadId)).filter((m) => m.role === "moonlet").length === 0;
@@ -163,6 +167,16 @@ export async function runTurn(threadId: string) {
     messages.push({ role: m.role === "user" ? "user" : "assistant", content: m.text + files });
   }
 
+  const describe = async (url: string) => {
+    const r = await complete(key, {
+      model: VISION_MODEL,
+      max_tokens: 1200,
+      messages: [{ role: "user", content: [{ type: "text", text: "Describe this screen for an agent that can't see it: what app/page it is, the layout, all readable text, buttons and fields with their rough position (x,y on 1280x800), any dialogs, errors or loading states. Be precise and complete, no commentary." }, { type: "image_url", image_url: { url } }] }],
+    });
+    await spend(r.j.usage?.cost ?? 0);
+    return r.ok ? (r.j.choices![0].message?.content ?? "") : "(could not be described)";
+  };
+
   /** The model sees images directly when it can; otherwise Gemini Flash describes the image in detail and the model reads that. */
   const see = async (bytes: Buffer, label: string) => {
     const url = `data:image/jpeg;base64,${bytes.toString("base64")}`;
@@ -175,13 +189,7 @@ export async function runTurn(threadId: string) {
       messages.push({ role: "user", content: [{ type: "text", text: label }, { type: "image_url", image_url: { url } }] });
       return "the image is attached below";
     }
-    const r = await complete(key, {
-      model: VISION_MODEL,
-      max_tokens: 1200,
-      messages: [{ role: "user", content: [{ type: "text", text: "Describe this screen for an agent that can't see it: what app/page it is, the layout, all readable text, buttons and fields with their rough position (x,y on 1280x800), any dialogs, errors or loading states. Be precise and complete, no commentary." }, { type: "image_url", image_url: { url } }] }],
-    });
-    await spend(r.j.usage?.cost ?? 0);
-    return r.ok ? `what the image shows:\n${r.j.choices![0].message?.content ?? ""}` : "the image could not be described";
+    return `what the image shows:\n${await describe(url)}`;
   };
 
   const exec = async (name: string, a: Record<string, unknown>): Promise<{ out: string; summary: string; shot?: string }> => {
@@ -245,7 +253,27 @@ export async function runTurn(threadId: string) {
     const last = step === budget - 1 || Date.now() - started > TURN_MS || cost >= COST_CAP[t.effort];
     if (last) messages.push({ role: "user", content: "Time, steps or budget for this turn is up. Stop using tools and answer now with what you have." });
     const t0 = Date.now();
-    const r = await complete(key, { model, messages, max_tokens: MAX_TOKENS[t.effort], reasoning: { effort: REASONING[t.effort] }, ...(last ? {} : { tools: TOOLS, tool_choice: "auto" }) });
+    const r = await complete(key, { model, messages, max_tokens: maxTokens, reasoning: { effort: REASONING[t.effort] }, ...(last ? {} : { tools: TOOLS, tool_choice: "auto" }) });
+    if (!r.ok && r.status === 402) {
+      // The gateway reserves the worst case up front (images, output limit) against the balance. Shrink the request and retry
+      // instead of failing: first swap images for Flash's description of them, then lower the output limit.
+      const withImages = messages.filter((m) => m.role === "user" && Array.isArray(m.content) && m.content.some((c) => c.type === "image_url"));
+      if (withImages.length) {
+        for (const m of withImages) {
+          const img = (m.content as Array<{ type: string; image_url?: { url: string } }>).find((c) => c.type === "image_url")!.image_url!.url;
+          m.content = `The screen, described: ${await describe(img)}`;
+        }
+        direct = false;
+        step--;
+        continue;
+      }
+      if (maxTokens > 1024) {
+        maxTokens = Math.max(1024, Math.floor(maxTokens / 2));
+        step--;
+        continue;
+      }
+      return finish(`Your credit balance is too low for ${threadModel(t.model).name} on this task. Pick a cheaper model like Gemini Flash, or activate more CREDIT, then send it again.`, shown, "failed");
+    }
     if (!r.ok) return finish(`The model call failed: ${(r.j.error?.message ?? `HTTP ${r.status}`).slice(0, 200)}`, shown, "failed");
     await spend(r.j.usage?.cost ?? 0);
     const msg = r.j.choices![0].message ?? {};
