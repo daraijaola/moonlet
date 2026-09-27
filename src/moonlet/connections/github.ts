@@ -41,7 +41,7 @@ export async function beginOAuth(owner: string, redirectUri: string, redirectTo:
   const state = `gh_${randomBytes(12).toString("base64url")}`;
   await store.saveOauthState({ state, address: owner, verifier: "", clientId, redirectTo, redirectUri });
   const u = new URL("https://github.com/login/oauth/authorize");
-  u.search = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, scope: "repo read:user", state, allow_signup: "false" }).toString();
+  u.search = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri, scope: "repo workflow delete_repo read:org gist read:user", state, allow_signup: "false" }).toString();
   return u.toString();
 }
 

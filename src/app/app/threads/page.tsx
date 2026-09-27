@@ -96,6 +96,13 @@ export default function ThreadsPage() {
   }, [activeId, owner, loadDetail, loadList]);
 
   useEffect(() => {
+    if (!working || activeId === "pending") return;
+    if (!window.matchMedia("(min-width: 1280px)").matches) return;
+    const id = setTimeout(() => setPane((p) => p ?? "computer"), 0);
+    return () => clearTimeout(id);
+  }, [working, activeId]);
+
+  useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [detail?.messages.length, detail?.steps.length]);
 
@@ -476,13 +483,23 @@ function StepRow({ s, onShot }: { s: ApiThreadStep; onShot: (path: string) => vo
         {open && s.detail && <p className="mt-1 whitespace-pre-wrap border-l border-ink/[0.1] pl-3 text-[12.5px] leading-[1.6] text-ink-faint">{s.detail}</p>}
       </li>
     );
-  if (s.tool === "note") return <li className="text-[13px] leading-[1.55] text-ink-soft">{s.summary}</li>;
+  if (s.tool === "note") return <li className="py-0.5 text-[13.5px] leading-[1.55] text-ink">{s.summary}</li>;
+  const hasDetail = !!s.detail && s.tool !== "show";
   return (
-    <li className={`flex min-w-0 items-baseline gap-2 text-[13px] ${s.ok ? "text-ink-soft" : "text-[#b91c1c]/80"}`}>
-      {s.shot ? (
-        <button type="button" onClick={() => onShot(s.shot!)} className="min-w-0 truncate text-left underline decoration-ink/20 underline-offset-2 hover:text-ink">{s.summary}</button>
-      ) : (
-        <span className="min-w-0 truncate">{s.summary}</span>
+    <li className="min-w-0">
+      <div className={`flex min-w-0 items-center gap-1.5 text-[13px] ${s.ok ? "text-ink-soft" : "text-[#b91c1c]/80"}`}>
+        {s.shot ? (
+          <button type="button" onClick={() => onShot(s.shot!)} className="min-w-0 truncate text-left hover:text-ink">{s.summary}</button>
+        ) : hasDetail ? (
+          <button type="button" onClick={() => setOpen((v) => !v)} className="min-w-0 truncate text-left hover:text-ink">{s.summary}</button>
+        ) : (
+          <span className="min-w-0 truncate">{s.summary}</span>
+        )}
+        {hasDetail && !s.shot && <ChevronRight size={12} strokeWidth={2} className={`shrink-0 text-ink-faint transition-transform ${open ? "rotate-90" : ""}`} />}
+        {s.shot && <span className="shrink-0 text-[11px] text-ink-faint">· view</span>}
+      </div>
+      {open && hasDetail && (
+        <pre className="mt-1.5 max-h-[280px] overflow-auto whitespace-pre-wrap break-words rounded-lg border border-ink/[0.08] bg-paper px-3 py-2 font-mono text-[11.5px] leading-[1.55] text-ink-soft [scrollbar-width:thin]">{s.detail}</pre>
       )}
     </li>
   );
@@ -513,7 +530,7 @@ function ComputerView({ threadId, awake, live }: { threadId: string; awake: bool
   const [n, setN] = useState(0);
   useEffect(() => {
     if (!awake) return;
-    const id = setInterval(() => setN((x) => x + 1), live ? 1500 : 5000);
+    const id = setInterval(() => setN((x) => x + 1), live ? 1000 : 5000);
     return () => clearInterval(id);
   }, [awake, live]);
   if (!awake)
@@ -525,10 +542,13 @@ function ComputerView({ threadId, awake, live }: { threadId: string; awake: bool
       </div>
     );
   return (
-    <div className="p-3">
+    <div className="relative p-3">
+      <span className="absolute right-5 top-5 z-10 inline-flex items-center gap-1.5 rounded-md bg-white/90 px-2 py-0.5 text-[11.5px] font-medium text-ink shadow-[0_1px_2px_rgba(21,22,29,0.1)]">
+        <span className={`h-1.5 w-1.5 rounded-full ${live ? "animate-pulse bg-moss" : "bg-ink-faint"}`} />
+        {live ? "Live" : "Idle"}
+      </span>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img src={`/api/threads/${threadId}/screen?n=${n}`} alt="The moonlet's screen" className="w-full rounded-lg border border-ink/[0.08] bg-night" />
-      <p className="mt-2 text-[11.5px] text-ink-faint">{live ? "Live while it works." : "Refreshes every few seconds."}</p>
     </div>
   );
 }
