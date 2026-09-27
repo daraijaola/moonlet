@@ -1,0 +1,2 @@
+feh --no-fehbg --bg-fill /usr/share/moonlet/wallpaper.png &
+tint2 &

@@ -1,0 +1,24 @@
+rounded = 0
+border_width = 0
+background_color = #090b12 92
+border_color = #000000 0
+
+rounded = 6
+border_width = 0
+background_color = #1a2036 100
+border_color = #000000 0
+
+panel_items = TSC
+panel_position = bottom center horizontal
+panel_size = 100% 34
+panel_background_id = 1
+panel_padding = 8 4 8
+taskbar_mode = single_desktop
+task_font = Sans 9
+task_font_color = #f7f4ee 80
+task_background_id = 0
+task_active_background_id = 2
+task_active_font_color = #f7f4ee 100
+time1_format = %H:%M
+time1_font = Monospace 9
+clock_font_color = #f7f4ee 70
