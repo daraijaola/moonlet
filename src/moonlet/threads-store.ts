@@ -4,8 +4,8 @@ import { db, migrate, newId } from "./store";
 export type Effort = "low" | "medium" | "high" | "xhigh" | "max";
 export type ThreadStatus = "idle" | "working" | "stopping" | "failed";
 export type ThreadRow = { id: string; owner: string; title: string; model: string; effort: Effort; machine: "standard" | "large"; status: ThreadStatus; spentUsd: number; createdAt: number; updatedAt: number };
-export type MessageRow = { id: string; threadId: string; role: "user" | "moonlet"; text: string; files: string[]; model: string | null; ms: number | null; createdAt: number };
-export type StepRow = { id: string; threadId: string; messageId: string | null; tool: string; summary: string; detail: string | null; shot: string | null; ok: boolean; createdAt: number };
+export type MessageRow = { id: string; threadId: string; role: "user" | "moonlet"; text: string; files: string[]; model: string | null; ms: number | null; costUsd: number | null; createdAt: number };
+export type StepRow = { id: string; threadId: string; messageId: string | null; tool: string; summary: string; detail: string | null; shot: string | null; ok: boolean; ms: number | null; createdAt: number };
 
 let ready: Promise<void> | null = null;
 function ensure() {
@@ -18,6 +18,8 @@ function ensure() {
     await c.execute(`CREATE INDEX IF NOT EXISTS thread_messages_thread ON thread_messages(thread_id, created_at)`);
     await c.execute(`CREATE TABLE IF NOT EXISTS thread_steps (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, message_id TEXT, tool TEXT NOT NULL, summary TEXT NOT NULL, detail TEXT, shot TEXT, ok INTEGER NOT NULL DEFAULT 1, created_at INTEGER NOT NULL)`);
     await c.execute(`CREATE INDEX IF NOT EXISTS thread_steps_thread ON thread_steps(thread_id, created_at)`);
+    await c.execute(`ALTER TABLE thread_messages ADD COLUMN cost_usd REAL`).catch(() => undefined);
+    await c.execute(`ALTER TABLE thread_steps ADD COLUMN ms INTEGER`).catch(() => undefined);
   })();
   return ready;
 }
@@ -85,10 +87,10 @@ export async function deleteThread(id: string) {
   await db().execute({ sql: `DELETE FROM threads WHERE id=?`, args: [id] });
 }
 
-export async function addMessage(m: Pick<MessageRow, "threadId" | "role" | "text"> & Partial<Pick<MessageRow, "files" | "model" | "ms">>) {
+export async function addMessage(m: Pick<MessageRow, "threadId" | "role" | "text"> & Partial<Pick<MessageRow, "files" | "model" | "ms" | "costUsd">>) {
   await ensure();
   const id = newId("msg");
-  await db().execute({ sql: `INSERT INTO thread_messages(id,thread_id,role,text,files,model,ms,created_at) VALUES(?,?,?,?,?,?,?,?)`, args: [id, m.threadId, m.role, m.text, JSON.stringify(m.files ?? []), m.model ?? null, m.ms ?? null, Date.now()] });
+  await db().execute({ sql: `INSERT INTO thread_messages(id,thread_id,role,text,files,model,ms,cost_usd,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, args: [id, m.threadId, m.role, m.text, JSON.stringify(m.files ?? []), m.model ?? null, m.ms ?? null, m.costUsd ?? null, Date.now()] });
   return id;
 }
 
@@ -103,14 +105,15 @@ export async function listMessages(threadId: string): Promise<MessageRow[]> {
     files: JSON.parse((x.files as string) || "[]"),
     model: (x.model as string | null) ?? null,
     ms: x.ms == null ? null : Number(x.ms),
+    costUsd: x.cost_usd == null ? null : Number(x.cost_usd),
     createdAt: Number(x.created_at),
   }));
 }
 
-export async function addStep(s: Pick<StepRow, "threadId" | "tool" | "summary"> & Partial<Pick<StepRow, "messageId" | "detail" | "shot" | "ok">>) {
+export async function addStep(s: Pick<StepRow, "threadId" | "tool" | "summary"> & Partial<Pick<StepRow, "messageId" | "detail" | "shot" | "ok" | "ms">>) {
   await ensure();
   const id = newId("st");
-  await db().execute({ sql: `INSERT INTO thread_steps(id,thread_id,message_id,tool,summary,detail,shot,ok,created_at) VALUES(?,?,?,?,?,?,?,?,?)`, args: [id, s.threadId, s.messageId ?? null, s.tool, s.summary.slice(0, 300), s.detail?.slice(0, 4000) ?? null, s.shot ?? null, s.ok === false ? 0 : 1, Date.now()] });
+  await db().execute({ sql: `INSERT INTO thread_steps(id,thread_id,message_id,tool,summary,detail,shot,ok,ms,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`, args: [id, s.threadId, s.messageId ?? null, s.tool, s.summary.slice(0, 300), s.detail?.slice(0, 6000) ?? null, s.shot ?? null, s.ok === false ? 0 : 1, s.ms ?? null, Date.now()] });
   return id;
 }
 
@@ -126,6 +129,7 @@ export async function listSteps(threadId: string): Promise<StepRow[]> {
     detail: (x.detail as string | null) ?? null,
     shot: (x.shot as string | null) ?? null,
     ok: Number(x.ok) === 1,
+    ms: x.ms == null ? null : Number(x.ms),
     createdAt: Number(x.created_at),
   }));
 }

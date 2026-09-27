@@ -1,17 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChartLine, Check, ChevronRight, Copy, Files, Globe, ListTree, Monitor, PanelLeftClose, PanelLeftOpen, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
+import { ChartLine, Check, ChevronRight, Copy, Download, Ellipsis, Files, Pencil, RotateCw, Trash2, Globe, ListTree, Monitor, PanelLeftClose, PanelLeftOpen, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api, type ApiThread, type ApiThreadMessage, type ApiThreadStep } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
-import type { ModelChoice } from "@/moonlet/spec";
 import { DitherMark } from "@/components/dither-mark";
 import { LightMarkdown } from "@/components/light-markdown";
-import { MODEL_LABEL } from "@/components/labels";
-import { VENDOR_MARK } from "@/components/marks";
+import { threadModel } from "@/moonlet/thread-models";
 import { ThinkingMark } from "@/components/thinking-mark";
-import { MACHINE_SPEC, ThreadComposer, type Effort, type Machine } from "@/components/thread-composer";
+import { MACHINE_SPEC, ThreadComposer, type Attachment, type Effort, type Machine } from "@/components/thread-composer";
 
 const STARTERS = [
   { icon: ChartLine, title: "Chart the launchpad", text: "Pull the top 10 Orbio launchpad tokens by market cap from orbio.so/api/protocol/agents, chart them, and show me the image." },
@@ -31,7 +29,7 @@ function dur(ms: number) {
   const s = Math.round(ms / 1000);
   return s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
 }
-const modelName = (id: string) => MODEL_LABEL[id as ModelChoice]?.name ?? id;
+const modelName = (id: string) => threadModel(id).name;
 const isImage = (p: string) => /\.(png|jpe?g|gif|webp|svg)$/i.test(p);
 
 type Detail = { thread: ApiThread; messages: ApiThreadMessage[]; steps: ApiThreadStep[] };
@@ -47,10 +45,12 @@ export default function ThreadsPage() {
   const [listOpen, setListOpen] = useState(false);
   const [collapsed, setCollapsedState] = useState(false);
   const [pane, setPane] = useState<Pane | null>(null);
-  const [model, setModel] = useState<ModelChoice>("auto");
+  const [model, setModel] = useState<string>("auto");
   const [effort, setEffort] = useState<Effort>("medium");
   const [machine, setMachine] = useState<Machine>("standard");
-  const [computer, setComputer] = useState<{ status: string; cpu?: string; mem?: string } | null>(null);
+  const [computer, setComputer] = useState<{ status: string; cpu?: string; mem?: string; disk_bytes?: number; created_at?: string } | null>(null);
+  const [viewer, setViewer] = useState<string | null>(null);
+  const [menu, setMenu] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -108,22 +108,23 @@ export default function ThreadsPage() {
 
   const open = (t: ApiThread) => {
     setActiveId(t.id);
-    setModel((t.model as ModelChoice) ?? "auto");
+    setModel(t.model ?? "auto");
     setEffort(t.effort);
     setMachine(t.machine);
     setListOpen(false);
   };
 
-  const send = async (text: string) => {
+  const send = async (text: string, attachments: Attachment[] = []) => {
+    const files = attachments.map((f) => ({ name: f.name, b64: f.b64 }));
     setError(null);
     setSending(true);
     const s = { model, effort, machine };
     try {
       if (activeId) {
-        await api.sendToThread(owner, activeId, text, s);
+        await api.sendToThread(owner, activeId, text, s, files);
         await loadDetail(activeId);
       } else {
-        const { id } = await api.newThread(owner, text, s);
+        const { id } = await api.newThread(owner, text, s, files);
         setActiveId(id);
         await loadDetail(id);
         await loadList();
@@ -189,9 +190,20 @@ export default function ThreadsPage() {
               </span>
               <span className="shrink-0 pt-0.5 text-[11px] tabular-nums text-ink-faint group-hover:invisible">{ago(t.updatedAt)}</span>
             </button>
-            <button type="button" onClick={() => remove(t.id)} aria-label="Delete thread" className="invisible absolute right-1.5 top-1.5 rounded p-0.5 text-ink-faint hover:bg-ink/[0.06] hover:text-ink group-hover:visible">
-              <X size={13} strokeWidth={2} />
+            <button type="button" onClick={() => setMenu(menu === t.id ? null : t.id)} aria-label="Thread options" className="invisible absolute right-1.5 top-1.5 rounded p-0.5 text-ink-faint hover:bg-ink/[0.06] hover:text-ink group-hover:visible">
+              <Ellipsis size={14} strokeWidth={2} />
             </button>
+            {menu === t.id && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setMenu(null)} />
+                <div className="absolute right-1 top-7 z-40 w-[170px] rounded-lg border border-ink/[0.1] bg-white p-1 shadow-[0_12px_32px_-12px_rgba(21,22,29,0.35)]">
+                  <button type="button" onClick={async () => { setMenu(null); const name = window.prompt("Rename thread", t.title)?.trim(); if (name) { await api.renameThread(owner, t.id, name); loadList(); } }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><Pencil size={13} strokeWidth={1.8} /> Rename</button>
+                  <button type="button" onClick={async () => { setMenu(null); await api.retitleThread(owner, t.id).catch(() => undefined); loadList(); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-ink hover:bg-ink/[0.05]"><RotateCw size={13} strokeWidth={1.8} /> Regenerate title</button>
+                  <div className="my-1 h-px bg-ink/[0.07]" />
+                  <button type="button" onClick={() => { setMenu(null); remove(t.id); }} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-[13px] text-[#b91c1c] hover:bg-[#b91c1c]/[0.06]"><Trash2 size={13} strokeWidth={1.8} /> Delete</button>
+                </div>
+              </>
+            )}
           </li>
         ))}
       </ul>
@@ -210,8 +222,7 @@ export default function ThreadsPage() {
       onStop={activeId ? () => api.stopThread(owner, activeId).then(() => loadDetail(activeId)) : undefined}
       busy={working || sending}
       machineState={machineState}
-      machineCpu={computer?.cpu}
-      machineMem={computer?.mem}
+      machineInfo={computer}
       transcribe={transcribe}
       autoFocus={!activeId}
       placeholder={activeId ? (working ? "Steer the task…" : "Reply…") : "Give your moonlet a task…"}
@@ -241,7 +252,7 @@ export default function ThreadsPage() {
         </div>
         {activeId && (
           <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
-            {detail && detail.thread.spentUsd > 0 && <span className="font-mono text-[11.5px] tabular-nums text-ink-faint">${detail.thread.spentUsd.toFixed(3)}</span>}
+            {detail && <span className="text-[11.5px] tabular-nums text-ink-faint" title="Credit this chat has spent on models">${detail.thread.spentUsd.toFixed(detail.thread.spentUsd < 0.1 ? 3 : 2)} spent</span>}
             <button type="button" onClick={() => setPane(pane ? null : "overview")} className={`ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg ${pane ? "bg-ink/[0.06] text-ink" : ""}`} aria-label="Computer panel" title="Computer">
               <PanelRight size={16} strokeWidth={1.8} />
             </button>
@@ -277,7 +288,16 @@ export default function ThreadsPage() {
               <ul className="mx-auto flex w-full max-w-[720px] flex-col gap-5 pb-6 pt-16">
                 {turns.map(({ msg, steps, startedAt }) =>
                   msg.role === "user" ? (
-                    <li key={msg.id} className="flex justify-end">
+                    <li key={msg.id} className="flex flex-col items-end gap-1.5">
+                      {msg.files.length > 0 && (
+                        <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
+                          {msg.files.map((f) => (
+                            <a key={f} href={fileUrl(f)} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-md border border-ink/[0.1] bg-white px-2 py-1 text-[12px] text-ink hover:border-ink/[0.25]">
+                              <Files size={12} strokeWidth={1.8} className="text-ink-faint" /> {f.split("/").pop()}
+                            </a>
+                          ))}
+                        </div>
+                      )}
                       <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-paper px-3.5 py-2.5 text-[14px] leading-[1.55] text-ink">{msg.text}</p>
                     </li>
                   ) : (
@@ -287,12 +307,9 @@ export default function ThreadsPage() {
                         <LightMarkdown text={msg.text} />
                       </div>
                       {msg.files.filter(isImage).length > 0 && (
-                        <div className={`mt-3 grid gap-2 ${msg.files.filter(isImage).length > 1 ? "sm:grid-cols-2" : ""}`}>
+                        <div className={`mt-3 grid gap-3 ${msg.files.filter(isImage).length > 1 ? "sm:grid-cols-2" : ""}`}>
                           {msg.files.filter(isImage).map((f) => (
-                            <a key={f} href={fileUrl(f)} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-ink/[0.08] bg-paper">
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img src={fileUrl(f)} alt={f.split("/").pop()} className="w-full" loading="lazy" />
-                            </a>
+                            <ShotFrame key={f} src={fileUrl(f)} name={f.split("/").pop()!} onOpen={() => setViewer(f)} />
                           ))}
                         </div>
                       )}
@@ -305,7 +322,7 @@ export default function ThreadsPage() {
                           ))}
                         </div>
                       )}
-                      <MessageFooter text={msg.text} model={msg.model} />
+                      <MessageFooter text={msg.text} model={msg.model} cost={msg.costUsd} />
                     </li>
                   ),
                 )}
@@ -356,14 +373,53 @@ export default function ThreadsPage() {
           </div>
         </aside>
       )}
+      {viewer && activeId && <Lightbox src={fileUrl(viewer)} name={viewer.split("/").pop()!} onClose={() => setViewer(null)} />}
     </section>
   );
 }
 
-function MessageFooter({ text, model }: { text: string; model: string | null }) {
+function ShotFrame({ src, name, onOpen }: { src: string; name: string; onOpen: () => void }) {
+  return (
+    <figure className="group overflow-hidden rounded-xl border border-ink/[0.08] bg-paper p-1.5 shadow-[0_1px_2px_rgba(21,22,29,0.04)]">
+      <button type="button" onClick={onOpen} className="block w-full overflow-hidden rounded-lg border border-ink/[0.06] bg-white outline-none focus-visible:ring-2 focus-visible:ring-gold/40" aria-label={`Open ${name}`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={name} loading="lazy" className="block w-full" />
+      </button>
+      <figcaption className="flex items-center justify-between gap-2 px-1.5 pb-0.5 pt-1.5 text-[11.5px] text-ink-faint">
+        <span className="truncate">{name}</span>
+        <a href={`${src}&download=1`} download={name} className="inline-flex items-center gap-1 rounded px-1 hover:text-ink" aria-label={`Download ${name}`}>
+          <Download size={12} strokeWidth={1.9} /> Save
+        </a>
+      </figcaption>
+    </figure>
+  );
+}
+
+function Lightbox({ src, name, onClose }: { src: string; name: string; onClose: () => void }) {
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-50 flex flex-col bg-night/85 backdrop-blur-sm" onClick={onClose} role="dialog" aria-label={name}>
+      <div className="flex h-12 shrink-0 items-center justify-between px-4 text-[12.5px] text-cream/80" onClick={(e) => e.stopPropagation()}>
+        <span className="truncate">{name}</span>
+        <span className="flex items-center gap-1">
+          <a href={`${src}&download=1`} download={name} className="inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 hover:bg-white/10"><Download size={14} strokeWidth={1.9} /> Save</a>
+          <button type="button" onClick={onClose} className="inline-flex h-8 w-8 items-center justify-center rounded-lg hover:bg-white/10" aria-label="Close"><X size={16} strokeWidth={1.9} /></button>
+        </span>
+      </div>
+      <div className="flex min-h-0 flex-1 items-center justify-center p-4 pt-0">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={name} onClick={(e) => e.stopPropagation()} className="max-h-full max-w-full rounded-lg shadow-[0_20px_60px_-20px_rgba(0,0,0,0.6)]" />
+      </div>
+    </div>
+  );
+}
+
+function MessageFooter({ text, model, cost }: { text: string; model: string | null; cost: number | null }) {
   const [copied, setCopied] = useState(false);
-  const label = model ? MODEL_LABEL[model as ModelChoice] : null;
-  const Mark = label ? VENDOR_MARK[label.vendor] : null;
   return (
     <div className="mt-2 flex items-center gap-2 text-[11.5px] text-ink-faint">
       <button
@@ -379,12 +435,8 @@ function MessageFooter({ text, model }: { text: string; model: string | null }) 
       >
         {copied ? <Check size={13} strokeWidth={2.2} /> : <Copy size={13} strokeWidth={1.8} />}
       </button>
-      {model && (
-        <span className="inline-flex items-center gap-1.5">
-          {Mark && <Mark size={12} />}
-          {label?.name ?? model}
-        </span>
-      )}
+      {model && <span>{modelName(model)}</span>}
+      {cost != null && cost > 0 && <span className="tabular-nums">· ${cost.toFixed(cost < 0.1 ? 3 : 2)}</span>}
     </div>
   );
 }
@@ -392,27 +444,42 @@ function MessageFooter({ text, model }: { text: string; model: string | null }) 
 function StepList({ steps, label, threadId, open = false }: { steps: ApiThreadStep[]; label: string; threadId: string; open?: boolean }) {
   const [show, setShow] = useState(open);
   return (
-    <div className="mb-2.5">
+    <div className="mb-3">
       <button type="button" onClick={() => setShow((v) => !v)} className="inline-flex items-center gap-1 rounded text-[12.5px] text-ink-faint outline-none hover:text-ink-soft focus-visible:ring-2 focus-visible:ring-gold/40">
         {label}
         <ChevronRight size={13} strokeWidth={2} className={`transition-transform ${show ? "rotate-90" : ""}`} />
       </button>
       {show && (
-        <ol className="mt-1.5 space-y-0.5 border-l border-ink/[0.08] pl-3">
+        <ol className="mt-1.5 space-y-1">
           {steps.map((s) => (
-            <li key={s.id} className={`truncate font-mono text-[11.5px] leading-[1.7] ${s.ok ? "text-ink-soft" : "text-[#b91c1c]/80"}`}>
-              {s.shot ? (
-                <a href={`/api/threads/${threadId}/screen?shot=${encodeURIComponent(s.shot)}`} target="_blank" rel="noreferrer" className="underline decoration-ink/20 underline-offset-2 hover:text-ink">
-                  {s.summary}
-                </a>
-              ) : (
-                s.summary
-              )}
-            </li>
+            <StepRow key={s.id} s={s} threadId={threadId} />
           ))}
         </ol>
       )}
     </div>
+  );
+}
+
+function StepRow({ s, threadId }: { s: ApiThreadStep; threadId: string }) {
+  const [open, setOpen] = useState(false);
+  const secs = s.ms != null && s.ms >= 100 ? (s.ms < 10_000 ? `${(s.ms / 1000).toFixed(1)}s` : `${Math.round(s.ms / 1000)}s`) : null;
+  if (s.tool === "think")
+    return (
+      <li>
+        <button type="button" onClick={() => setOpen((v) => !v)} className="text-left text-[13px] text-ink-faint hover:text-ink-soft">{s.summary}</button>
+        {open && s.detail && <p className="mt-1 whitespace-pre-wrap border-l border-ink/[0.1] pl-3 text-[12.5px] leading-[1.6] text-ink-faint">{s.detail}</p>}
+      </li>
+    );
+  if (s.tool === "note") return <li className="text-[13px] leading-[1.55] text-ink-soft">{s.summary}</li>;
+  return (
+    <li className={`flex min-w-0 items-baseline gap-2 text-[13px] ${s.ok ? "text-ink-soft" : "text-[#b91c1c]/80"}`}>
+      {s.shot ? (
+        <a href={`/api/threads/${threadId}/files?path=${encodeURIComponent(s.shot)}`} target="_blank" rel="noreferrer" className="min-w-0 truncate underline decoration-ink/20 underline-offset-2 hover:text-ink">{s.summary}</a>
+      ) : (
+        <span className="min-w-0 truncate">{s.summary}</span>
+      )}
+      {secs && <span className="shrink-0 text-[11.5px] tabular-nums text-ink-faint">{secs}</span>}
+    </li>
   );
 }
 

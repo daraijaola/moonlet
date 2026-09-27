@@ -55,6 +55,7 @@ def health():
 async def wake(sid: str, size: str = "standard"):
     n = name(sid)
     s = state(sid)
+    created = not s["exists"]
     if not s["exists"]:
         spec = SIZES.get(size, SIZES["standard"])
         docker("run", "-d", "--name", n, "--runtime=runsc", "--cpus", spec["cpus"], "--memory", spec["memory"], "--pids-limit", "512",
@@ -71,7 +72,7 @@ async def wake(sid: str, size: str = "standard"):
                 pass
             await asyncio.sleep(0.5)
     last_used[sid] = time.time()
-    return {"status": "running", "size": size}
+    return {"status": "running", "size": size, "created": created}
 
 
 @app.post("/v1/sandboxes/{sid}/sleep", dependencies=[Depends(auth)])
@@ -92,6 +93,9 @@ def delete(sid: str):
 def info(sid: str):
     s = state(sid)
     out = {"status": "asleep" if s["exists"] and s["status"] != "running" else s["status"]}
+    if s["exists"]:
+        out["created_at"] = docker("inspect", "-f", "{{.Created}}", name(sid), check=False)
+        out["started_at"] = docker("inspect", "-f", "{{.State.StartedAt}}", name(sid), check=False)
     if s["status"] == "running":
         st = docker("stats", "--no-stream", "--format", "{{json .}}", name(sid), check=False)
         if st:

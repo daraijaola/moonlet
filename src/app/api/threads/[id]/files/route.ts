@@ -9,7 +9,9 @@ const MIME: Record<string, string> = { png: "image/png", jpg: "image/jpeg", jpeg
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const r = await ownThread(req, (await params).id);
   if ("error" in r) return r.error;
-  const path = new URL(req.url).searchParams.get("path");
+  const q = new URL(req.url).searchParams;
+  const path = q.get("path");
+  const download = q.get("download") === "1";
   try {
     const info = await computers.info(r.t.id);
     if (info.status === "none") return path ? bad("not found", 404) : NextResponse.json({ entries: [] });
@@ -19,7 +21,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const bytes = await computers.readFile(r.t.id, path);
     const ext = path.split(".").pop()?.toLowerCase() ?? "";
     const type = MIME[ext] ?? "application/octet-stream";
-    const inline = type.startsWith("image/") || type === "application/pdf" || type.startsWith("text/");
+    const inline = !download && (type.startsWith("image/") || type === "application/pdf" || type.startsWith("text/"));
     return new Response(new Uint8Array(bytes), { headers: { "content-type": type === "text/html" ? "text/plain" : type, "content-disposition": `${inline ? "inline" : "attachment"}; filename="${path.split("/").pop()}"`, "cache-control": "private, max-age=60" } });
   } catch (e) {
     return bad((e as Error).message.slice(0, 200), 502);

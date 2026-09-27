@@ -6,7 +6,7 @@ import https from "node:https";
  */
 
 export type Machine = "standard" | "large";
-export type ComputerInfo = { status: "running" | "asleep" | "none" | string; cpu?: string; mem?: string; disk_bytes?: number };
+export type ComputerInfo = { status: "running" | "asleep" | "none" | string; cpu?: string; mem?: string; disk_bytes?: number; created_at?: string; started_at?: string };
 
 function config() {
   const url = process.env.MC_URL, token = process.env.MC_TOKEN, ca = process.env.MC_CA_B64;
@@ -59,7 +59,7 @@ async function json<T>(method: string, path: string, body?: unknown, timeoutMs?:
 const base = (sid: string) => `/v1/sandboxes/${encodeURIComponent(sid)}`;
 
 export const computers = {
-  wake: (sid: string, size: Machine = "standard") => json<{ status: string }>("POST", `${base(sid)}/wake?size=${size}`, undefined, 60_000),
+  wake: (sid: string, size: Machine = "standard") => json<{ status: string; created?: boolean }>("POST", `${base(sid)}/wake?size=${size}`, undefined, 60_000),
   sleep: (sid: string) => json<{ status: string }>("POST", `${base(sid)}/sleep`),
   info: (sid: string) => json<ComputerInfo>("GET", base(sid)),
   screenshot: async (sid: string) => {

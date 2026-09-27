@@ -110,8 +110,9 @@ export type OrbioStatus = {
 };
 
 export type ApiThread = { id: string; title: string; model: string; effort: "low" | "medium" | "high" | "xhigh" | "max"; machine: "standard" | "large"; status: "idle" | "working" | "stopping" | "failed"; spentUsd: number; createdAt: number; updatedAt: number };
-export type ApiThreadMessage = { id: string; role: "user" | "moonlet"; text: string; files: string[]; model: string | null; ms: number | null; createdAt: number };
-export type ApiThreadStep = { id: string; tool: string; summary: string; detail: string | null; shot: string | null; ok: boolean; createdAt: number };
+export type ApiThreadMessage = { id: string; role: "user" | "moonlet"; text: string; files: string[]; model: string | null; ms: number | null; costUsd: number | null; createdAt: number };
+export type ApiThreadStep = { id: string; tool: string; summary: string; detail: string | null; shot: string | null; ok: boolean; ms: number | null; createdAt: number };
+export type UploadFile = { name: string; b64: string };
 type ThreadSettings = { model?: string; effort?: string; machine?: string };
 
 async function req<T>(owner: string | null, path: string, init?: RequestInit): Promise<T> {
@@ -131,11 +132,13 @@ async function req<T>(owner: string | null, path: string, init?: RequestInit): P
 export const api = {
   threads: (owner: string) => req<{ threads: ApiThread[] }>(owner, "/api/threads"),
   thread: (owner: string, id: string) => req<{ thread: ApiThread; messages: ApiThreadMessage[]; steps: ApiThreadStep[] }>(owner, `/api/threads/${id}`),
-  newThread: (owner: string, text: string, s: ThreadSettings) => req<{ id: string }>(owner, "/api/threads", { method: "POST", body: JSON.stringify({ text, ...s }) }),
-  sendToThread: (owner: string, id: string, text: string, s: ThreadSettings) => req<{ started?: boolean; queued?: boolean }>(owner, `/api/threads/${id}/messages`, { method: "POST", body: JSON.stringify({ text, ...s }) }),
+  newThread: (owner: string, text: string, s: ThreadSettings, files: UploadFile[] = []) => req<{ id: string }>(owner, "/api/threads", { method: "POST", body: JSON.stringify({ text, ...s, files }) }),
+  sendToThread: (owner: string, id: string, text: string, s: ThreadSettings, files: UploadFile[] = []) => req<{ started?: boolean; queued?: boolean }>(owner, `/api/threads/${id}/messages`, { method: "POST", body: JSON.stringify({ text, ...s, files }) }),
+  renameThread: (owner: string, id: string, title: string) => req<{ ok: boolean }>(owner, `/api/threads/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }),
+  retitleThread: (owner: string, id: string) => req<{ title: string }>(owner, `/api/threads/${id}/title`, { method: "POST" }),
   stopThread: (owner: string, id: string) => req<{ ok: boolean }>(owner, `/api/threads/${id}/stop`, { method: "POST" }),
   deleteThread: (owner: string, id: string) => req<{ deleted: boolean }>(owner, `/api/threads/${id}`, { method: "DELETE" }),
-  threadComputer: (owner: string, id: string) => req<{ status: string; cpu?: string; mem?: string; disk_bytes?: number }>(owner, `/api/threads/${id}/computer`),
+  threadComputer: (owner: string, id: string) => req<{ status: string; cpu?: string; mem?: string; disk_bytes?: number; created_at?: string; started_at?: string }>(owner, `/api/threads/${id}/computer`),
   threadFiles: (owner: string, id: string) => req<{ entries: Array<{ name: string; dir: boolean; size: number }> }>(owner, `/api/threads/${id}/files`),
   orbioStatus: (owner: string) => req<OrbioStatus>(owner, "/api/orbio/status"),
   orbioDisconnect: (owner: string) => req<{ ok: boolean }>(owner, "/api/orbio/status", { method: "DELETE" }),

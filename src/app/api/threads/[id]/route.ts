@@ -13,7 +13,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const r = await ownThread(req, (await params).id);
   if ("error" in r) return r.error;
-  await ts.updateThread(r.t.id, pickSettings((await req.json().catch(() => ({}))) as Record<string, unknown>));
+  const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+  const title = typeof body.title === "string" ? body.title.trim().slice(0, 70) : "";
+  await ts.updateThread(r.t.id, { ...pickSettings(body), ...(title ? { title } : {}) });
   return NextResponse.json({ ok: true });
 }
 
