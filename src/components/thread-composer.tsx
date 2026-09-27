@@ -285,38 +285,22 @@ export function ThreadComposer({
         }}
         className="thread-composer rounded-2xl border border-ink/[0.12] bg-white shadow-[0_1px_2px_rgba(21,22,29,0.04),0_12px_32px_-18px_rgba(21,22,29,0.25)] transition-[border-color,box-shadow] focus-within:border-ink/[0.28] focus-within:shadow-[0_1px_2px_rgba(21,22,29,0.04),0_12px_32px_-18px_rgba(21,22,29,0.3),0_0_0_3px_rgba(233,182,76,0.18)]"
       >
-        {recording && transcribe ? (
-          <div className="px-3 pt-3">
-            <VoiceRecorder
-              transcribe={transcribe}
-              onLive={(t) => setText(spokenBase ? `${spokenBase} ${t}` : t)}
-              onDone={(t) => {
-                setText(spokenBase ? `${spokenBase} ${t}` : t);
-                setRecording(false);
-              }}
-              onCancel={() => {
-                setText(spokenBase);
-                setRecording(false);
-              }}
-            />
-          </div>
-        ) : (
-          <textarea
-            value={text}
-            autoFocus={autoFocus}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                e.preventDefault();
-                submit();
-              }
-            }}
-            rows={2}
-            placeholder={placeholder}
-            className="block max-h-56 min-h-[56px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[15px] leading-[1.55] text-ink outline-none placeholder:text-ink-faint"
-            style={{ fieldSizing: "content" } as React.CSSProperties}
-          />
-        )}
+        <textarea
+          value={text}
+          autoFocus={autoFocus}
+          readOnly={recording}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+          rows={2}
+          placeholder={recording ? "Listening…" : placeholder}
+          className="block max-h-56 min-h-[56px] w-full resize-none bg-transparent px-4 pb-1 pt-3.5 text-[15px] leading-[1.55] text-ink outline-none placeholder:text-ink-faint"
+          style={{ fieldSizing: "content" } as React.CSSProperties}
+        />
         {files.length > 0 && (
           <div className="flex flex-wrap gap-1.5 px-3 pt-1">
             {files.map((f, i) => (
@@ -331,6 +315,23 @@ export function ThreadComposer({
         )}
         {fileErr && <p className="px-4 pt-1 text-[12px] text-[#b91c1c]">{fileErr}</p>}
         <input ref={picker} type="file" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
+        {recording && transcribe ? (
+          <div className="flex min-w-0 items-center px-2 pb-2 pt-1">
+            <VoiceRecorder
+              bare
+              transcribe={transcribe}
+              onLive={(t) => setText(spokenBase ? `${spokenBase} ${t}` : t)}
+              onDone={(t) => {
+                setText(spokenBase ? `${spokenBase} ${t}` : t);
+                setRecording(false);
+              }}
+              onCancel={() => {
+                setText(spokenBase);
+                setRecording(false);
+              }}
+            />
+          </div>
+        ) : (
         <div className="flex min-w-0 items-center gap-0.5 px-2 pb-2 pt-1">
           <button type="button" onClick={() => picker.current?.click()} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg text-ink-soft" aria-label="Attach files" title="Attach files">
             <Plus size={16} strokeWidth={2} className="sm:hidden" />
@@ -358,6 +359,7 @@ export function ThreadComposer({
             </button>
           )}
         </div>
+        )}
       </form>
       <div className="mt-1 flex items-center px-1">
         <MachineChip value={machine} onChange={onMachine} state={machineState} info={machineInfo} />
