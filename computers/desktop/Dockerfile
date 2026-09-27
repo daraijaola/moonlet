@@ -8,14 +8,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install --break-system-packages --no-cache-dir fastapi==0.115.* uvicorn==0.32.*
+RUN curl -fsSL -o /tmp/mm.zip https://github.com/MetaMask/metamask-extension/releases/download/v13.50.0/metamask-chrome-13.50.0.zip \
+    && mkdir -p /opt/ext/metamask && unzip -q /tmp/mm.zip -d /opt/ext/metamask && rm /tmp/mm.zip \
+    && curl -fsSL -o /tmp/gh.deb https://github.com/cli/cli/releases/download/v2.63.2/gh_2.63.2_linux_amd64.deb && dpkg -i /tmp/gh.deb && rm /tmp/gh.deb
 RUN useradd -m -s /bin/bash moon
 COPY moonlet-wallpaper.png /usr/share/moonlet/wallpaper.png
 COPY supervisord.conf /etc/supervisor/conf.d/moonlet.conf
 COPY openbox-autostart /home/moon/.config/openbox/autostart
-COPY tint2rc /home/moon/.config/tint2/tint2rc
 COPY agentd.py /opt/agentd.py
 RUN mkdir -p /etc/chromium/policies/managed && printf '{"BrowserSignin":0,"SyncDisabled":true,"PasswordManagerEnabled":false,"DefaultBrowserSettingEnabled":false,"PromotionalTabsEnabled":false}' > /etc/chromium/policies/managed/moonlet.json
 RUN mkdir -p /home/moon/Desktop /home/moon/work && chown -R moon:moon /home/moon \
-    && printf '#!/bin/sh\nexec chromium --no-sandbox --test-type --disable-dev-shm-usage --no-first-run --no-default-browser-check --password-store=basic --start-maximized --disable-features=Translate "$@"\n' > /usr/local/bin/browser && chmod +x /usr/local/bin/browser
+    && printf '#!/bin/sh\nexec chromium --no-sandbox --test-type --disable-dev-shm-usage --no-first-run --no-default-browser-check --password-store=basic --start-maximized --disable-features=Translate --disable-gpu --load-extension=/opt/ext/metamask "$@"\n' > /usr/local/bin/browser && chmod +x /usr/local/bin/browser
 EXPOSE 8000 6080
 CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/supervisord.conf"]

@@ -79,7 +79,7 @@ export default function ThreadsPage() {
   const working = detail?.thread.status === "working" || detail?.thread.status === "stopping";
 
   useEffect(() => {
-    if (!activeId) return;
+    if (!activeId || activeId === "pending") return;
     let stop = false;
     const tick = async () => {
       if (stop) return;
@@ -87,7 +87,7 @@ export default function ThreadsPage() {
       const busy = d?.thread.status === "working" || d?.thread.status === "stopping";
       api.threadComputer(owner, activeId).then(setComputer).catch(() => undefined);
       if (!busy) loadList().catch(() => undefined);
-      if (!stop) setTimeout(tick, busy ? 1500 : 6000);
+      if (!stop) setTimeout(tick, busy ? 800 : 6000);
     };
     tick();
     return () => {
@@ -119,8 +119,14 @@ export default function ThreadsPage() {
     setError(null);
     setSending(true);
     const s = { model, effort, machine };
+    const optimistic: ApiThreadMessage = { id: `local-${Date.now()}`, role: "user", text: text || "Here are some files.", files: attachments.map((f) => `work/uploads/${f.name}`), model: null, ms: null, costUsd: null, createdAt: Date.now() };
+    if (activeId) setDetail((d) => (d ? { ...d, thread: { ...d.thread, status: "working" }, messages: [...d.messages, optimistic] } : d));
+    else {
+      setActiveId("pending");
+      setDetail({ thread: { id: "pending", title: text.slice(0, 70) || "Files", model, effort, machine, status: "working", spentUsd: 0, createdAt: Date.now(), updatedAt: Date.now() }, messages: [optimistic], steps: [] });
+    }
     try {
-      if (activeId) {
+      if (activeId && activeId !== "pending") {
         await api.sendToThread(owner, activeId, text, s, files);
         await loadDetail(activeId);
       } else {
@@ -131,6 +137,7 @@ export default function ThreadsPage() {
       }
     } catch (e) {
       setError((e as Error).message);
+      if (!activeId) newThread();
     }
     setSending(false);
   };
@@ -302,7 +309,7 @@ export default function ThreadsPage() {
                     </li>
                   ) : (
                     <li key={msg.id} className="min-w-0">
-                      {steps.length > 0 && <StepList steps={steps} label={`Worked for ${dur(msg.createdAt - startedAt)}`} threadId={activeId} />}
+                      {steps.length > 0 && <StepList steps={steps} label={`Worked for ${dur(msg.createdAt - startedAt)}`} onShot={setViewer} />}
                       <div className="thread-md text-[14px] leading-[1.65] text-ink">
                         <LightMarkdown text={msg.text} />
                       </div>
@@ -328,7 +335,7 @@ export default function ThreadsPage() {
                 )}
                 {working && (
                   <li className="min-w-0">
-                    {liveSteps.length > 0 && <StepList steps={liveSteps} label="Working" threadId={activeId} open />}
+                    {liveSteps.length > 0 && <StepList steps={liveSteps} label="Working" onShot={setViewer} open />}
                     <div className="flex min-w-0 items-center gap-2 text-[13px]">
                       <ThinkingMark size={16} className="shrink-0" />
                       <span className="shimmer-text truncate">{detail?.thread.status === "stopping" ? "Stopping…" : liveSteps.at(-1)?.summary ?? "Waking its computer…"}</span>
@@ -348,7 +355,7 @@ export default function ThreadsPage() {
         )}
       </div>
 
-      {activeId && pane && (
+      {activeId && activeId !== "pending" && pane && (
         <aside className="fixed inset-x-0 bottom-0 z-40 flex h-[70vh] flex-col rounded-t-2xl border-t border-ink/[0.08] bg-white shadow-[0_-12px_32px_-16px_rgba(21,22,29,0.35)] xl:static xl:h-auto xl:w-[440px] xl:shrink-0 xl:rounded-none xl:border-l xl:border-t-0 xl:shadow-none">
           <div className="flex h-12 shrink-0 items-center gap-1 border-b border-ink/[0.07] px-2">
             {(["overview", "computer", "files"] as const).map((p) => (
@@ -441,7 +448,7 @@ function MessageFooter({ text, model, cost }: { text: string; model: string | nu
   );
 }
 
-function StepList({ steps, label, threadId, open = false }: { steps: ApiThreadStep[]; label: string; threadId: string; open?: boolean }) {
+function StepList({ steps, label, onShot, open = false }: { steps: ApiThreadStep[]; label: string; onShot: (path: string) => void; open?: boolean }) {
   const [show, setShow] = useState(open);
   return (
     <div className="mb-3">
@@ -452,7 +459,7 @@ function StepList({ steps, label, threadId, open = false }: { steps: ApiThreadSt
       {show && (
         <ol className="mt-1.5 space-y-1">
           {steps.map((s) => (
-            <StepRow key={s.id} s={s} threadId={threadId} />
+            <StepRow key={s.id} s={s} onShot={onShot} />
           ))}
         </ol>
       )}
@@ -460,9 +467,8 @@ function StepList({ steps, label, threadId, open = false }: { steps: ApiThreadSt
   );
 }
 
-function StepRow({ s, threadId }: { s: ApiThreadStep; threadId: string }) {
+function StepRow({ s, onShot }: { s: ApiThreadStep; onShot: (path: string) => void }) {
   const [open, setOpen] = useState(false);
-  const secs = s.ms != null && s.ms >= 100 ? (s.ms < 10_000 ? `${(s.ms / 1000).toFixed(1)}s` : `${Math.round(s.ms / 1000)}s`) : null;
   if (s.tool === "think")
     return (
       <li>
@@ -474,11 +480,10 @@ function StepRow({ s, threadId }: { s: ApiThreadStep; threadId: string }) {
   return (
     <li className={`flex min-w-0 items-baseline gap-2 text-[13px] ${s.ok ? "text-ink-soft" : "text-[#b91c1c]/80"}`}>
       {s.shot ? (
-        <a href={`/api/threads/${threadId}/files?path=${encodeURIComponent(s.shot)}`} target="_blank" rel="noreferrer" className="min-w-0 truncate underline decoration-ink/20 underline-offset-2 hover:text-ink">{s.summary}</a>
+        <button type="button" onClick={() => onShot(s.shot!)} className="min-w-0 truncate text-left underline decoration-ink/20 underline-offset-2 hover:text-ink">{s.summary}</button>
       ) : (
         <span className="min-w-0 truncate">{s.summary}</span>
       )}
-      {secs && <span className="shrink-0 text-[11.5px] tabular-nums text-ink-faint">{secs}</span>}
     </li>
   );
 }

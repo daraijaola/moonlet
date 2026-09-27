@@ -67,7 +67,7 @@ export const computers = {
     if (r.status >= 400) throw new Error(`screenshot failed (${r.status})`);
     return r.buf;
   },
-  exec: (sid: string, cmd: string, timeout = 60) => json<{ code: number; stdout: string; stderr: string }>("POST", `${base(sid)}/exec`, { cmd, timeout }, (timeout + 15) * 1000),
+  exec: (sid: string, cmd: string, timeout = 60, env: Record<string, string> = {}) => json<{ code: number; stdout: string; stderr: string }>("POST", `${base(sid)}/exec`, { cmd, timeout, env }, (timeout + 15) * 1000),
   action: (sid: string, a: Record<string, unknown>) => json<{ ok: boolean; error?: string }>("POST", `${base(sid)}/action`, a),
   open: (sid: string, url: string) => json<{ url: string; title: string }>("POST", `${base(sid)}/browser/open`, { url }, 60_000),
   read: (sid: string) => json<{ url: string; title: string; text: string; elements: Array<{ n: number; tag: string; type: string; label: string }> }>("GET", `${base(sid)}/browser/read`),

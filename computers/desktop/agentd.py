@@ -21,6 +21,7 @@ def health():
 @app.get("/screenshot")
 def screenshot(fmt: str = "png", quality: int = 72):
     path = "/tmp/shot.png"
+    time.sleep(0.5)
     run(["scrot", "-o", "-p", path])
     if not os.path.exists(path):
         raise HTTPException(500, "screenshot failed")
@@ -77,12 +78,14 @@ class Exec(BaseModel):
     cmd: str
     timeout: int = 60
     cwd: str = "/home/moon/work"
+    env: dict[str, str] = {}
 
 
 @app.post("/exec")
 def exec_(e: Exec):
     try:
-        r = subprocess.run(["bash", "-lc", e.cmd], env=ENV, cwd=e.cwd, capture_output=True, text=True, timeout=min(e.timeout, 600))
+        os.makedirs(e.cwd, exist_ok=True)
+        r = subprocess.run(["bash", "-lc", e.cmd], env={**ENV, **{k: v for k, v in e.env.items() if k.isupper()}}, cwd=e.cwd, capture_output=True, text=True, timeout=min(e.timeout, 600))
         return {"code": r.returncode, "stdout": r.stdout[-20000:], "stderr": r.stderr[-8000:]}
     except subprocess.TimeoutExpired:
         return {"code": -1, "stdout": "", "stderr": f"timed out after {e.timeout}s"}
