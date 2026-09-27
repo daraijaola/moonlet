@@ -4,7 +4,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       xvfb x11vnc openbox tint2 feh xdotool scrot xterm x11-utils \
       chromium fonts-noto-core fonts-noto-color-emoji \
       novnc websockify supervisor ca-certificates curl git jq unzip \
-      python3 python3-pip python3-venv python3-pandas python3-matplotlib python3-requests python3-bs4 python3-pil \
+      python3 python3-pip python3-venv python3-pandas python3-matplotlib python3-requests python3-bs4 python3-pil python3-websocket \
       nodejs npm \
     && rm -rf /var/lib/apt/lists/*
 RUN pip3 install --break-system-packages --no-cache-dir fastapi==0.115.* uvicorn==0.32.*

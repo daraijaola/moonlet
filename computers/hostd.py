@@ -134,6 +134,13 @@ async def files(sid: str, req: Request):
     return await forward(sid, req.method, "/files", req)
 
 
+@app.api_route("/v1/sandboxes/{sid}/browser/{op}", methods=["GET", "POST"], dependencies=[Depends(auth)])
+async def browser(sid: str, op: str, req: Request):
+    if op not in ("open", "read", "click", "scroll"):
+        raise HTTPException(404, "unknown browser op")
+    return await forward(sid, req.method, f"/browser/{op}", req)
+
+
 @app.websocket("/v1/sandboxes/{sid}/vnc")
 async def vnc(ws: WebSocket, sid: str, token: str = ""):
     if token != TOKEN:
