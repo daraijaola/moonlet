@@ -1,0 +1,13 @@
+[Unit]
+Description=moonlet computers host API
+After=docker.service
+Requires=docker.service
+
+[Service]
+EnvironmentFile=/etc/moonlet-computers.env
+WorkingDirectory=/opt/mc
+ExecStart=/opt/mc/venv/bin/uvicorn hostd:app --host 0.0.0.0 --port 8443 --ssl-keyfile /opt/mc/key.pem --ssl-certfile /opt/mc/cert.pem --log-level warning
+Restart=always
+
+[Install]
+WantedBy=multi-user.target

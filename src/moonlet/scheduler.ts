@@ -12,6 +12,7 @@ import { bagOf, stakedOf } from "./bag";
 export { bagOf } from "./bag";
 import * as tg from "./connections/telegram";
 import { reportBlocks } from "./connections/telegram-rich";
+import * as github from "./connections/github";
 import type { GitHubConn } from "./connections/github";
 import * as discord from "./connections/discord";
 import type { DiscordConn } from "./connections/discord";
@@ -174,8 +175,17 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   let ghConn = ghConnStored;
   // A revoked GitHub token would make every repo job fail quietly; check it before the run and tell the owner once.
   if (ghConn && m.spec.tools.some((t) => t.startsWith("github") || t === "open_pull_request" || t === "comment_on_issue" || t === "open_issue")) {
-    const probe = await (deps.fetch ?? fetch)("https://api.github.com/user", { headers: { authorization: `Bearer ${ghConn.data.token}`, "user-agent": "moonlet" }, signal: AbortSignal.timeout(10_000) }).catch(() => null);
-    if (probe?.status === 401) {
+    // An expiring token (GitHub App) is renewed ahead of time; a probe only condemns the connection on a confirmed revocation.
+    if (ghConn.data.refreshToken && (ghConn.data.expiresAt ?? Infinity) < now() + 15 * 60_000) {
+      const fresh = await github.refreshConnection(m.owner, ghConn.data, deps.fetch);
+      if (fresh) ghConn = { ...ghConn, data: fresh };
+    }
+    let probe = await github.probeToken(ghConn.data, deps.fetch);
+    if (probe === "revoked" && ghConn.data.refreshToken) {
+      const fresh = await github.refreshConnection(m.owner, ghConn.data, deps.fetch);
+      if (fresh) { ghConn = { ...ghConn, data: fresh }; probe = await github.probeToken(fresh, deps.fetch); }
+    }
+    if (probe === "revoked") {
       await store.deleteConnection(m.owner, "github");
       if (tgConn && tg.telegramConfigured()) {
         await tg.sendMessage(tgConn.data.chatId, `GitHub disconnected: the access you granted (@${tg.esc(ghConn.data.login)}) was revoked or expired. Reconnect at ${tg.esc(process.env.APP_URL ?? "https://moonlet.16labs.xyz")}/app/connections so <b>${tg.esc(m.spec.name)}</b> can read your repos again.`, { fetch: deps.fetch }).catch(() => undefined);

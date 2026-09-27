@@ -98,7 +98,7 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
     const lastStep = step === o.maxSteps - 1 || cost >= o.maxCostUsd * 0.6 || (lastCallCost > 0 && cost + lastCallCost * 1.25 >= o.maxCostUsd);
     // Provider-side bound on tool-calling turns: the observed price per token says how many output tokens still fit. The final
     // structured answer is never clipped, since a truncated JSON is worth less than a small overshoot.
-    const maxTokens = perTokenUsd > 0 && !lastStep ? Math.max(1024, Math.floor((o.maxCostUsd - cost) / perTokenUsd - promptTokens * 1.1)) : undefined;
+    const maxTokens = perTokenUsd > 0 && !lastStep ? Math.max(2048, Math.floor((o.maxCostUsd - cost) / perTokenUsd - promptTokens * 1.1)) : undefined;
     const body: Record<string, unknown> = {
       model: models[modelIdx],
       messages,

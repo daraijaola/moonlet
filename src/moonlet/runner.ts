@@ -272,12 +272,13 @@ function isKeyExhausted(e: unknown) {
   return status === 401 || status === 402 || status === 403 || /insufficient credits|credit limit|key limit|quota exceeded|insufficient_quota|no available balance|unauthorized|invalid api key|invalid_api_key|user not found|\b40[123]\b/.test(msg);
 }
 
-function safeParseOutput(text: string): RunOutput | null {
+export function safeParseOutput(text: string): RunOutput | null {
   const candidates: string[] = [text.trim()];
   const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/i)?.[1];
   if (fenced) candidates.unshift(fenced.trim());
   const first = text.indexOf("{"), last = text.lastIndexOf("}");
   if (first >= 0 && last > first) candidates.push(text.slice(first, last + 1));
+  if (first >= 0) candidates.push(closeJson(text.slice(first)));
   for (const c of candidates) {
     try {
       const r = RunOutput.safeParse(coerceOutput(JSON.parse(c)));
@@ -287,6 +288,32 @@ function safeParseOutput(text: string): RunOutput | null {
     }
   }
   return null;
+}
+
+/**
+ * A provider clipped the answer mid-JSON (max_tokens, a dropped stream). Close whatever is open, dropping the dangling
+ * key or value at the cut, so the fields that did arrive survive instead of the whole report degrading to raw text.
+ */
+export function closeJson(s: string): string {
+  const stack: string[] = [];
+  let inStr = false, esc = false, lastGood = 0;
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === "\\") esc = true;
+      else if (ch === '"') { inStr = false; lastGood = i + 1; }
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === "{" || ch === "[") { stack.push(ch === "{" ? "}" : "]"); lastGood = i + 1; }
+    else if (ch === "}" || ch === "]") { stack.pop(); lastGood = i + 1; }
+    else if (ch === "," ) lastGood = i;
+    else if (/[\d\]a-z]/i.test(ch)) lastGood = i + 1;
+  }
+  // A key with no value yet ("label" or "label":) cannot stand; a key is a string that follows { or , rather than :.
+  const out = s.slice(0, lastGood).replace(/([{,])\s*"(?:[^"\\]|\\.)*"\s*:?\s*$/, "$1").replace(/,\s*$/, "");
+  return out + stack.reverse().join("");
 }
 
 /** Models drift from the schema in small, predictable ways; repair those before validating. */
@@ -301,7 +328,8 @@ function coerceOutput(o: unknown): unknown {
   x.sources = Array.isArray(x.sources) ? x.sources.filter((u) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 12) : [];
   if (!["none", "low", "medium", "high"].includes(x.signal as string)) x.signal = "low";
   x.nothingHappened = !!x.nothingHappened;
-  x.calls = Array.isArray(x.calls) ? x.calls.slice(0, 2).map((c) => { const k = (c ?? {}) as Record<string, unknown>; return { claim: str(k.claim ?? k.call ?? k.prediction).slice(0, 200).padEnd(8, "."), check: str(k.check ?? k.how ?? k.verify ?? "compare next run").slice(0, 200).padEnd(4, ".") }; }) : [];
+  // A call with no claim is not a call: drop it rather than pad it into "........" that the next run then grades as void.
+  x.calls = Array.isArray(x.calls) ? x.calls.map((c) => { const k = (c ?? {}) as Record<string, unknown>; return { claim: str(k.claim ?? k.call ?? k.prediction).trim().slice(0, 200), check: str(k.check ?? k.how ?? k.verify ?? "compare next run").trim().slice(0, 200) || "compare next run" }; }).filter((c) => c.claim.replace(/[.\s…-]/g, "").length >= 3).slice(0, 2).map((c) => ({ claim: c.claim.padEnd(8, "."), check: c.check.padEnd(4, ".") })) : [];
   x.scored = Array.isArray(x.scored) ? x.scored.slice(0, 2).map((c) => { const k = (c ?? {}) as Record<string, unknown>; const res = String(k.result ?? k.outcome ?? "").toLowerCase(); return { claim: str(k.claim).slice(0, 200), result: res.startsWith("hit") || res === "true" || res === "correct" ? "hit" : res.startsWith("miss") || res === "false" || res === "wrong" ? "miss" : "void", evidence: str(k.evidence ?? k.observed ?? k.note).slice(0, 300) }; }) : [];
   x.sections = Array.isArray(x.sections)
     ? x.sections.slice(0, 6).map((sec) => {
