@@ -358,3 +358,38 @@ body {
 .lp-btn-light:hover { background: #ffffff; transform: translateY(-1px); }
 .lp-btn-light-ghost { background: transparent; color: rgba(245, 242, 234, 0.7); border-color: rgba(245, 242, 234, 0.18); }
 .lp-btn-light-ghost:hover { color: #f5f2ea; border-color: rgba(245, 242, 234, 0.45); }
+
+/* ── Threads: a still dot grid behind the canvas, fading toward the edges; the composer's send square. ── */
+.threads-canvas { background: #fff; isolation: isolate; }
+.threads-canvas::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(21, 22, 29, 0.09) 1px, transparent 1.2px);
+  background-size: 16px 16px;
+  background-position: center;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 45%, black 0%, rgba(0, 0, 0, 0.55) 45%, transparent 85%);
+}
+.send-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-left: 2px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: rgba(21, 22, 29, 0.07);
+  color: var(--ink-faint);
+  transition: background-color 140ms ease, color 140ms ease, transform 120ms ease, box-shadow 140ms ease;
+}
+.send-btn-on {
+  background: var(--gold);
+  color: var(--midnight);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.14), 0 1px 2px rgba(138, 100, 36, 0.35);
+}
+.send-btn-on:hover { background: #e2ac3f; }
+.send-btn-on:active { transform: scale(0.94); }
+.send-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(233, 182, 76, 0.4); }

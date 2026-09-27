@@ -8,7 +8,7 @@ import { fmtBag, shortAddr, timeUntil, type ApiMoonlet } from "@/lib/api";
 import { AppDataProvider, useAppData } from "@/lib/app-data";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
-import { Orbit, Rocket, Cable, Telescope, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, ExternalLink, Trash2, type LucideIcon } from "lucide-react";
+import { Orbit, Rocket, Cable, Telescope, MessagesSquare, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, ExternalLink, Trash2, type LucideIcon } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -16,10 +16,11 @@ import type { OrbioStatus } from "@/lib/api";
 
 const NAV: Array<{ href: string; label: string; icon: LucideIcon; match: (p: string) => boolean }> = [
   { href: "/app", label: "Moonlets", icon: Orbit, match: (p) => p === "/app" },
+  { href: "/app/threads", label: "Threads", icon: MessagesSquare, match: (p) => p.startsWith("/app/threads") },
   { href: "/app/connections", label: "Connections", icon: Cable, match: (p) => p.startsWith("/app/connections") },
   { href: "/sky", label: "The sky", icon: Telescope, match: (p) => p.startsWith("/sky") || p.startsWith("/s/") },
 ];
-const MOBILE_NAV = [NAV[0], { href: "/app/new", label: "Launch", icon: Rocket, match: (p: string) => p.startsWith("/app/new") }, NAV[1], NAV[2]];
+const MOBILE_NAV = [NAV[0], NAV[1], { href: "/app/new", label: "Launch", icon: Rocket, match: (p: string) => p.startsWith("/app/new") }, NAV[2], NAV[3]];
 
 /**
  * Signed-in shell. Desktop: one fixed sidebar (nav, the moonlet list grouped by state, the account) and one main pane;
@@ -153,9 +154,9 @@ function groupMoonlets(all: ApiMoonlet[]): Array<[string, ApiMoonlet[]]> {
 export function MobileTabs({ pathname }: { pathname: string }) {
   return (
     <nav aria-label="App" className="fixed inset-x-0 bottom-0 z-30 border-t border-ink/10 bg-cream/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden">
-      <ul className="mx-auto grid max-w-[640px] grid-cols-4">
+      <ul className="mx-auto grid max-w-[640px] grid-cols-5">
         {MOBILE_NAV.map((t) => {
-          const active = t.href === "/app" ? pathname.startsWith("/app") && !pathname.startsWith("/app/connections") && !pathname.startsWith("/app/new") : t.match(pathname);
+          const active = t.href === "/app" ? pathname.startsWith("/app") && !pathname.startsWith("/app/connections") && !pathname.startsWith("/app/new") && !pathname.startsWith("/app/threads") : t.match(pathname);
           return (
             <li key={t.href}>
               <Link href={t.href} className={`flex flex-col items-center gap-1 py-2.5 text-[10.5px] font-medium ${active ? "text-ink" : "text-ink-soft"}`}>
