@@ -93,10 +93,11 @@ async function retitle(key: string, threadId: string, owner: string) {
   const reply = msgs.find((m) => m.role === "moonlet")?.text ?? "";
   const r = await complete(key, {
     model: TITLE_MODEL,
-    max_tokens: 30,
+    max_tokens: 400,
+    reasoning: { effort: "low" },
     messages: [{ role: "user", content: `Write a 2-6 word title for this task, sentence case, no quotes or trailing period.\nTask: ${first.slice(0, 800)}\nResult: ${reply.slice(0, 400)}` }],
   }).catch(() => null);
-  const title = r?.ok ? (r.j.choices![0].message?.content ?? "").replace(/["“”.]/g, "").trim().slice(0, 70) : "";
+  const title = r?.ok ? (r.j.choices![0].message?.content ?? "").split("\n").map((l) => l.replace(/["“”*#.]/g, "").replace(/^title:\s*/i, "").trim()).find(Boolean)?.slice(0, 70) ?? "" : "";
   if (title) await ts.updateThread(threadId, { title });
   const c = r?.j.usage?.cost ?? 0;
   if (c > 0) {
