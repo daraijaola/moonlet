@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
+import { LiveDesktop } from "@/components/live-desktop";
 import { MoonletMark, Wordmark } from "@/components/logo";
 import { Cable, Orbit, Rocket, Telescope } from "lucide-react";
 import { ArrowDown, ChartLine, ChevronLeft, CircleDollarSign, MessageCircle, PanelLeft, Check, ChevronRight, Copy, Download, Ellipsis, Files, Pencil, RotateCw, Trash2, Globe, ListTree, Monitor, PanelLeftClose, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
@@ -56,6 +57,14 @@ export default function ThreadsPage() {
   const [viewer, setViewer] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"menu" | "cost" | null>(null);
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const q = window.matchMedia("(min-width: 1280px)");
+    const on = () => setWide(q.matches);
+    on();
+    q.addEventListener("change", on);
+    return () => q.removeEventListener("change", on);
+  }, []);
   const [rowSheet, setRowSheet] = useState<ApiThread | null>(null);
   const press = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({ timer: null, fired: false });
   const holdStart = (t: ApiThread) => (e: React.PointerEvent) => {
@@ -370,9 +379,9 @@ export default function ThreadsPage() {
             </button>
           </div>
         )}
-        {activeId && activeId !== "pending" && (pane === "computer" || pane === "files") && (
+        {!wide && activeId && activeId !== "pending" && (pane === "computer" || pane === "files") && (
           <div className="min-h-0 flex-1 overflow-y-auto xl:hidden">
-            {pane === "computer" && <ComputerView threadId={activeId} awake={machineState === "awake"} live={working} />}
+            {pane === "computer" && <ComputerView threadId={activeId} awake={machineState === "awake"} live={working} onTakeControl={() => api.stopThread(owner, activeId).then(() => loadDetail(activeId))} />}
             {pane === "files" && <FilesView owner={owner} threadId={activeId} fileUrl={fileUrl} />}
           </div>
         )}
@@ -477,7 +486,7 @@ export default function ThreadsPage() {
         )}
       </div>
 
-      {activeId && activeId !== "pending" && pane && (
+      {wide && activeId && activeId !== "pending" && pane && (
         <aside className="hidden w-[440px] shrink-0 flex-col border-l border-ink/[0.08] bg-white xl:flex">
           <div className="flex h-12 shrink-0 items-center gap-1 border-b border-ink/[0.07] px-2">
             {(["overview", "computer", "files"] as const).map((p) => (
@@ -497,7 +506,7 @@ export default function ThreadsPage() {
                 <PaneRow icon={Files} title="Files" sub="What it saved in ~/work" onClick={() => setPane("files")} />
               </div>
             )}
-            {pane === "computer" && <ComputerView threadId={activeId} awake={machineState === "awake"} live={working} />}
+            {pane === "computer" && <ComputerView threadId={activeId} awake={machineState === "awake"} live={working} onTakeControl={() => api.stopThread(owner, activeId).then(() => loadDetail(activeId))} />}
             {pane === "files" && <FilesView owner={owner} threadId={activeId} fileUrl={fileUrl} />}
           </div>
         </aside>
@@ -691,13 +700,15 @@ function PaneRow({ icon: Icon, title, sub, status, dot, onClick }: { icon: typeo
   );
 }
 
-function ComputerView({ threadId, awake, live }: { threadId: string; awake: boolean; live: boolean }) {
+function ComputerView({ threadId, awake, live, onTakeControl }: { threadId: string; awake: boolean; live: boolean; onTakeControl: () => Promise<unknown> }) {
   const [n, setN] = useState(0);
+  const [stream, setStream] = useState(true);
+  const [control, setControl] = useState(false);
   useEffect(() => {
-    if (!awake) return;
+    if (!awake || stream) return;
     const id = setInterval(() => setN((x) => x + 1), live ? 1000 : 5000);
     return () => clearInterval(id);
-  }, [awake, live]);
+  }, [awake, live, stream]);
   if (!awake)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -707,13 +718,34 @@ function ComputerView({ threadId, awake, live }: { threadId: string; awake: bool
       </div>
     );
   return (
-    <div className="relative p-3">
-      <span className="absolute right-5 top-5 z-10 inline-flex items-center gap-1.5 rounded-md bg-white/90 px-2 py-0.5 text-[11.5px] font-medium text-ink shadow-[0_1px_2px_rgba(21,22,29,0.1)]">
-        <span className={`h-1.5 w-1.5 rounded-full ${live ? "animate-pulse bg-moss" : "bg-ink-faint"}`} />
-        {live ? "Live" : "Idle"}
-      </span>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={`/api/threads/${threadId}/screen?n=${n}`} alt="The moonlet's screen" className="w-full rounded-lg border border-ink/[0.08] bg-night" />
+    <div className="p-3">
+      <div className="mb-2.5 flex items-center gap-2">
+        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-soft">
+          <span className={`h-1.5 w-1.5 rounded-full ${control ? "bg-gold" : live ? "animate-pulse bg-moss" : "bg-ink-faint"}`} />
+          {control ? "You're in control" : live ? "Moonlet is working" : "Idle"}
+        </span>
+        {stream && (
+          <button
+            type="button"
+            onClick={async () => {
+              if (control) return setControl(false);
+              if (live && !window.confirm("Taking control stops the moonlet's current task. Continue?")) return;
+              if (live) await onTakeControl();
+              setControl(true);
+            }}
+            className={`ml-auto inline-flex h-8 items-center rounded-lg px-3 text-[12.5px] font-medium transition-colors ${control ? "bg-ink text-cream" : "border border-ink/[0.12] bg-white text-ink hover:border-ink/[0.3]"}`}
+          >
+            {control ? "Done" : "Take control"}
+          </button>
+        )}
+      </div>
+      {stream ? (
+        <LiveDesktop threadId={threadId} control={control} onFail={() => { setControl(false); setStream(false); }} />
+      ) : (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={`/api/threads/${threadId}/screen?n=${n}`} alt="The moonlet's screen" className="w-full rounded-lg border border-ink/[0.08] bg-night" />
+      )}
+      {control && <p className="mt-2 text-[12px] leading-[1.5] text-ink-faint">Click and type straight into the computer. Tap Done, then tell the moonlet to carry on.</p>}
     </div>
   );
 }

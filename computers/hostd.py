@@ -1,4 +1,4 @@
-import asyncio, json, os, re, subprocess, time
+import asyncio, hashlib, hmac, json, os, re, subprocess, time
 import httpx, websockets
 from fastapi import FastAPI, HTTPException, Request, WebSocket, Depends
 from fastapi.responses import Response
@@ -145,9 +145,21 @@ async def browser(sid: str, op: str, req: Request):
     return await forward(sid, req.method, f"/browser/{op}", req)
 
 
+def ticket_ok(sid: str, ticket: str) -> bool:
+    """A short-lived pass minted by the web app for one sandbox: "<exp_ms>.<hex hmac of sid.exp>"."""
+    try:
+        exp, mac = ticket.split(".", 1)
+        if int(exp) < time.time() * 1000:
+            return False
+    except ValueError:
+        return False
+    want = hmac.new(TOKEN.encode(), f"{sid}.{exp}".encode(), hashlib.sha256).hexdigest()
+    return hmac.compare_digest(want, mac)
+
+
 @app.websocket("/v1/sandboxes/{sid}/vnc")
-async def vnc(ws: WebSocket, sid: str, token: str = ""):
-    if token != TOKEN:
+async def vnc(ws: WebSocket, sid: str, token: str = "", ticket: str = ""):
+    if token != TOKEN and not ticket_ok(sid, ticket):
         await ws.close(code=4401)
         return
     s = state(sid)

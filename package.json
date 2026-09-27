@@ -12,6 +12,7 @@
   "dependencies": {
     "@libsql/client": "^0.18.0",
     "@metamask/sdk": "^0.34.0",
+    "@novnc/novnc": "^1.7.0",
     "@paper-design/shaders-react": "0.0.80",
     "@walletconnect/ethereum-provider": "^2.24.0",
     "docx": "^9.7.1",
