@@ -468,10 +468,10 @@ function Detail({ m, all, owner, onChange, conns, launched, askDelete, status }:
             />
             <button
               type="button"
-              onClick={togglePanel}
+              onClick={() => (window.matchMedia("(min-width: 1024px)").matches ? togglePanel() : setTab(tab === "overview" ? "report" : "overview"))}
               aria-pressed={panelOpen}
               title={panelOpen ? "Hide overview" : "Show overview"}
-              className={`ui-btn ui-btn-icon hidden lg:inline-flex ${panelOpen ? "bg-ink/[0.07] text-ink" : "text-ink-soft"}`}
+              className={`ui-btn ui-btn-icon ${panelOpen ? "lg:bg-ink/[0.07] lg:text-ink" : "lg:text-ink-soft"} ${tab === "overview" ? "max-lg:bg-ink/[0.07] max-lg:text-ink" : "max-lg:text-ink-soft"}`}
             >
               <PanelRight size={15} strokeWidth={1.75} />
             </button>

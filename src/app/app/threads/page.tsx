@@ -56,6 +56,21 @@ export default function ThreadsPage() {
   const [viewer, setViewer] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
   const [sheet, setSheet] = useState<"menu" | "cost" | null>(null);
+  const [rowSheet, setRowSheet] = useState<ApiThread | null>(null);
+  const press = useRef<{ timer: ReturnType<typeof setTimeout> | null; fired: boolean }>({ timer: null, fired: false });
+  const holdStart = (t: ApiThread) => (e: React.PointerEvent) => {
+    if (e.pointerType === "mouse") return;
+    press.current.fired = false;
+    press.current.timer = setTimeout(() => {
+      press.current.fired = true;
+      navigator.vibrate?.(10);
+      setRowSheet(t);
+    }, 450);
+  };
+  const holdEnd = () => {
+    if (press.current.timer) clearTimeout(press.current.timer);
+    press.current.timer = null;
+  };
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -178,6 +193,7 @@ export default function ThreadsPage() {
   };
 
   const remove = async (id: string) => {
+    if (!window.confirm("Delete this thread? Its files go too.")) return;
     await api.deleteThread(owner, id).catch(() => undefined);
     if (activeId === id) newThread();
     loadList();
@@ -244,7 +260,15 @@ export default function ThreadsPage() {
         {threads?.length === 0 && <li className="px-2 py-1.5 text-[12.5px] leading-[1.5] text-ink-faint">No threads yet.</li>}
         {threads?.map((t) => (
           <li key={t.id} className="group relative">
-            <button type="button" onClick={() => open(t)} className={`flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left max-lg:gap-3 max-lg:px-3 max-lg:py-2.5 transition-colors ${t.id === activeId ? "bg-ink/[0.06]" : "hover:bg-ink/[0.04]"}`}>
+            <button
+              type="button"
+              onClick={() => { if (press.current.fired) { press.current.fired = false; return; } open(t); }}
+              onPointerDown={holdStart(t)}
+              onPointerUp={holdEnd}
+              onPointerMove={(e) => { if (Math.abs(e.movementX) + Math.abs(e.movementY) > 4) holdEnd(); }}
+              onPointerCancel={holdEnd}
+              onContextMenu={(e) => { e.preventDefault(); holdEnd(); if (window.matchMedia("(min-width: 1024px)").matches) setMenu(t.id); else { press.current.fired = true; setRowSheet(t); } }}
+              className={`flex w-full select-none items-start gap-2 rounded-lg [-webkit-touch-callout:none] px-2 py-1.5 text-left max-lg:gap-3 max-lg:px-3 max-lg:py-2.5 transition-colors ${t.id === activeId ? "bg-ink/[0.06]" : "hover:bg-ink/[0.04]"}`}>
               <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full max-lg:mt-[9px] max-lg:h-2 max-lg:w-2 ${t.status === "working" ? "animate-pulse bg-gold" : t.status === "failed" ? "bg-[#b91c1c]/60" : "bg-ink/20"}`} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[13px] text-ink max-lg:text-[15px]">{t.title}</span>
@@ -505,6 +529,25 @@ export default function ThreadsPage() {
                   </div>
                 </>
               )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+      <AnimatePresence>
+        {rowSheet && (
+          <div className="fixed inset-0 z-50 lg:hidden">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }} className="absolute inset-0 bg-ink/30" onClick={() => setRowSheet(null)} />
+            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 480, damping: 42 }} className="absolute inset-x-0 bottom-0 rounded-t-[20px] bg-white pb-[max(14px,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_-16px_rgba(21,22,29,0.4)]">
+              <div className="mx-auto mb-1 mt-2.5 h-1 w-10 rounded-full bg-ink/15" aria-hidden />
+              <div className="px-5 pb-2 pt-2">
+                <p className="truncate text-[15px] font-medium text-ink">{rowSheet.title}</p>
+                <p className="mt-0.5 text-[12.5px] text-ink-faint">{modelName(rowSheet.model)} · ${rowSheet.spentUsd.toFixed(rowSheet.spentUsd < 0.1 ? 3 : 2)} spent · {ago(rowSheet.updatedAt)}</p>
+              </div>
+              <div className="mx-5 mb-1 h-px bg-ink/[0.07]" />
+              <button type="button" onClick={async () => { const t = rowSheet; setRowSheet(null); const name = window.prompt("Rename thread", t.title)?.trim(); if (name) { await api.renameThread(owner, t.id, name); loadList(); if (t.id === activeId) loadDetail(t.id); } }} className="flex w-full items-center gap-3.5 px-5 h-12 text-left text-[15px] text-ink active:bg-ink/[0.05]"><Pencil size={17} strokeWidth={1.6} className="shrink-0 text-ink-soft" /> Rename</button>
+              <button type="button" onClick={async () => { const t = rowSheet; setRowSheet(null); await api.retitleThread(owner, t.id).catch(() => undefined); loadList(); if (t.id === activeId) loadDetail(t.id); }} className="flex w-full items-center gap-3.5 px-5 h-12 text-left text-[15px] text-ink active:bg-ink/[0.05]"><RotateCw size={17} strokeWidth={1.6} className="shrink-0 text-ink-soft" /> Regenerate title</button>
+              <div className="mx-5 my-1.5 h-px bg-ink/[0.07]" />
+              <button type="button" onClick={() => { const t = rowSheet; setRowSheet(null); remove(t.id); }} className="flex w-full items-center gap-3.5 px-5 h-12 text-left text-[15px] text-ink active:bg-ink/[0.05] !text-[#b91c1c]"><Trash2 size={17} strokeWidth={1.6} className="shrink-0" /> Delete</button>
             </motion.div>
           </div>
         )}

@@ -12,17 +12,23 @@ export function AppDataProvider({ owner, children }: { owner: string; children: 
   const [status, setStatus] = useState<OrbioStatus | null>(null);
   const [conns, setConns] = useState<Connections | null>(null);
   const reload = useCallback(async () => {
-    const [m, s, c] = await Promise.all([api.listMoonlets(owner), api.orbioStatus(owner).catch(() => null), api.connections(owner).catch(() => null)]);
-    setMoonlets(m.moonlets);
-    setStatus(s);
-    setConns(c);
+    await Promise.all([
+      api.listMoonlets(owner).then((m) => setMoonlets(m.moonlets)),
+      api.orbioStatus(owner).then(setStatus, () => undefined),
+      api.connections(owner).then(setConns, () => undefined),
+    ]);
   }, [owner]);
+  const reloadMoonlets = useCallback(() => api.listMoonlets(owner).then((m) => setMoonlets(m.moonlets), () => undefined), [owner]);
   const anyRunning = !!moonlets?.some((m) => m.status === "running");
   useEffect(() => {
+    const t = setInterval(reloadMoonlets, anyRunning ? 4000 : 15_000);
+    return () => clearInterval(t);
+  }, [reloadMoonlets, anyRunning]);
+  useEffect(() => {
     const first = setTimeout(reload, 0);
-    const t = setInterval(reload, anyRunning ? 4000 : 15_000);
+    const t = setInterval(reload, 60_000);
     return () => { clearTimeout(first); clearInterval(t); };
-  }, [reload, anyRunning]);
+  }, [reload]);
   const value = useMemo(() => ({ moonlets, status, conns, reload }), [moonlets, status, conns, reload]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

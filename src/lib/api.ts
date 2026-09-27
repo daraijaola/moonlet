@@ -129,6 +129,8 @@ async function req<T>(owner: string | null, path: string, init?: RequestInit): P
   return json;
 }
 
+const statusInflight = new Map<string, Promise<OrbioStatus>>();
+
 export const api = {
   threads: (owner: string) => req<{ threads: ApiThread[] }>(owner, "/api/threads"),
   thread: (owner: string, id: string) => req<{ thread: ApiThread; messages: ApiThreadMessage[]; steps: ApiThreadStep[] }>(owner, `/api/threads/${id}`),
@@ -140,7 +142,13 @@ export const api = {
   deleteThread: (owner: string, id: string) => req<{ deleted: boolean }>(owner, `/api/threads/${id}`, { method: "DELETE" }),
   threadComputer: (owner: string, id: string) => req<{ status: string; cpu?: string; mem?: string; disk_bytes?: number; created_at?: string; started_at?: string }>(owner, `/api/threads/${id}/computer`),
   threadFiles: (owner: string, id: string) => req<{ entries: Array<{ name: string; dir: boolean; size: number }> }>(owner, `/api/threads/${id}/files`),
-  orbioStatus: (owner: string) => req<OrbioStatus>(owner, "/api/orbio/status"),
+  orbioStatus: (owner: string) => {
+    const hit = statusInflight.get(owner);
+    if (hit) return hit;
+    const p = req<OrbioStatus>(owner, "/api/orbio/status").finally(() => setTimeout(() => statusInflight.delete(owner), 1500));
+    statusInflight.set(owner, p);
+    return p;
+  },
   orbioDisconnect: (owner: string) => req<{ ok: boolean }>(owner, "/api/orbio/status", { method: "DELETE" }),
   orbioSignKey: (owner: string, signature: string, epoch: number) => req<{ ok: boolean; epoch: number }>(owner, "/api/orbio/key", { method: "POST", body: JSON.stringify({ signature, epoch }) }),
   orbioActivate: async (owner: string, txHash: string, proposalId: string | null) => {

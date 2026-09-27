@@ -42,7 +42,7 @@ export function OverviewPanel({ m, runs, status, running, earnAll, burnAll, sett
   const share = earnAll > 0 ? Math.min(1, burnAll / earnAll) : 0;
   const modelName = m.spec.model && m.spec.model !== "auto" ? m.spec.model.split("/").pop()! : lastBilled ? `auto · ${lastBilled.model.split("/").pop()}` : "auto";
 
-  const nextLine = m.status === "paused" ? "Paused" : running ? "Running now" : m.status === "quiet" ? "Quiet" : `Next run ${timeUntil(m.nextRunAt) === "now" ? "any moment" : `in ${timeUntil(m.nextRunAt)}`}`;
+  const nextLine = m.status === "paused" ? "Paused" : running ? "Running now" : m.status === "quiet" ? "Quiet" : `Next run ${timeUntil(m.nextRunAt) === "now" ? "any moment" : timeUntil(m.nextRunAt)}`;
   const nextHint = m.status === "paused"
     ? "Resume to put it back on schedule."
     : m.status === "quiet"
