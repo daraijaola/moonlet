@@ -6,7 +6,7 @@ import { useAuth } from "@/lib/auth";
 import { api, type ApiThread, type ApiThreadMessage, type ApiThreadStep } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
 import { DitherMark } from "@/components/dither-mark";
-import { LightMarkdown } from "@/components/light-markdown";
+import { ThreadMarkdown } from "@/components/thread-markdown";
 import { threadModel } from "@/moonlet/thread-models";
 import { ThinkingMark } from "@/components/thinking-mark";
 import { MACHINE_SPEC, ThreadComposer, type Attachment, type Effort, type Machine } from "@/components/thread-composer";
@@ -318,7 +318,7 @@ export default function ThreadsPage() {
                     <li key={msg.id} className="min-w-0">
                       {steps.length > 0 && <StepList steps={steps} label={`Worked for ${dur(msg.createdAt - startedAt)}`} onShot={setViewer} />}
                       <div className="thread-md text-[14px] leading-[1.65] text-ink">
-                        <LightMarkdown text={msg.text} />
+                        <ThreadMarkdown text={msg.text} />
                       </div>
                       {msg.files.filter(isImage).length > 0 && (
                         <div className={`mt-3 grid gap-3 ${msg.files.filter(isImage).length > 1 ? "sm:grid-cols-2" : ""}`}>
