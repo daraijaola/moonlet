@@ -148,16 +148,41 @@ def _ensure_browser(url: str | None = None):
                 break
             time.sleep(0.25)
         time.sleep(1.0)
+        _close_extension_tabs()
         return True
     return False
 
 
-def _page_ws():
+def _pages():
     with urllib.request.urlopen(f"{CDP}/json", timeout=3) as r:
-        pages = [p for p in _json.loads(r.read()) if p.get("type") == "page"]
-    if not pages:
+        return [p for p in _json.loads(r.read()) if p.get("type") == "page"]
+
+
+def _page_ws():
+    pages = _pages()
+    web = [p for p in pages if not p.get("url", "").startswith("chrome-extension://")]
+    page = (web or pages or [None])[0]
+    if not page:
         raise HTTPException(500, "no browser tab")
-    return pages[0]["webSocketDebuggerUrl"]
+    try:
+        urllib.request.urlopen(f"{CDP}/json/activate/{page['id']}", timeout=2)
+    except Exception:
+        pass
+    return page["webSocketDebuggerUrl"]
+
+
+def _close_extension_tabs():
+    """MetaMask opens its onboarding tab on first launch; close it so it never steals focus from the page being worked on."""
+    for _ in range(12):
+        tabs = [p for p in _pages() if p.get("url", "").startswith("chrome-extension://")]
+        if tabs:
+            for p in tabs:
+                try:
+                    urllib.request.urlopen(f"{CDP}/json/close/{p['id']}", timeout=2)
+                except Exception:
+                    pass
+            return
+        time.sleep(0.25)
 
 
 def _cdp(method: str, params: dict | None = None, timeout=20):
