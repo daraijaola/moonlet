@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { ChartLine, Globe, ListFilter, MessageSquarePlus, PanelLeft, Radar, Wallet, X } from "lucide-react";
+import { ChartLine, Globe, MessageSquarePlus, PanelLeftClose, PanelLeftOpen, Radar, SquarePen, Wallet, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
@@ -65,6 +65,15 @@ export default function ThreadsPage() {
   const threads = useThreads();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [listOpen, setListOpen] = useState(false);
+  const [collapsed, setCollapsedState] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setCollapsedState(localStorage.getItem("moonlet.threads.collapsed") === "1"));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const setCollapsed = (v: boolean) => {
+    setCollapsedState(v);
+    localStorage.setItem("moonlet.threads.collapsed", v ? "1" : "0");
+  };
   const [model, setModel] = useState<ModelChoice>("auto");
   const [effort, setEffort] = useState<Effort>("medium");
   const [machine, setMachine] = useState<Machine>("standard");
@@ -111,8 +120,8 @@ export default function ThreadsPage() {
       <div className="flex h-14 shrink-0 items-center justify-between px-3">
         <p className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">Threads</p>
         <div className="flex items-center gap-0.5">
-          <button type="button" className="ui-btn ui-btn-ghost ui-btn-icon h-7 w-7 rounded-md" aria-label="Filter threads" title="Filter">
-            <ListFilter size={14} strokeWidth={1.8} />
+          <button type="button" onClick={() => setCollapsed(true)} className="ui-btn ui-btn-ghost ui-btn-icon h-7 w-7 rounded-md max-lg:!hidden" aria-label="Hide threads" title="Hide threads">
+            <PanelLeftClose size={15} strokeWidth={1.8} />
           </button>
           <button type="button" onClick={() => setListOpen(false)} className="ui-btn ui-btn-ghost ui-btn-icon h-7 w-7 rounded-md lg:!hidden" aria-label="Close">
             <X size={15} strokeWidth={1.8} />
@@ -170,7 +179,7 @@ export default function ThreadsPage() {
 
   return (
     <section className="flex h-full min-h-0 flex-1">
-      <aside className="hidden w-[248px] shrink-0 border-r border-ink/[0.07] bg-paper/60 lg:block">{list}</aside>
+      {!collapsed && <aside className="hidden w-[248px] shrink-0 border-r border-ink/[0.07] bg-paper/60 lg:block">{list}</aside>}
 
       {listOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
@@ -180,20 +189,17 @@ export default function ThreadsPage() {
       )}
 
       <div className="threads-canvas relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className="z-10 flex h-14 shrink-0 items-center gap-2 border-b border-ink/[0.07] bg-white/80 px-3 backdrop-blur sm:px-5">
-          <button type="button" onClick={() => setListOpen(true)} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg lg:!hidden" aria-label="Threads">
-            <PanelLeft size={17} strokeWidth={1.8} />
+        <div className={`absolute left-3 top-3 z-20 flex items-center gap-0.5 rounded-xl border border-ink/[0.08] bg-white/85 p-0.5 shadow-[0_1px_2px_rgba(21,22,29,0.05)] backdrop-blur ${collapsed ? "" : "lg:hidden"}`}>
+          <button type="button" onClick={() => (window.matchMedia("(min-width: 1024px)").matches ? setCollapsed(false) : setListOpen(true))} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg" aria-label="Show threads" title="Threads">
+            <PanelLeftOpen size={16} strokeWidth={1.8} />
           </button>
-          <h1 className="min-w-0 truncate text-[15px] font-semibold tracking-[-0.01em] text-ink">{active ? active.title : "New thread"}</h1>
-          {active && (
-            <button type="button" onClick={newThread} className="ui-btn ui-btn-sm ml-auto">
-              <MessageSquarePlus size={14} strokeWidth={1.8} /> New
-            </button>
-          )}
+          <button type="button" onClick={newThread} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg" aria-label="New thread" title="New thread">
+            <SquarePen size={15} strokeWidth={1.8} />
+          </button>
         </div>
 
         {!active ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 pb-8 pt-6 sm:px-6">
+          <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 pb-8 pt-16 sm:px-6">
             <div className="my-auto w-full max-w-[720px]">
               <div className="flex flex-col items-center text-center">
                 <DitherMark size={198} cell={3} className="max-sm:!h-[150px] max-sm:!w-[150px]" />
@@ -222,7 +228,8 @@ export default function ThreadsPage() {
         ) : (
           <>
             <div className="min-h-0 flex-1 overflow-y-auto px-4 [scrollbar-width:thin] sm:px-6">
-              <ul className="mx-auto flex w-full max-w-[720px] flex-col gap-5 py-6">
+              <ul className="mx-auto flex w-full max-w-[720px] flex-col gap-5 pb-6 pt-16">
+                <li className="text-center font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">{active.title}</li>
                 {active.messages.map((msg) =>
                   msg.role === "user" ? (
                     <li key={msg.id} className="flex justify-end">
