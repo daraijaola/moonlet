@@ -10,7 +10,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   try {
     const info = await computers.info(r.t.id);
     if (info.status !== "running") return bad("asleep", 409);
-    const bytes = shot && /^\.moonlet\/steps\/\d+\.jpg$/.test(shot) ? await computers.readFile(r.t.id, shot) : await computers.screenshot(r.t.id);
+    const bytes = shot && /^work\/shots\/screen-\d+\.jpg$/.test(shot) ? await computers.readFile(r.t.id, shot) : await computers.screenshot(r.t.id);
     return new Response(new Uint8Array(bytes), { headers: { "content-type": "image/jpeg", "cache-control": "no-store" } });
   } catch (e) {
     return bad((e as Error).message.slice(0, 200), 502);

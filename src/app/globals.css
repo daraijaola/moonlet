@@ -393,3 +393,13 @@ body {
 .send-btn-on:hover { background: #e2ac3f; }
 .send-btn-on:active { transform: scale(0.94); }
 .send-btn:focus-visible { outline: none; box-shadow: 0 0 0 3px rgba(233, 182, 76, 0.4); }
+.shimmer-text {
+  color: transparent;
+  background: linear-gradient(90deg, var(--ink-faint) 0%, var(--ink-faint) 40%, var(--ink) 50%, var(--ink-faint) 60%, var(--ink-faint) 100%);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: shimmer 1.8s linear infinite;
+}
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+@media (prefers-reduced-motion: reduce) { .shimmer-text { animation: none; color: var(--ink-soft); } }

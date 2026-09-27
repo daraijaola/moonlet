@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChartLine, ChevronRight, Files, Globe, ListTree, Monitor, PanelLeftClose, PanelLeftOpen, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
+import { ChartLine, Check, ChevronRight, Copy, Files, Globe, ListTree, Monitor, PanelLeftClose, PanelLeftOpen, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api, type ApiThread, type ApiThreadMessage, type ApiThreadStep } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
@@ -9,6 +9,7 @@ import type { ModelChoice } from "@/moonlet/spec";
 import { DitherMark } from "@/components/dither-mark";
 import { LightMarkdown } from "@/components/light-markdown";
 import { MODEL_LABEL } from "@/components/labels";
+import { VENDOR_MARK } from "@/components/marks";
 import { ThinkingMark } from "@/components/thinking-mark";
 import { MACHINE_SPEC, ThreadComposer, type Effort, type Machine } from "@/components/thread-composer";
 
@@ -285,32 +286,35 @@ export default function ThreadsPage() {
                       <div className="thread-md text-[14px] leading-[1.65] text-ink">
                         <LightMarkdown text={msg.text} />
                       </div>
-                      {msg.files.length > 0 && (
-                        <div className="mt-2.5 flex flex-wrap gap-2">
-                          {msg.files.map((f) =>
-                            isImage(f) ? (
-                              <a key={f} href={fileUrl(f)} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-ink/[0.08]">
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img src={fileUrl(f)} alt={f.split("/").pop()} className="max-h-[360px] max-w-full" />
-                              </a>
-                            ) : (
-                              <a key={f} href={fileUrl(f)} className="inline-flex items-center gap-1.5 rounded-md border border-ink/[0.1] bg-white px-2 py-1 text-[12.5px] text-ink hover:border-ink/[0.25]">
-                                <Files size={13} strokeWidth={1.8} /> {f.split("/").pop()}
-                              </a>
-                            ),
-                          )}
+                      {msg.files.filter(isImage).length > 0 && (
+                        <div className={`mt-3 grid gap-2 ${msg.files.filter(isImage).length > 1 ? "sm:grid-cols-2" : ""}`}>
+                          {msg.files.filter(isImage).map((f) => (
+                            <a key={f} href={fileUrl(f)} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-lg border border-ink/[0.08] bg-paper">
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img src={fileUrl(f)} alt={f.split("/").pop()} className="w-full" loading="lazy" />
+                            </a>
+                          ))}
                         </div>
                       )}
-                      <p className="mt-1.5 text-[11.5px] text-ink-faint">{msg.model ? modelName(msg.model) : ""}</p>
+                      {msg.files.filter((f) => !isImage(f)).length > 0 && (
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          {msg.files.filter((f) => !isImage(f)).map((f) => (
+                            <a key={f} href={fileUrl(f)} className="inline-flex items-center gap-1.5 rounded-md border border-ink/[0.1] bg-white px-2 py-1 text-[12.5px] text-ink hover:border-ink/[0.25]">
+                              <Files size={13} strokeWidth={1.8} /> {f.split("/").pop()}
+                            </a>
+                          ))}
+                        </div>
+                      )}
+                      <MessageFooter text={msg.text} model={msg.model} />
                     </li>
                   ),
                 )}
                 {working && (
                   <li className="min-w-0">
                     {liveSteps.length > 0 && <StepList steps={liveSteps} label="Working" threadId={activeId} open />}
-                    <div className="flex items-center gap-2 text-[13px] text-ink-soft">
-                      <ThinkingMark size={20} />
-                      {detail?.thread.status === "stopping" ? "Stopping…" : liveSteps.at(-1)?.summary ?? "Starting its computer…"}
+                    <div className="flex min-w-0 items-center gap-2 text-[13px]">
+                      <ThinkingMark size={16} className="shrink-0" />
+                      <span className="shimmer-text truncate">{detail?.thread.status === "stopping" ? "Stopping…" : liveSteps.at(-1)?.summary ?? "Waking its computer…"}</span>
                     </div>
                   </li>
                 )}
@@ -356,11 +360,40 @@ export default function ThreadsPage() {
   );
 }
 
+function MessageFooter({ text, model }: { text: string; model: string | null }) {
+  const [copied, setCopied] = useState(false);
+  const label = model ? MODEL_LABEL[model as ModelChoice] : null;
+  const Mark = label ? VENDOR_MARK[label.vendor] : null;
+  return (
+    <div className="mt-2 flex items-center gap-2 text-[11.5px] text-ink-faint">
+      <button
+        type="button"
+        onClick={() => {
+          navigator.clipboard?.writeText(text).catch(() => undefined);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        }}
+        className="inline-flex h-6 w-6 items-center justify-center rounded-md outline-none transition-colors hover:bg-ink/[0.05] hover:text-ink focus-visible:ring-2 focus-visible:ring-gold/40"
+        aria-label="Copy reply"
+        title="Copy"
+      >
+        {copied ? <Check size={13} strokeWidth={2.2} /> : <Copy size={13} strokeWidth={1.8} />}
+      </button>
+      {model && (
+        <span className="inline-flex items-center gap-1.5">
+          {Mark && <Mark size={12} />}
+          {label?.name ?? model}
+        </span>
+      )}
+    </div>
+  );
+}
+
 function StepList({ steps, label, threadId, open = false }: { steps: ApiThreadStep[]; label: string; threadId: string; open?: boolean }) {
   const [show, setShow] = useState(open);
   return (
     <div className="mb-2.5">
-      <button type="button" onClick={() => setShow((v) => !v)} className="inline-flex items-center gap-1 text-[12.5px] text-ink-faint hover:text-ink-soft">
+      <button type="button" onClick={() => setShow((v) => !v)} className="inline-flex items-center gap-1 rounded text-[12.5px] text-ink-faint outline-none hover:text-ink-soft focus-visible:ring-2 focus-visible:ring-gold/40">
         {label}
         <ChevronRight size={13} strokeWidth={2} className={`transition-transform ${show ? "rotate-90" : ""}`} />
       </button>
