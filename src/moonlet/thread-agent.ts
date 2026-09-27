@@ -164,12 +164,7 @@ export async function runTurn(threadId: string) {
   const ghNote = gh?.token
     ? `\n\nGitHub is connected as @${gh.login}. GH_TOKEN is set in shell commands: use gh (gh repo clone, gh pr create, gh issue list) and git over https (run \`gh auth setup-git\` once). Work on the owner's repositories when asked: branch, commit, push and open pull requests. Never force-push, delete branches or repositories, or merge without being asked.`
     : "\n\nGitHub isn't connected; if a task needs the owner's private repos, say they can connect GitHub in Connections.";
-  const history = await ts.listMessages(threadId);
-  const messages: Msg[] = [{ role: "system", content: SYSTEM + ghNote }];
-  for (const m of history.slice(-12)) {
-    const files = m.role === "user" && m.files.length ? `\n\n[Files attached: ${m.files.map((f) => `~/${f}`).join(", ")}]` : "";
-    messages.push({ role: m.role === "user" ? "user" : "assistant", content: m.text + files });
-  }
+  const messages: Msg[] = [{ role: "system", content: SYSTEM + ghNote }, ...(await historyFor(threadId))];
 
   const describe = async (url: string) => {
     const r = await complete(key, {
@@ -323,4 +318,32 @@ export function startTurn(threadId: string) {
       await ts.updateThread(threadId, { status: "failed" });
     })
     .finally(() => running.delete(threadId));
+}
+
+const HISTORY_CHARS = 60_000;
+
+/**
+ * The conversation so far, newest kept first until the budget runs out. Each earlier moonlet reply carries a short log of
+ * what it did on the computer that turn (sites, commands, files), so follow-ups like "find it" or "send that" have context.
+ */
+export async function historyFor(threadId: string): Promise<Msg[]> {
+  const [history, steps] = await Promise.all([ts.listMessages(threadId), ts.listSteps(threadId)]);
+  const out: Msg[] = [];
+  let used = 0;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const m = history[i];
+    let text = m.text;
+    if (m.files.length) text += `\n\n[${m.role === "user" ? "Files attached" : "Files you shared"}: ${m.files.map((f) => `~/${f}`).join(", ")}]`;
+    if (m.role === "moonlet") {
+      const since = history.slice(0, i).reverse().find((x) => x.role === "user")?.createdAt ?? 0;
+      const did = steps.filter((st) => st.createdAt >= since && st.createdAt <= m.createdAt).map((st) => `- ${st.tool}: ${st.summary}`);
+      if (did.length && out.length < 16) text += `\n\n[What you did this turn:\n${did.slice(-15).join("\n")}]`;
+      if (m.text.startsWith("Stopped.")) text = `(The owner stopped this turn before it finished.)${text.slice(8)}`;
+    }
+    if (used + text.length > HISTORY_CHARS && out.length > 0) break;
+    used += text.length;
+    out.unshift({ role: m.role === "user" ? "user" : "assistant", content: text });
+  }
+  while (out.length && out[0].role !== "user") out.shift();
+  return out;
 }
