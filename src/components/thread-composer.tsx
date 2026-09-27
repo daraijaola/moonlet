@@ -10,6 +10,7 @@ import { MicButton, VoiceRecorder, useVoiceSupported } from "./voice-button";
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type Effort = (typeof EFFORTS)[number];
 const EFFORT_LABEL: Record<Effort, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
+const EFFORT_SHORT: Record<Effort, string> = { low: "Low", medium: "Med", high: "High", xhigh: "X-high", max: "Max" };
 
 export const MACHINES = ["standard", "large"] as const;
 export type Machine = (typeof MACHINES)[number];
@@ -49,8 +50,8 @@ export function ThreadModelPicker({ value, onChange }: { value: string; onChange
   const root = useDismiss(open, () => setOpen(false));
   const cur = threadModel(value);
   return (
-    <div ref={root} className="relative">
-      <button type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={open} aria-label={`Model: ${cur.name}`} className="inline-flex h-8 max-w-[46vw] items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-ink/[0.05] hover:text-ink sm:max-w-none">
+    <div ref={root} className="relative min-w-0">
+      <button type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="listbox" aria-expanded={open} aria-label={`Model: ${cur.name}`} className="inline-flex h-8 min-w-0 max-w-[36vw] items-center gap-1.5 rounded-lg px-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-ink/[0.05] hover:text-ink sm:max-w-none">
         <VendorMark vendor={cur.vendor} />
         <span className="truncate">{cur.name}</span>
         <ChevronDown size={13} strokeWidth={2} className={`shrink-0 text-ink-faint transition-transform ${open ? "rotate-180" : ""}`} />
@@ -91,9 +92,10 @@ export function EffortPicker({ value, onChange }: { value: Effort; onChange: (e:
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label={`Reasoning: ${EFFORT_LABEL[value]}`}
-        className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-ink/[0.05] hover:text-ink"
+        className="inline-flex h-8 shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-ink/[0.05] hover:text-ink"
       >
-        {EFFORT_LABEL[value]}
+        <span className="sm:hidden">{EFFORT_SHORT[value]}</span>
+        <span className="max-sm:hidden">{EFFORT_LABEL[value]}</span>
         <ChevronDown size={13} strokeWidth={2} className={`text-ink-faint transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       <AnimatePresence>
@@ -175,7 +177,8 @@ export function MachineChip({ value, onChange, state = "asleep", info }: { value
                   <dd className="text-right font-mono text-ink-soft">{info.disk_bytes ? `${(info.disk_bytes / 1048576).toFixed(0)} MB` : "0 MB"} of {spec.diskGb} GB</dd>
                 </dl>
               )}
-              <div className="border-t border-ink/[0.07] p-1.5">
+              <p className="border-b border-ink/[0.07] px-3 py-2 text-[11.5px] text-ink-faint">Computer time is free for now. Only model use spends your CREDIT.</p>
+              <div className="p-1.5">
                 {MACHINES.map((m) => (
                   <button
                     key={m}
@@ -328,7 +331,7 @@ export function ThreadComposer({
         )}
         {fileErr && <p className="px-4 pt-1 text-[12px] text-[#b91c1c]">{fileErr}</p>}
         <input ref={picker} type="file" multiple hidden onChange={(e) => { addFiles(e.target.files); e.target.value = ""; }} />
-        <div className="flex items-center gap-0.5 px-2 pb-2 pt-1">
+        <div className="flex min-w-0 items-center gap-0.5 px-2 pb-2 pt-1">
           <button type="button" onClick={() => picker.current?.click()} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg text-ink-soft" aria-label="Attach files" title="Attach files">
             <Plus size={16} strokeWidth={2} className="sm:hidden" />
             <Paperclip size={15} strokeWidth={1.9} className="max-sm:hidden" />
@@ -356,9 +359,8 @@ export function ThreadComposer({
           )}
         </div>
       </form>
-      <div className="mt-1.5 flex items-center justify-between px-1">
+      <div className="mt-1 flex items-center px-1">
         <MachineChip value={machine} onChange={onMachine} state={machineState} info={machineInfo} />
-        <span className="text-[11.5px] text-ink-faint max-sm:hidden">Computer time is on the house · models bill your CREDIT</span>
       </div>
     </div>
   );

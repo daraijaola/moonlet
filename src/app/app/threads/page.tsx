@@ -256,25 +256,27 @@ export default function ThreadsPage() {
       )}
 
       <div className="threads-canvas relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className={`absolute left-3 top-3 z-20 flex items-center gap-0.5 ${collapsed ? "" : "lg:hidden"}`}>
-          <button type="button" onClick={() => (window.matchMedia("(min-width: 1024px)").matches ? setCollapsed(false) : setListOpen(true))} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg" aria-label="Show threads" title="Threads">
-            <PanelLeftOpen size={16} strokeWidth={1.8} />
-          </button>
-          <button type="button" onClick={newThread} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg" aria-label="New thread" title="New thread">
-            <SquarePen size={15} strokeWidth={1.8} />
-          </button>
-        </div>
-        {activeId && (
-          <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
-            {detail && <span className="text-[11.5px] tabular-nums text-ink-faint" title="Credit this chat has spent on models">${detail.thread.spentUsd.toFixed(detail.thread.spentUsd < 0.1 ? 3 : 2)} spent</span>}
-            <button type="button" onClick={() => setPane(pane ? null : "overview")} className={`ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg ${pane ? "bg-ink/[0.06] text-ink" : ""}`} aria-label="Computer panel" title="Computer">
-              <PanelRight size={16} strokeWidth={1.8} />
+        <div className="z-20 flex h-12 shrink-0 items-center gap-1 px-2 sm:px-3">
+          <div className={`flex items-center gap-0.5 ${collapsed ? "" : "lg:hidden"}`}>
+            <button type="button" onClick={() => (window.matchMedia("(min-width: 1024px)").matches ? setCollapsed(false) : setListOpen(true))} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg" aria-label="Show threads" title="Threads">
+              <PanelLeftOpen size={16} strokeWidth={1.8} />
+            </button>
+            <button type="button" onClick={newThread} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg" aria-label="New thread" title="New thread">
+              <SquarePen size={15} strokeWidth={1.8} />
             </button>
           </div>
-        )}
-
+          <p className="min-w-0 flex-1 truncate px-1 text-[13px] text-ink-soft">{activeId && detail ? detail.thread.title : ""}</p>
+          {activeId && (
+            <div className="flex shrink-0 items-center gap-1.5">
+              {detail && <span className="whitespace-nowrap text-[11.5px] tabular-nums text-ink-faint" title="Credit this chat has spent on models">${detail.thread.spentUsd.toFixed(detail.thread.spentUsd < 0.1 ? 3 : 2)}<span className="max-sm:hidden"> spent</span></span>}
+              <button type="button" onClick={() => setPane(pane ? null : "overview")} className={`ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg ${pane ? "bg-ink/[0.06] text-ink" : ""}`} aria-label="Computer panel" title="Computer">
+                <PanelRight size={16} strokeWidth={1.8} />
+              </button>
+            </div>
+          )}
+        </div>
         {!activeId ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 pb-8 pt-16 sm:px-6">
+          <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto overflow-x-hidden px-4 pb-8 pt-4 sm:px-6">
             <div className="my-auto w-full max-w-[720px]">
               <div className="flex flex-col items-center text-center">
                 <DitherMark size={198} cell={3} className="max-sm:!h-[150px] max-sm:!w-[150px]" />
@@ -298,8 +300,8 @@ export default function ThreadsPage() {
           </div>
         ) : (
           <>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 [scrollbar-width:thin] sm:px-6">
-              <ul className="mx-auto flex w-full max-w-[720px] flex-col gap-5 pb-6 pt-16">
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 [scrollbar-width:thin] sm:px-6">
+              <ul className="mx-auto flex w-full min-w-0 max-w-[720px] flex-col gap-5 pb-6 pt-2">
                 {turns.map(({ msg, steps, startedAt }) =>
                   msg.role === "user" ? (
                     <li key={msg.id} className="flex flex-col items-end gap-1.5">
@@ -312,12 +314,12 @@ export default function ThreadsPage() {
                           ))}
                         </div>
                       )}
-                      <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-paper px-3.5 py-2.5 text-[14px] leading-[1.55] text-ink">{msg.text}</p>
+                      <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-paper px-3.5 py-2.5 text-[14px] leading-[1.55] text-ink [overflow-wrap:anywhere]">{msg.text}</p>
                     </li>
                   ) : (
                     <li key={msg.id} className="min-w-0">
                       {steps.length > 0 && <StepList steps={steps} label={`Worked for ${dur(msg.createdAt - startedAt)}`} onShot={setViewer} />}
-                      <div className="thread-md text-[14px] leading-[1.65] text-ink">
+                      <div className="thread-md min-w-0 text-[14px] leading-[1.65] text-ink">
                         <ThreadMarkdown text={msg.text} />
                       </div>
                       {msg.files.filter(isImage).length > 0 && (
@@ -352,7 +354,7 @@ export default function ThreadsPage() {
               </ul>
               <div ref={endRef} />
             </div>
-            <div className="shrink-0 px-4 pb-3 pt-2 sm:px-6">
+            <div className="shrink-0 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-6">
               <div className="mx-auto w-full max-w-[720px]">
                 {error && <p className="mb-1.5 px-1 text-[12.5px] text-[#b91c1c]">{error}</p>}
                 {composer}
