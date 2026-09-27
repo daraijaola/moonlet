@@ -2,19 +2,14 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import { ArrowUp, Check, ChevronDown, ChevronUp, Cloud, Paperclip, Plus } from "lucide-react";
+import { ArrowUp, Check, ChevronDown, ChevronUp, Cloud, Paperclip, Plus, Square } from "lucide-react";
 import type { ModelChoice } from "@/moonlet/spec";
 import { ModelPicker } from "./model-picker";
 import { MicButton, VoiceRecorder, useVoiceSupported } from "./voice-button";
 
-export const EFFORTS = ["low", "medium", "high", "max"] as const;
+export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 export type Effort = (typeof EFFORTS)[number];
-const EFFORT_LABEL: Record<Effort, { name: string; hint: string }> = {
-  low: { name: "Low", hint: "Quick answers, fewest tokens" },
-  medium: { name: "Medium", hint: "Thinks before it acts" },
-  high: { name: "High", hint: "Plans multi-step computer work" },
-  max: { name: "Max", hint: "Longest reasoning the model allows" },
-};
+const EFFORT_LABEL: Record<Effort, string> = { low: "Low", medium: "Medium", high: "High", xhigh: "Extra high", max: "Max" };
 
 export const MACHINES = ["standard", "large"] as const;
 export type Machine = (typeof MACHINES)[number];
@@ -53,19 +48,19 @@ export function EffortPicker({ value, onChange }: { value: Effort; onChange: (e:
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`Effort: ${EFFORT_LABEL[value].name}`}
+        aria-label={`Reasoning: ${EFFORT_LABEL[value]}`}
         className="inline-flex h-8 items-center gap-1 rounded-lg px-2 text-[13px] font-medium text-ink-soft transition-colors hover:bg-ink/[0.05] hover:text-ink"
       >
-        {EFFORT_LABEL[value].name}
+        {EFFORT_LABEL[value]}
         <ChevronDown size={13} strokeWidth={2} className={`text-ink-faint transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       <AnimatePresence>
         {open && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-ink/20 sm:hidden" onClick={() => setOpen(false)} />
-            <motion.ul role="listbox" aria-label="Effort" {...menuMotion} className={`${menuClass} sm:left-0 sm:w-[250px]`}>
+            <motion.ul role="listbox" aria-label="Effort" {...menuMotion} className={`${menuClass} sm:left-0 sm:w-[180px]`}>
               <li className="mx-auto mb-2 h-1 w-10 rounded-full bg-ink/15 sm:hidden" aria-hidden />
-              <li className="px-2.5 pb-1.5 pt-1 font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">Reasoning effort</li>
+              <li className="px-2 pb-1 pt-1 text-[11.5px] text-ink-faint">Reasoning</li>
               {EFFORTS.map((e) => (
                 <li key={e}>
                   <button
@@ -76,13 +71,10 @@ export function EffortPicker({ value, onChange }: { value: Effort; onChange: (e:
                       onChange(e);
                       setOpen(false);
                     }}
-                    className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-ink/[0.05] ${e === value ? "bg-ink/[0.04]" : ""}`}
+                    className="flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left text-[13px] text-ink transition-colors hover:bg-ink/[0.05]"
                   >
-                    <span className="min-w-0 flex-1">
-                      <span className="block text-[13.5px] font-medium text-ink">{EFFORT_LABEL[e].name}</span>
-                      <span className="block truncate text-[11.5px] text-ink-soft">{EFFORT_LABEL[e].hint}</span>
-                    </span>
-                    {e === value && <Check size={15} strokeWidth={2.5} className="shrink-0 text-ink" />}
+                    <span className="flex-1">{EFFORT_LABEL[e]}</span>
+                    {e === value && <Check size={14} strokeWidth={2.2} className="shrink-0 text-ink" />}
                   </button>
                 </li>
               ))}
@@ -94,29 +86,7 @@ export function EffortPicker({ value, onChange }: { value: Effort; onChange: (e:
   );
 }
 
-function Meter({ label, value, detail, bar }: { label: string; value: string; detail?: string; bar?: number }) {
-  return (
-    <div className="px-3 py-2.5">
-      <div className="flex items-baseline justify-between text-[12px]">
-        <span className="text-ink-soft">{label}</span>
-        <span className="font-mono tabular-nums text-ink">{value}</span>
-      </div>
-      {bar === undefined ? (
-        <svg viewBox="0 0 200 24" className="mt-1.5 h-6 w-full" preserveAspectRatio="none" aria-hidden>
-          <path d="M0 22 H200" stroke="rgba(21,22,29,0.1)" strokeWidth="1" />
-          <path d="M0 21 L60 21 L68 18 L74 21 L140 21 L146 19.5 L152 21 L200 21" fill="none" stroke="var(--gold)" strokeWidth="1.4" />
-        </svg>
-      ) : (
-        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-ink/[0.07]">
-          <div className="h-full rounded-full bg-gold" style={{ width: `${Math.max(2, bar * 100)}%` }} />
-        </div>
-      )}
-      {detail && <p className="mt-1 text-[11px] text-ink-faint">{detail}</p>}
-    </div>
-  );
-}
-
-export function MachineChip({ value, onChange, state = "asleep" }: { value: Machine; onChange: (m: Machine) => void; state?: "asleep" | "awake" | "starting" }) {
+export function MachineChip({ value, onChange, state = "asleep", cpu, mem }: { value: Machine; onChange: (m: Machine) => void; state?: "asleep" | "awake" | "starting"; cpu?: string; mem?: string }) {
   const [open, setOpen] = useState(false);
   const root = useDismiss(open, () => setOpen(false));
   const spec = MACHINE_SPEC[value];
@@ -139,11 +109,11 @@ export function MachineChip({ value, onChange, state = "asleep" }: { value: Mach
         {open && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-40 bg-ink/20 sm:hidden" onClick={() => setOpen(false)} />
-            <motion.div {...menuMotion} className={`${menuClass} p-0 sm:left-0 sm:w-[290px]`}>
+            <motion.div {...menuMotion} className={`${menuClass} p-0 sm:left-0 sm:w-[260px]`}>
               <div className="mx-auto mb-1 mt-2 h-1 w-10 rounded-full bg-ink/15 sm:hidden" aria-hidden />
               <div className="flex items-start justify-between border-b border-ink/[0.07] px-3 py-2.5">
                 <div>
-                  <p className="text-[13.5px] font-semibold text-ink">{spec.name} computer</p>
+                  <p className="text-[13px] font-medium text-ink">{spec.name}</p>
                   <p className="text-[11.5px] text-ink-soft">{spec.specs}</p>
                 </div>
                 <span className="mt-0.5 inline-flex items-center gap-1.5 text-[11.5px] text-ink-soft">
@@ -151,9 +121,12 @@ export function MachineChip({ value, onChange, state = "asleep" }: { value: Mach
                   {state === "awake" ? "Awake" : state === "starting" ? "Starting" : "Asleep"}
                 </span>
               </div>
-              <Meter label="CPU" value={state === "awake" ? "1%" : "0%"} />
-              <Meter label="Memory" value={`0 of ${spec.memGb} GB`} />
-              <Meter label="Disk" value={`0 of ${spec.diskGb} GB`} bar={0} detail="Files, scripts and screenshots stay between runs." />
+              {state === "awake" && (cpu || mem) && (
+                <div className="flex justify-between border-b border-ink/[0.07] px-3 py-2 font-mono text-[11.5px] text-ink-soft">
+                  <span>CPU {cpu}</span>
+                  <span>{mem}</span>
+                </div>
+              )}
               <div className="border-t border-ink/[0.07] p-1.5">
                 {MACHINES.map((m) => (
                   <button
@@ -196,7 +169,11 @@ export function ThreadComposer({
   onEffort,
   onMachine,
   onSend,
+  onStop,
   busy,
+  machineState,
+  machineCpu,
+  machineMem,
   transcribe,
   placeholder = "Give your moonlet a task…",
   autoFocus,
@@ -208,7 +185,11 @@ export function ThreadComposer({
   onEffort: (e: Effort) => void;
   onMachine: (m: Machine) => void;
   onSend: (text: string) => void;
+  onStop?: () => void;
   busy?: boolean;
+  machineState?: "asleep" | "awake" | "starting";
+  machineCpu?: string;
+  machineMem?: string;
   transcribe?: (blob: Blob) => Promise<{ text: string }>;
   placeholder?: string;
   autoFocus?: boolean;
@@ -217,11 +198,11 @@ export function ThreadComposer({
   const [recording, setRecording] = useState(false);
   const [spokenBase, setSpokenBase] = useState("");
   const voiceOk = useVoiceSupported() && !!transcribe;
-  const ready = !!text.trim() && !busy;
+  const ready = !!text.trim();
 
   const submit = () => {
     const t = text.trim();
-    if (!t || busy) return;
+    if (!t) return;
     setText("");
     onSend(t);
   };
@@ -284,13 +265,19 @@ export function ThreadComposer({
               }}
             />
           )}
-          <button type="submit" disabled={!ready} aria-label="Send" title="Send  ⏎" className={`send-btn ${ready ? "send-btn-on" : ""}`}>
-            {busy ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <ArrowUp size={15} strokeWidth={2.5} />}
-          </button>
+          {busy && !ready && onStop ? (
+            <button type="button" onClick={onStop} aria-label="Stop" title="Stop" className="send-btn send-btn-on">
+              <Square size={11} strokeWidth={0} fill="currentColor" />
+            </button>
+          ) : (
+            <button type="submit" disabled={!ready} aria-label="Send" title="Send  ⏎" className={`send-btn ${ready ? "send-btn-on" : ""}`}>
+              <ArrowUp size={15} strokeWidth={2.5} />
+            </button>
+          )}
         </div>
       </form>
       <div className="mt-1.5 flex items-center justify-between px-1">
-        <MachineChip value={machine} onChange={onMachine} />
+        <MachineChip value={machine} onChange={onMachine} state={machineState} cpu={machineCpu} mem={machineMem} />
         <span className="text-[11.5px] text-ink-faint max-sm:hidden">Billed in CREDIT to your key</span>
       </div>
     </div>

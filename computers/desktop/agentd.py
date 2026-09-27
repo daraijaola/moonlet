@@ -19,12 +19,17 @@ def health():
 
 
 @app.get("/screenshot")
-def screenshot(scale: int = 100):
+def screenshot(fmt: str = "png", quality: int = 72):
     path = "/tmp/shot.png"
-    run(["scrot", "-o", "-p", path] + (["--scale", str(scale / 100)] if scale != 100 else []))
+    run(["scrot", "-o", "-p", path])
     if not os.path.exists(path):
         raise HTTPException(500, "screenshot failed")
-    return Response(Path(path).read_bytes(), media_type="image/png")
+    if fmt != "jpeg":
+        return Response(Path(path).read_bytes(), media_type="image/png")
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.open(path).convert("RGB").save(buf, "JPEG", quality=max(30, min(quality, 90)), optimize=True)
+    return Response(buf.getvalue(), media_type="image/jpeg")
 
 
 class Action(BaseModel):
