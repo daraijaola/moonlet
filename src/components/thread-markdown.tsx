@@ -76,7 +76,7 @@ export function ThreadMarkdown({ text }: { text: string }) {
             <tbody>
               {rows.map((r, ri) => (
                 <tr key={ri} className="border-b border-ink/[0.05] last:border-0">
-                  {head.map((_, j) => <td key={j} className="px-3 py-1.5 align-top text-ink-soft">{inline(r[j] ?? "", `${key()}r${ri}c${j}`)}</td>)}
+                  {head.map((_, j) => <td key={j} className="whitespace-nowrap px-3 py-1.5 align-top text-ink-soft">{inline(r[j] ?? "", `${key()}r${ri}c${j}`)}</td>)}
                 </tr>
               ))}
             </tbody>

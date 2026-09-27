@@ -33,6 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   // A signed wallet is the account; Orbio approval is prompted inside the app.
   const allowed = !!address && signed;
+  const immersive = pathname.startsWith("/app/threads");
 
   useEffect(() => {
     if (!ready) return;
@@ -58,15 +59,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </Suspense>
 
         <div className="flex h-full min-h-0 min-w-0 flex-col">
-          <header className="z-30 flex h-14 shrink-0 items-center justify-between border-b border-ink/10 bg-cream px-4 lg:hidden">
+          <header className={`z-30 flex h-14 shrink-0 items-center justify-between border-b border-ink/10 bg-cream px-4 lg:hidden ${immersive ? "!hidden" : ""}`}>
             <Link href="/app" className="inline-flex items-center gap-2">
               <MoonletMark size={28} face="var(--cream)" />
               <Wordmark className="text-[1.2rem] text-ink" />
             </Link>
             <Suspense><PhoneAccount address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} /></Suspense>
           </header>
-          <main className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto pb-[calc(4rem+env(safe-area-inset-bottom))] lg:pb-0 [scrollbar-width:thin]">{children}</main>
-          <MobileTabs pathname={pathname} />
+          <main className={`min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto lg:pb-0 ${immersive ? "pt-[env(safe-area-inset-top)] lg:pt-0" : "pb-[calc(4rem+env(safe-area-inset-bottom))]"} [scrollbar-width:thin]`}>{children}</main>
+          {!immersive && <MobileTabs pathname={pathname} />}
         </div>
       </div>
     </AppDataProvider>

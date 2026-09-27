@@ -12,7 +12,7 @@ import * as github from "./connections/github";
  */
 
 export const STEP_BUDGET: Record<ts.Effort, number> = { low: 15, medium: 30, high: 60, xhigh: 80, max: 100 };
-const COST_CAP: Record<ts.Effort, number> = { low: 0.1, medium: 0.25, high: 0.6, xhigh: 1, max: 2 };
+const COST_CAP: Record<ts.Effort, number> = { low: 0.3, medium: 0.75, high: 1.5, xhigh: 2.5, max: 4 };
 const REASONING: Record<ts.Effort, "low" | "medium" | "high"> = { low: "low", medium: "medium", high: "high", xhigh: "high", max: "high" };
 // The gateway reserves max_tokens against the balance up front, so an unset limit can refuse a small balance outright.
 const MAX_TOKENS: Record<ts.Effort, number> = { low: 4096, medium: 6144, high: 8192, xhigh: 12288, max: 16384 };
@@ -130,6 +130,7 @@ export async function runTurn(threadId: string) {
   let maxTokens = MAX_TOKENS[t.effort];
   let cost = 0;
   const shown: string[] = [];
+  let lastShot: string | null = null;
   const firstTurn = (await ts.listMessages(threadId)).filter((m) => m.role === "moonlet").length === 0;
 
   const spend = async (c: number) => {
@@ -139,6 +140,9 @@ export async function runTurn(threadId: string) {
     await ts.updateThread(threadId, { addSpent: c });
   };
   const finish = async (text: string, files: string[] = [], status: ts.ThreadStatus = "idle") => {
+    // A screenshot the owner asked for is never lost to a step or budget limit: attach the last one taken if none was shown.
+    const asked = (await ts.listMessages(threadId)).filter((m) => m.role === "user").at(-1)?.text ?? "";
+    if (lastShot && !files.some((f) => f.includes("/shots/")) && /screen ?sh[oi]t|screenshot|snapshot|capture/i.test(asked)) files = [...files, lastShot];
     await ts.addMessage({ threadId, role: "moonlet", text, files, model, ms: Date.now() - started, costUsd: Math.round(cost * 1e6) / 1e6 });
     await ts.updateThread(threadId, { status });
     if (firstTurn && key && status === "idle") await retitle(key, threadId, t.owner).catch(() => undefined);
@@ -220,6 +224,7 @@ export async function runTurn(threadId: string) {
         const bytes = await computers.screenshot(sid);
         const shot = `work/shots/screen-${Date.now()}.jpg`;
         await computers.writeFile(sid, shot, bytes);
+        lastShot = shot;
         const seen = await see(bytes, "The screen now:");
         return { out: `saved as ${shot}; ${seen}. To give it to the owner, call show with that path.`, summary: "Took a screenshot", shot };
       }

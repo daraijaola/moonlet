@@ -13,7 +13,16 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
  */
 
 const MAX_SECONDS = 60;
-const LIVE_EVERY_MS = 2500;
+
+type SpeechRec = {
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onerror: (() => void) | null;
+  start: () => void;
+  stop: () => void;
+};
+const LIVE_EVERY_MS = 1200;
 
 function pickMime() {
   if (typeof MediaRecorder === "undefined") return null;
@@ -37,7 +46,7 @@ export function MicButton({ disabled, onClick }: { disabled?: boolean; onClick: 
  * The recording row. Mounted when the owner taps the mic; unmounts itself through onDone / onCancel.
  * `onLive(text)` streams the transcript so far into the composer; `onDone(text)` is the final pass.
  */
-export function VoiceRecorder({ transcribe, onLive, onDone, onCancel }: { transcribe: (blob: Blob) => Promise<{ text: string }>; onLive: (text: string) => void; onDone: (text: string) => void; onCancel: () => void }) {
+export function VoiceRecorder({ transcribe, onLive, onDone, onCancel, bare = false }: { transcribe: (blob: Blob) => Promise<{ text: string }>; onLive: (text: string) => void; onDone: (text: string) => void; onCancel: () => void; bare?: boolean }) {
   const [seconds, setSeconds] = useState(0);
   const [phase, setPhase] = useState<"starting" | "recording" | "finishing">("starting");
   const [err, setErr] = useState<string | null>(null);
@@ -46,6 +55,8 @@ export function VoiceRecorder({ transcribe, onLive, onDone, onCancel }: { transc
   const chunks = useRef<Blob[]>([]);
   const finishing = useRef<"keep" | "discard" | null>(null);
   const liveBusy = useRef(false);
+  const speech = useRef<SpeechRec | null>(null);
+  const instant = useRef<boolean | null>(null);
 
   useEffect(() => {
     let stream: MediaStream | null = null, raf = 0, timer: ReturnType<typeof setInterval> | null = null, live: ReturnType<typeof setInterval> | null = null, ctx: AudioContext | null = null;
@@ -79,6 +90,26 @@ export function VoiceRecorder({ transcribe, onLive, onDone, onCancel }: { transc
       };
       rec.current = r;
       r.start(250);
+      // Instant words while speaking, where the browser has speech recognition; the server pass below refines them.
+      const SR = (window as unknown as { SpeechRecognition?: new () => SpeechRec; webkitSpeechRecognition?: new () => SpeechRec }).SpeechRecognition ?? (window as unknown as { webkitSpeechRecognition?: new () => SpeechRec }).webkitSpeechRecognition;
+      if (SR) {
+        try {
+          const sr = new SR();
+          sr.continuous = true;
+          sr.interimResults = true;
+          sr.onresult = (e) => {
+            if (instant.current === false) return;
+            let t = "";
+            for (let k = 0; k < e.results.length; k++) t += e.results[k][0].transcript;
+            if (t.trim() && r.state === "recording") onLive(t.trim());
+          };
+          sr.onerror = () => undefined;
+          sr.start();
+          speech.current = sr;
+        } catch {
+          /* no instant words; the server pass still streams */
+        }
+      }
       setPhase("recording");
       const t0 = Date.now();
       timer = setInterval(() => {
@@ -92,7 +123,7 @@ export function VoiceRecorder({ transcribe, onLive, onDone, onCancel }: { transc
         liveBusy.current = true;
         try {
           const { text } = await transcribe(new Blob(chunks.current, { type: mime.split(";")[0] }));
-          if (text && r.state === "recording") onLive(text);
+          if (text && r.state === "recording" && !speech.current) onLive(text);
         } catch {
           /* live preview is best-effort; the final pass reports errors */
         }
@@ -128,6 +159,9 @@ export function VoiceRecorder({ transcribe, onLive, onDone, onCancel }: { transc
       cancelAnimationFrame(raf);
       if (timer) clearInterval(timer);
       if (live) clearInterval(live);
+      try {
+        speech.current?.stop();
+      } catch {}
       ctx?.close().catch(() => undefined);
       if (rec.current && rec.current.state !== "inactive") { finishing.current ??= "discard"; rec.current.stop(); }
       else stream?.getTracks().forEach((t) => t.stop());
@@ -137,6 +171,10 @@ export function VoiceRecorder({ transcribe, onLive, onDone, onCancel }: { transc
 
   const finish = (how: "keep" | "discard") => {
     finishing.current = how;
+    instant.current = false;
+    try {
+      speech.current?.stop();
+    } catch {}
     setPhase("finishing");
     const r = rec.current;
     if (r && r.state !== "inactive") r.stop();
@@ -144,6 +182,21 @@ export function VoiceRecorder({ transcribe, onLive, onDone, onCancel }: { transc
   };
 
   const mm = String(Math.floor(seconds / 60)), ss = String(seconds % 60).padStart(2, "0");
+  if (bare)
+    return (
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <button type="button" onClick={() => finish("discard")} aria-label="Discard recording" className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[18px] leading-none text-ink-soft hover:bg-ink/[0.05] hover:text-ink">×</button>
+        {err ? (
+          <span className="min-w-0 flex-1 truncate text-[12px] text-[#b91c1c]">{err}</span>
+        ) : (
+          <canvas ref={canvas} width={480} height={22} className="h-[22px] min-w-0 flex-1 text-ink/45" aria-hidden />
+        )}
+        <span className="shrink-0 text-[12.5px] tabular-nums text-ink-soft">{phase === "finishing" ? "…" : `${mm}:${ss}`}</span>
+        <button type="button" onClick={() => finish("keep")} disabled={phase !== "recording"} aria-label="Keep recording" className="send-btn send-btn-on">
+          {phase === "finishing" ? <span className="h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" /> : <Check size={15} strokeWidth={2.4} />}
+        </button>
+      </div>
+    );
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
       <button type="button" onClick={() => finish("discard")} aria-label="Discard recording" className="inline-flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-md border border-ink/15 bg-white text-ink-soft hover:border-ink/40 hover:text-ink">×</button>

@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ChartLine, Check, ChevronRight, Copy, Download, Ellipsis, Files, Pencil, RotateCw, Trash2, Globe, ListTree, Monitor, PanelLeftClose, PanelLeftOpen, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import Link from "next/link";
+import { MoonletMark, Wordmark } from "@/components/logo";
+import { Cable, Orbit, Rocket, Telescope } from "lucide-react";
+import { ChartLine, ChevronLeft, CircleDollarSign, MessageCircle, PanelLeft, Check, ChevronRight, Copy, Download, Ellipsis, Files, Pencil, RotateCw, Trash2, Globe, ListTree, Monitor, PanelLeftClose, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api, type ApiThread, type ApiThreadMessage, type ApiThreadStep } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
@@ -51,6 +55,7 @@ export default function ThreadsPage() {
   const [computer, setComputer] = useState<{ status: string; cpu?: string; mem?: string; disk_bytes?: number; created_at?: string } | null>(null);
   const [viewer, setViewer] = useState<string | null>(null);
   const [menu, setMenu] = useState<string | null>(null);
+  const [sheet, setSheet] = useState<"menu" | "cost" | null>(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -178,8 +183,30 @@ export default function ThreadsPage() {
 
   const list = (
     <div className="flex h-full flex-col">
-      <div className="flex h-12 shrink-0 items-center justify-between pl-4 pr-2">
-        <p className="text-[12.5px] text-ink-faint">Threads</p>
+      <div className="flex h-14 shrink-0 items-center justify-between pl-4 pr-2 lg:hidden">
+        <Link href="/app" className="inline-flex items-center gap-2">
+          <MoonletMark size={26} face="var(--cream)" />
+          <Wordmark className="text-[1.15rem] text-ink" />
+        </Link>
+        <button type="button" onClick={() => setListOpen(false)} className="ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg" aria-label="Close threads">
+          <PanelLeft size={17} strokeWidth={1.7} />
+        </button>
+      </div>
+      <nav className="px-2 pb-3 lg:hidden">
+        {([["New thread", SquarePen, null], ["Moonlets", Orbit, "/app"], ["Launch a moonlet", Rocket, "/app/new"], ["Connections", Cable, "/app/connections"], ["The sky", Telescope, "/sky"]] as const).map(([label, Icon, href]) =>
+          href ? (
+            <Link key={label} href={href} className="flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] text-ink active:bg-ink/[0.05]">
+              <Icon size={17} strokeWidth={1.6} className="text-ink-soft" /> {label}
+            </Link>
+          ) : (
+            <button key={label} type="button" onClick={() => { setListOpen(false); newThread(); }} className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-[15px] text-ink active:bg-ink/[0.05]">
+              <Icon size={17} strokeWidth={1.6} className="text-ink-soft" /> {label}
+            </button>
+          ),
+        )}
+      </nav>
+      <div className="flex h-12 shrink-0 items-center justify-between pl-4 pr-2 max-lg:h-9">
+        <p className="text-[12.5px] text-ink-faint max-lg:text-[13.5px]">Threads</p>
         <div className="flex items-center">
           <button type="button" onClick={newThread} className="ui-btn ui-btn-ghost ui-btn-icon h-7 w-7 rounded-md" aria-label="New thread" title="New thread">
             <SquarePen size={14} strokeWidth={1.8} />
@@ -187,20 +214,18 @@ export default function ThreadsPage() {
           <button type="button" onClick={() => setCollapsed(true)} className="ui-btn ui-btn-ghost ui-btn-icon h-7 w-7 rounded-md max-lg:!hidden" aria-label="Hide threads" title="Hide threads">
             <PanelLeftClose size={14} strokeWidth={1.8} />
           </button>
-          <button type="button" onClick={() => setListOpen(false)} className="ui-btn ui-btn-ghost ui-btn-icon h-7 w-7 rounded-md lg:!hidden" aria-label="Close">
-            <X size={15} strokeWidth={1.8} />
-          </button>
+          
         </div>
       </div>
       <ul className="min-h-0 flex-1 overflow-y-auto px-2 pb-4 [scrollbar-width:thin]">
         {threads?.length === 0 && <li className="px-2 py-1.5 text-[12.5px] leading-[1.5] text-ink-faint">No threads yet.</li>}
         {threads?.map((t) => (
           <li key={t.id} className="group relative">
-            <button type="button" onClick={() => open(t)} className={`flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors ${t.id === activeId ? "bg-ink/[0.06]" : "hover:bg-ink/[0.04]"}`}>
-              <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${t.status === "working" ? "animate-pulse bg-gold" : t.status === "failed" ? "bg-[#b91c1c]/60" : "bg-ink/20"}`} />
+            <button type="button" onClick={() => open(t)} className={`flex w-full items-start gap-2 rounded-lg px-2 py-1.5 text-left max-lg:gap-3 max-lg:px-3 max-lg:py-2.5 transition-colors ${t.id === activeId ? "bg-ink/[0.06]" : "hover:bg-ink/[0.04]"}`}>
+              <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full max-lg:mt-[9px] max-lg:h-2 max-lg:w-2 ${t.status === "working" ? "animate-pulse bg-gold" : t.status === "failed" ? "bg-[#b91c1c]/60" : "bg-ink/20"}`} />
               <span className="min-w-0 flex-1">
-                <span className="block truncate text-[13px] text-ink">{t.title}</span>
-                <span className="block text-[11px] text-ink-faint">{MACHINE_SPEC[t.machine].name} · {modelName(t.model)}</span>
+                <span className="block truncate text-[13px] text-ink max-lg:text-[15px]">{t.title}</span>
+                <span className="block text-[11px] text-ink-faint max-lg:text-[12.5px]">{MACHINE_SPEC[t.machine].name} · {modelName(t.model)}</span>
               </span>
               <span className="shrink-0 pt-0.5 text-[11px] tabular-nums text-ink-faint group-hover:invisible">{ago(t.updatedAt)}</span>
             </button>
@@ -248,33 +273,64 @@ export default function ThreadsPage() {
   return (
     <section className="flex h-full min-h-0 flex-1">
       {!collapsed && <aside className="hidden w-[240px] shrink-0 border-r border-ink/[0.07] bg-paper/60 lg:block">{list}</aside>}
-      {listOpen && (
-        <div className="fixed inset-0 z-40 lg:hidden">
-          <div className="absolute inset-0 bg-ink/25" onClick={() => setListOpen(false)} />
-          <div className="absolute inset-y-0 left-0 w-[84vw] max-w-[320px] bg-paper shadow-[8px_0_30px_-12px_rgba(21,22,29,0.35)]">{list}</div>
-        </div>
-      )}
+      <AnimatePresence>
+        {listOpen && (
+          <div className="fixed inset-0 z-40 lg:hidden">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.2 }} className="absolute inset-0 bg-ink/30" onClick={() => setListOpen(false)} />
+            <motion.div initial={{ x: "-100%" }} animate={{ x: 0 }} exit={{ x: "-100%" }} transition={{ type: "spring", stiffness: 420, damping: 40 }} className="absolute inset-y-0 left-0 w-[86vw] max-w-[340px] bg-paper pt-[env(safe-area-inset-top)] shadow-[8px_0_30px_-12px_rgba(21,22,29,0.35)]">{list}</motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       <div className="threads-canvas relative flex min-h-0 min-w-0 flex-1 flex-col">
-        <div className={`absolute left-3 top-3 z-20 flex items-center gap-0.5 ${collapsed ? "" : "lg:hidden"}`}>
-          <button type="button" onClick={() => (window.matchMedia("(min-width: 1024px)").matches ? setCollapsed(false) : setListOpen(true))} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg" aria-label="Show threads" title="Threads">
-            <PanelLeftOpen size={16} strokeWidth={1.8} />
+        <div className="z-20 flex h-12 shrink-0 items-center gap-1 px-2 sm:px-3">
+          <button type="button" onClick={() => (window.matchMedia("(min-width: 1024px)").matches ? setCollapsed(false) : setListOpen(true))} className={`ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg ${collapsed ? "" : "lg:!hidden"}`} aria-label="Show threads" title="Threads">
+            <PanelLeft size={17} strokeWidth={1.7} />
           </button>
-          <button type="button" onClick={newThread} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg" aria-label="New thread" title="New thread">
-            <SquarePen size={15} strokeWidth={1.8} />
-          </button>
+          {activeId && detail ? (
+            <div className="flex min-w-0 flex-1 items-center gap-2 px-1">
+              <span className={`h-2 w-2 shrink-0 rounded-full ${working ? "animate-pulse bg-gold" : detail.thread.status === "failed" ? "bg-[#b91c1c]/70" : "bg-ink/20"}`} />
+              <p className="min-w-0 truncate text-[14.5px] text-ink">{detail.thread.title}</p>
+            </div>
+          ) : (
+            <div className="flex-1" />
+          )}
+          {!activeId && (
+            <button type="button" onClick={newThread} className={`ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg ${collapsed ? "" : "lg:!hidden"}`} aria-label="New thread" title="New thread">
+              <SquarePen size={16} strokeWidth={1.7} />
+            </button>
+          )}
+          {activeId && (
+            <>
+              <button type="button" onClick={() => setSheet("menu")} className="ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg" aria-label="Thread menu" title="Options">
+                <Ellipsis size={17} strokeWidth={1.8} />
+              </button>
+              <button type="button" onClick={() => setPane(pane ? null : "overview")} className={`ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg max-xl:!hidden ${pane ? "bg-ink/[0.06] text-ink" : ""}`} aria-label="Computer panel" title="Computer">
+                <PanelRight size={16} strokeWidth={1.7} />
+              </button>
+            </>
+          )}
         </div>
-        {activeId && (
-          <div className="absolute right-3 top-3 z-20 flex items-center gap-2">
-            {detail && <span className="text-[11.5px] tabular-nums text-ink-faint" title="Credit this chat has spent on models">${detail.thread.spentUsd.toFixed(detail.thread.spentUsd < 0.1 ? 3 : 2)} spent</span>}
-            <button type="button" onClick={() => setPane(pane ? null : "overview")} className={`ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg ${pane ? "bg-ink/[0.06] text-ink" : ""}`} aria-label="Computer panel" title="Computer">
-              <PanelRight size={16} strokeWidth={1.8} />
+        {activeId && activeId !== "pending" && (
+          <div className="flex h-11 shrink-0 items-center gap-1 border-b border-ink/[0.07] px-2 xl:hidden">
+            {([[null, "Chat", MessageCircle], ["computer", "Computer", Monitor], ["files", "Files", Files]] as const).map(([p, label, Icon]) => (
+              <button key={label} type="button" onClick={() => setPane(p)} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[13.5px] transition-colors ${pane === p || (p === null && pane === "overview") ? "bg-ink/[0.06] text-ink" : "text-ink-soft"}`}>
+                <Icon size={15} strokeWidth={1.7} /> {label}
+              </button>
+            ))}
+            <button type="button" onClick={newThread} className="ui-btn ui-btn-ghost ui-btn-icon ml-auto h-8 w-8 rounded-lg" aria-label="New thread">
+              <SquarePen size={15} strokeWidth={1.7} />
             </button>
           </div>
         )}
-
+        {activeId && activeId !== "pending" && (pane === "computer" || pane === "files") && (
+          <div className="min-h-0 flex-1 overflow-y-auto xl:hidden">
+            {pane === "computer" && <ComputerView threadId={activeId} awake={machineState === "awake"} live={working} />}
+            {pane === "files" && <FilesView owner={owner} threadId={activeId} fileUrl={fileUrl} />}
+          </div>
+        )}
         {!activeId ? (
-          <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 pb-8 pt-16 sm:px-6">
+          <div className="flex min-h-0 flex-1 flex-col items-center overflow-y-auto overflow-x-hidden px-4 pb-8 pt-4 sm:px-6">
             <div className="my-auto w-full max-w-[720px]">
               <div className="flex flex-col items-center text-center">
                 <DitherMark size={198} cell={3} className="max-sm:!h-[150px] max-sm:!w-[150px]" />
@@ -297,9 +353,9 @@ export default function ThreadsPage() {
             </div>
           </div>
         ) : (
-          <>
-            <div className="min-h-0 flex-1 overflow-y-auto px-4 [scrollbar-width:thin] sm:px-6">
-              <ul className="mx-auto flex w-full max-w-[720px] flex-col gap-5 pb-6 pt-16">
+          <div className={`flex min-h-0 flex-1 flex-col ${pane === "computer" || pane === "files" ? "max-xl:hidden" : ""}`}>
+            <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 [scrollbar-width:thin] sm:px-6">
+              <ul className="mx-auto flex w-full min-w-0 max-w-[720px] flex-col gap-5 pb-6 pt-2">
                 {turns.map(({ msg, steps, startedAt }) =>
                   msg.role === "user" ? (
                     <li key={msg.id} className="flex flex-col items-end gap-1.5">
@@ -312,12 +368,12 @@ export default function ThreadsPage() {
                           ))}
                         </div>
                       )}
-                      <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-paper px-3.5 py-2.5 text-[14px] leading-[1.55] text-ink">{msg.text}</p>
+                      <p className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-br-md bg-paper px-3.5 py-2.5 text-[14px] leading-[1.55] text-ink [overflow-wrap:anywhere]">{msg.text}</p>
                     </li>
                   ) : (
                     <li key={msg.id} className="min-w-0">
                       {steps.length > 0 && <StepList steps={steps} label={`Worked for ${dur(msg.createdAt - startedAt)}`} onShot={setViewer} />}
-                      <div className="thread-md text-[14px] leading-[1.65] text-ink">
+                      <div className="thread-md min-w-0 text-[14px] leading-[1.65] text-ink">
                         <ThreadMarkdown text={msg.text} />
                       </div>
                       {msg.files.filter(isImage).length > 0 && (
@@ -352,18 +408,18 @@ export default function ThreadsPage() {
               </ul>
               <div ref={endRef} />
             </div>
-            <div className="shrink-0 px-4 pb-3 pt-2 sm:px-6">
+            <div className="shrink-0 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 sm:px-6">
               <div className="mx-auto w-full max-w-[720px]">
                 {error && <p className="mb-1.5 px-1 text-[12.5px] text-[#b91c1c]">{error}</p>}
                 {composer}
               </div>
             </div>
-          </>
+          </div>
         )}
       </div>
 
       {activeId && activeId !== "pending" && pane && (
-        <aside className="fixed inset-x-0 bottom-0 z-40 flex h-[70vh] flex-col rounded-t-2xl border-t border-ink/[0.08] bg-white shadow-[0_-12px_32px_-16px_rgba(21,22,29,0.35)] xl:static xl:h-auto xl:w-[440px] xl:shrink-0 xl:rounded-none xl:border-l xl:border-t-0 xl:shadow-none">
+        <aside className="hidden w-[440px] shrink-0 flex-col border-l border-ink/[0.08] bg-white xl:flex">
           <div className="flex h-12 shrink-0 items-center gap-1 border-b border-ink/[0.07] px-2">
             {(["overview", "computer", "files"] as const).map((p) => (
               <button key={p} type="button" onClick={() => setPane(p)} className={`h-7 rounded-md px-2 text-[12.5px] capitalize transition-colors ${pane === p ? "bg-ink/[0.06] text-ink" : "text-ink-soft hover:text-ink"}`}>
@@ -387,6 +443,37 @@ export default function ThreadsPage() {
           </div>
         </aside>
       )}
+      <AnimatePresence>
+        {sheet && detail && activeId && (
+          <div className="fixed inset-0 z-50">
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 0.18 }} className="absolute inset-0 bg-ink/30 sm:bg-transparent" onClick={() => setSheet(null)} />
+            <motion.div initial={{ y: "100%" }} animate={{ y: 0 }} exit={{ y: "100%" }} transition={{ type: "spring", stiffness: 480, damping: 42 }} className="absolute inset-x-0 bottom-0 rounded-t-[20px] bg-white pb-[max(14px,env(safe-area-inset-bottom))] shadow-[0_-12px_40px_-16px_rgba(21,22,29,0.4)] sm:!transform-none sm:inset-x-auto sm:bottom-auto sm:right-3 sm:top-11 sm:w-[250px] sm:rounded-xl sm:border sm:border-ink/[0.1] sm:p-1 sm:shadow-[0_12px_32px_-12px_rgba(21,22,29,0.35)]">
+              <div className="mx-auto mb-2 mt-2.5 h-1 w-10 rounded-full bg-ink/15 sm:hidden" aria-hidden />
+              {sheet === "menu" ? (
+                <>
+                  <button type="button" onClick={() => setSheet("cost")} className="flex w-full items-center gap-3.5 px-5 h-12 text-left text-[15px] text-ink active:bg-ink/[0.05] sm:h-9 sm:gap-2.5 sm:rounded-md sm:px-2.5 sm:text-[13.5px] sm:hover:bg-ink/[0.05]"><CircleDollarSign size={17} strokeWidth={1.6} className="shrink-0 text-ink-soft sm:!h-[14px] sm:!w-[14px]" /> <span className="flex-1">Cost</span><span className="tabular-nums text-ink-soft">${detail.thread.spentUsd.toFixed(detail.thread.spentUsd < 0.1 ? 3 : 2)}</span><ChevronRight size={15} strokeWidth={1.8} className="text-ink-faint" /></button>
+                  <button type="button" onClick={async () => { setSheet(null); const name = window.prompt("Rename thread", detail.thread.title)?.trim(); if (name) { await api.renameThread(owner, activeId, name); loadList(); loadDetail(activeId); } }} className="flex w-full items-center gap-3.5 px-5 h-12 text-left text-[15px] text-ink active:bg-ink/[0.05] sm:h-9 sm:gap-2.5 sm:rounded-md sm:px-2.5 sm:text-[13.5px] sm:hover:bg-ink/[0.05]"><Pencil size={17} strokeWidth={1.6} className="shrink-0 text-ink-soft sm:!h-[14px] sm:!w-[14px]" /> Rename</button>
+                  <button type="button" onClick={async () => { setSheet(null); await api.retitleThread(owner, activeId).catch(() => undefined); loadList(); loadDetail(activeId); }} className="flex w-full items-center gap-3.5 px-5 h-12 text-left text-[15px] text-ink active:bg-ink/[0.05] sm:h-9 sm:gap-2.5 sm:rounded-md sm:px-2.5 sm:text-[13.5px] sm:hover:bg-ink/[0.05]"><RotateCw size={17} strokeWidth={1.6} className="shrink-0 text-ink-soft sm:!h-[14px] sm:!w-[14px]" /> Regenerate title</button>
+                  <button type="button" onClick={() => { setSheet(null); navigator.clipboard?.writeText(location.href).catch(() => undefined); }} className="flex w-full items-center gap-3.5 px-5 h-12 text-left text-[15px] text-ink active:bg-ink/[0.05] sm:h-9 sm:gap-2.5 sm:rounded-md sm:px-2.5 sm:text-[13.5px] sm:hover:bg-ink/[0.05]"><Copy size={17} strokeWidth={1.6} className="shrink-0 text-ink-soft sm:!h-[14px] sm:!w-[14px]" /> Copy link</button>
+                  <button type="button" onClick={() => { setSheet(null); newThread(); }} className="flex w-full items-center gap-3.5 px-5 h-12 text-left text-[15px] text-ink active:bg-ink/[0.05] sm:h-9 sm:gap-2.5 sm:rounded-md sm:px-2.5 sm:text-[13.5px] sm:hover:bg-ink/[0.05]"><SquarePen size={17} strokeWidth={1.6} className="shrink-0 text-ink-soft sm:!h-[14px] sm:!w-[14px]" /> New thread</button>
+                  <div className="mx-5 my-1.5 h-px bg-ink/[0.07] sm:mx-1 sm:my-1" />
+                  <button type="button" onClick={() => { setSheet(null); remove(activeId); }} className="flex w-full items-center gap-3.5 px-5 h-12 text-left text-[15px] text-ink active:bg-ink/[0.05] sm:h-9 sm:gap-2.5 sm:rounded-md sm:px-2.5 sm:text-[13.5px] sm:hover:bg-ink/[0.05] !text-[#b91c1c]"><Trash2 size={17} strokeWidth={1.6} className="shrink-0 sm:!h-[14px] sm:!w-[14px]" /> Delete</button>
+                </>
+              ) : (
+                <>
+                  <button type="button" onClick={() => setSheet("menu")} className="flex w-full items-center gap-3.5 px-5 h-12 text-left text-[15px] text-ink active:bg-ink/[0.05] sm:h-9 sm:gap-2.5 sm:rounded-md sm:px-2.5 sm:text-[13.5px] sm:hover:bg-ink/[0.05]"><ChevronLeft size={17} strokeWidth={1.6} className="shrink-0 text-ink-soft sm:!h-[14px] sm:!w-[14px]" /> Cost</button>
+                  <div className="mx-5 mb-1 h-px bg-ink/[0.07] sm:mx-1" />
+                  <div className="space-y-2.5 px-5 py-3 text-[15px] sm:px-2.5 sm:py-2 sm:text-[13.5px]">
+                    <div className="flex justify-between text-ink-soft"><span>Models</span><span className="tabular-nums">${detail.thread.spentUsd.toFixed(detail.thread.spentUsd < 0.1 ? 3 : 2)}</span></div>
+                    <div className="flex justify-between text-ink-soft"><span>Computer</span><span>Free</span></div>
+                    <div className="flex justify-between border-t border-ink/[0.07] pt-2.5 text-ink"><span>Total</span><span className="tabular-nums">${detail.thread.spentUsd.toFixed(detail.thread.spentUsd < 0.1 ? 3 : 2)}</span></div>
+                  </div>
+                </>
+              )}
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       {viewer && activeId && <Lightbox src={fileUrl(viewer)} name={viewer.split("/").pop()!} onClose={() => setViewer(null)} />}
     </section>
   );
