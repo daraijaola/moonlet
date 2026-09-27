@@ -14,7 +14,9 @@ const COST_CAP: Record<ts.Effort, number> = { low: 0.1, medium: 0.25, high: 0.6,
 const REASONING: Record<ts.Effort, "low" | "medium" | "high"> = { low: "low", medium: "medium", high: "high", xhigh: "high", max: "high" };
 // The gateway reserves max_tokens against the balance up front, so an unset limit can refuse a small balance outright.
 const MAX_TOKENS: Record<ts.Effort, number> = { low: 4096, medium: 6144, high: 8192, xhigh: 12288, max: 16384 };
-const AUTO_MODEL = "openai/gpt-5.6-terra";
+// Gemini Flash reads screenshots cheaply; the gateway refuses GPT-5.6 Terra any image input, so Terra works from page text.
+const AUTO_MODEL = "google/gemini-3.8-flash";
+const TEXT_ONLY = /^openai\/gpt-5\.6-terra$/;
 const KEEP_IMAGES = 3;
 const TURN_MS = 20 * 60_000;
 
@@ -89,7 +91,7 @@ export async function runTurn(threadId: string) {
 
   const shown: string[] = [];
   let cost = 0;
-  let images = true;
+  let images = !TEXT_ONLY.test(model);
   const url = `${baseUrlFor(key)}/chat/completions`;
 
   const pushShot = async (label: string) => {
@@ -168,7 +170,8 @@ export async function runTurn(threadId: string) {
     const j = (await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string | null; tool_calls?: ToolCall[] } }>; usage?: { cost?: number }; error?: { message?: string } };
     if (!res.ok || !j.choices?.length) {
       const err = j.error?.message ?? `HTTP ${res.status}`;
-      if (images && /image|vision|multimodal|modalit/i.test(err)) {
+      const hadImages = messages.some((m) => m.role === "user" && Array.isArray(m.content) && m.content.some((x) => x.type === "image_url"));
+      if (images && (/image|vision|multimodal|modalit/i.test(err) || (res.status === 402 && hadImages))) {
         images = false;
         for (const m of messages) if (m.role === "user" && Array.isArray(m.content)) m.content = [{ type: "text", text: "[screenshot omitted: this model reads text only]" }];
         step--;
