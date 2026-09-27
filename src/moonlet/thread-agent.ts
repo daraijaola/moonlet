@@ -12,6 +12,8 @@ import * as ts from "./threads-store";
 export const STEP_BUDGET: Record<ts.Effort, number> = { low: 15, medium: 30, high: 60, xhigh: 80, max: 100 };
 const COST_CAP: Record<ts.Effort, number> = { low: 0.1, medium: 0.25, high: 0.6, xhigh: 1, max: 2 };
 const REASONING: Record<ts.Effort, "low" | "medium" | "high"> = { low: "low", medium: "medium", high: "high", xhigh: "high", max: "high" };
+// The gateway reserves max_tokens against the balance up front, so an unset limit can refuse a small balance outright.
+const MAX_TOKENS: Record<ts.Effort, number> = { low: 4096, medium: 6144, high: 8192, xhigh: 12288, max: 16384 };
 const AUTO_MODEL = "openai/gpt-5.6-terra";
 const KEEP_IMAGES = 3;
 const TURN_MS = 20 * 60_000;
@@ -160,7 +162,7 @@ export async function runTurn(threadId: string) {
     const res = await fetch(url, {
       method: "POST",
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json", "http-referer": "https://moonlet.16labs.xyz", "x-title": "Moonlet" },
-      body: JSON.stringify({ model, messages, usage: { include: true }, reasoning: { effort: REASONING[t.effort] }, ...(last ? {} : { tools: TOOLS, tool_choice: "auto" }) }),
+      body: JSON.stringify({ model, messages, max_tokens: MAX_TOKENS[t.effort], usage: { include: true }, reasoning: { effort: REASONING[t.effort] }, ...(last ? {} : { tools: TOOLS, tool_choice: "auto" }) }),
       signal: AbortSignal.timeout(180_000),
     });
     const j = (await res.json().catch(() => ({}))) as { choices?: Array<{ message?: { content?: string | null; tool_calls?: ToolCall[] } }>; usage?: { cost?: number }; error?: { message?: string } };
