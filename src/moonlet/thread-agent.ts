@@ -224,7 +224,7 @@ export async function runTurn(threadId: string) {
         return { out: `saved as ${shot}; ${seen}. To give it to the owner, call show with that path.`, summary: "Took a screenshot", shot };
       }
       case "view_image": {
-        const p = String(a.path ?? "").replace(/^~?\/?(home\/moon\/)?/, "");
+        const p = await resolvePath(a.path);
         const bytes = await computers.readFile(sid, p);
         return { out: await see(bytes, `The image ${p}:`), summary: `Looked at ${p.split("/").pop()}` };
       }
@@ -237,8 +237,7 @@ export async function runTurn(threadId: string) {
         return { out: r.ok ? "done" : `failed: ${r.error}`, summary: a.text != null ? `Typed ${String(a.text).slice(0, 40)}` : `Pressed ${a.keys}` };
       }
       case "show": {
-        const p = String(a.path ?? "").replace(/^~?\/?(home\/moon\/)?/, "");
-        await computers.readFile(sid, p);
+        const p = await resolvePath(a.path);
         if (!shown.includes(p)) shown.push(p);
         return { out: `attached ${p}`, summary: `Attached ${p.split("/").pop()}` };
       }
@@ -247,11 +246,35 @@ export async function runTurn(threadId: string) {
     }
   };
 
+  // Old tool output is the bulk of every request: keep recent results whole, trim the rest. Cheaper turns, and the
+  // gateway's up-front reservation stays under small balances.
+  const compact = (keep: number, max: number) => {
+    let seen = 0;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role !== "tool" || ++seen <= keep || m.content.length <= max) continue;
+      m.content = `${m.content.slice(0, max)}\n…(older output trimmed)`;
+    }
+  };
+  let wrapUp = false;
+  // Paths are relative to the home folder; models often drop the work/ prefix of files they saved there.
+  const resolvePath = async (raw: unknown) => {
+    const p = String(raw ?? "").replace(/^~?\/?(home\/moon\/)?/, "");
+    try {
+      await computers.readFile(sid, p);
+      return p;
+    } catch (e) {
+      if (p.startsWith("work/")) throw e;
+      await computers.readFile(sid, `work/${p}`);
+      return `work/${p}`;
+    }
+  };
   const budget = STEP_BUDGET[t.effort];
   for (let step = 0; step < budget; step++) {
     if (await stopRequested(threadId)) return finish(`Stopped. ${shown.length ? "What I made so far is attached." : ""}`.trim(), shown);
-    const last = step === budget - 1 || Date.now() - started > TURN_MS || cost >= COST_CAP[t.effort];
-    if (last) messages.push({ role: "user", content: "Time, steps or budget for this turn is up. Stop using tools and answer now with what you have." });
+    compact(8, 1500);
+    const last = wrapUp || step === budget - 1 || Date.now() - started > TURN_MS || cost >= COST_CAP[t.effort];
+    if (last && !wrapUp) messages.push({ role: "user", content: "Time, steps or budget for this turn is up. Stop using tools and answer now with what you have." });
     const t0 = Date.now();
     const r = await complete(key, { model, messages, max_tokens: maxTokens, reasoning: { effort: REASONING[t.effort] }, ...(last ? {} : { tools: TOOLS, tool_choice: "auto" }) });
     if (!r.ok && r.status === 402) {
@@ -269,6 +292,15 @@ export async function runTurn(threadId: string) {
       }
       if (maxTokens > 1024) {
         maxTokens = Math.max(1024, Math.floor(maxTokens / 2));
+        step--;
+        continue;
+      }
+      if (!wrapUp) {
+        // Last resort: shrink the context hard and ask for the answer so far, so the owner gets results instead of an error.
+        compact(2, 300);
+        messages.push({ role: "user", content: "The credit balance is nearly used up. Stop using tools and answer now with what you found so far, and say what's left to do." });
+        wrapUp = true;
+        maxTokens = 1024;
         step--;
         continue;
       }

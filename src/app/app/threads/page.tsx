@@ -4,9 +4,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import Link from "next/link";
 import { LiveDesktop } from "@/components/live-desktop";
+import { AccountMenu } from "@/components/app-shell";
+import { useRouter } from "next/navigation";
 import { MoonletMark, Wordmark } from "@/components/logo";
 import { Cable, Orbit, Rocket, Telescope } from "lucide-react";
-import { ArrowDown, ChartLine, ChevronLeft, CircleDollarSign, MessageCircle, PanelLeft, Check, ChevronRight, Copy, Download, Ellipsis, Files, Pencil, RotateCw, Trash2, Globe, ListTree, Monitor, PanelLeftClose, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
+import { ArrowDown, Maximize2, Minimize2, ChartLine, ChevronLeft, CircleDollarSign, MessageCircle, PanelLeft, Check, ChevronRight, Copy, Download, Ellipsis, Files, Pencil, RotateCw, Trash2, Globe, ListTree, Monitor, PanelLeftClose, PanelRight, Radar, SquarePen, Wallet, X } from "lucide-react";
 import { useAuth } from "@/lib/auth";
 import { api, type ApiThread, type ApiThreadMessage, type ApiThreadStep } from "@/lib/api";
 import { useAppData } from "@/lib/app-data";
@@ -41,9 +43,10 @@ type Detail = { thread: ApiThread; messages: ApiThreadMessage[]; steps: ApiThrea
 type Pane = "overview" | "computer" | "files";
 
 export default function ThreadsPage() {
-  const { address } = useAuth();
+  const { address, disconnect } = useAuth();
+  const router = useRouter();
   const owner = address!;
-  const { moonlets } = useAppData();
+  const { moonlets, status } = useAppData();
   const [threads, setThreads] = useState<ApiThread[] | null>(null);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -175,6 +178,8 @@ export default function ThreadsPage() {
 
   const send = async (text: string, attachments: Attachment[] = []) => {
     const files = attachments.map((f) => ({ name: f.name, b64: f.b64 }));
+    atBottom.current = true;
+    setUnread(0);
     setError(null);
     setSending(true);
     const s = { model, effort, machine };
@@ -231,37 +236,35 @@ export default function ThreadsPage() {
 
   const list = (
     <div className="flex h-full flex-col">
-      <div className="flex h-14 shrink-0 items-center justify-between pl-4 pr-2 lg:hidden">
+      <div className="flex h-14 shrink-0 items-center justify-between pl-4 pr-2">
         <Link href="/app" className="inline-flex items-center gap-2">
           <MoonletMark size={26} face="var(--cream)" />
           <Wordmark className="text-[1.15rem] text-ink" />
         </Link>
-        <button type="button" onClick={() => setListOpen(false)} className="ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg" aria-label="Close threads">
+        <button type="button" onClick={() => (window.matchMedia("(min-width: 1024px)").matches ? setCollapsed(true) : setListOpen(false))} className="ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg lg:h-8 lg:w-8" aria-label="Close threads" title="Hide sidebar">
           <PanelLeft size={17} strokeWidth={1.7} />
         </button>
       </div>
-      <nav className="px-2 pb-3 lg:hidden">
+      <nav className="px-2 pb-3">
         {([["New thread", SquarePen, null], ["Moonlets", Orbit, "/app"], ["Launch a moonlet", Rocket, "/app/new"], ["Connections", Cable, "/app/connections"], ["The sky", Telescope, "/sky"]] as const).map(([label, Icon, href]) =>
           href ? (
-            <Link key={label} href={href} className="flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] text-ink active:bg-ink/[0.05]">
-              <Icon size={17} strokeWidth={1.6} className="text-ink-soft" /> {label}
+            <Link key={label} href={href} className="flex h-11 items-center gap-3 rounded-lg px-3 text-[15px] text-ink active:bg-ink/[0.05] lg:h-8 lg:gap-2.5 lg:px-2 lg:text-[13px] lg:text-ink-soft lg:hover:bg-ink/[0.04] lg:hover:text-ink">
+              <Icon size={17} strokeWidth={1.6} className="text-ink-soft lg:!h-4 lg:!w-4" /> {label}
             </Link>
           ) : (
-            <button key={label} type="button" onClick={() => { setListOpen(false); newThread(); }} className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-[15px] text-ink active:bg-ink/[0.05]">
-              <Icon size={17} strokeWidth={1.6} className="text-ink-soft" /> {label}
+            <button key={label} type="button" onClick={() => { setListOpen(false); newThread(); }} className="flex h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-[15px] text-ink active:bg-ink/[0.05] lg:h-8 lg:gap-2.5 lg:px-2 lg:text-[13px] lg:text-ink-soft lg:hover:bg-ink/[0.04] lg:hover:text-ink">
+              <Icon size={17} strokeWidth={1.6} className="text-ink-soft lg:!h-4 lg:!w-4" /> {label}
             </button>
           ),
         )}
       </nav>
-      <div className="flex h-12 shrink-0 items-center justify-between pl-4 pr-2 max-lg:h-9">
-        <p className="text-[12.5px] text-ink-faint max-lg:text-[13.5px]">Threads</p>
+      <div className="flex h-9 shrink-0 items-center justify-between pl-4 pr-2">
+        <p className="text-[13.5px] text-ink-faint lg:text-[12px]">Threads</p>
         <div className="flex items-center">
           <button type="button" onClick={newThread} className="ui-btn ui-btn-ghost ui-btn-icon h-7 w-7 rounded-md" aria-label="New thread" title="New thread">
             <SquarePen size={14} strokeWidth={1.8} />
           </button>
-          <button type="button" onClick={() => setCollapsed(true)} className="ui-btn ui-btn-ghost ui-btn-icon h-7 w-7 rounded-md max-lg:!hidden" aria-label="Hide threads" title="Hide threads">
-            <PanelLeftClose size={14} strokeWidth={1.8} />
-          </button>
+          
           
         </div>
       </div>
@@ -302,6 +305,9 @@ export default function ThreadsPage() {
           </li>
         ))}
       </ul>
+      <div className="hidden border-t border-ink/[0.07] p-2 lg:block">
+        <AccountMenu address={owner} status={status} onDisconnect={() => { disconnect(); router.push("/"); }} />
+      </div>
     </div>
   );
 
@@ -328,7 +334,7 @@ export default function ThreadsPage() {
 
   return (
     <section className="flex h-full min-h-0 flex-1">
-      {!collapsed && <aside className="hidden w-[240px] shrink-0 border-r border-ink/[0.07] bg-paper/60 lg:block">{list}</aside>}
+      {!collapsed && <aside className="hidden w-[256px] shrink-0 border-r border-ink/[0.07] bg-paper lg:block">{list}</aside>}
       <AnimatePresence>
         {listOpen && (
           <div className="fixed inset-0 z-40 lg:hidden">
@@ -704,11 +710,18 @@ function ComputerView({ threadId, awake, live, onTakeControl }: { threadId: stri
   const [n, setN] = useState(0);
   const [stream, setStream] = useState(true);
   const [control, setControl] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   useEffect(() => {
     if (!awake || stream) return;
     const id = setInterval(() => setN((x) => x + 1), live ? 1000 : 5000);
     return () => clearInterval(id);
   }, [awake, live, stream]);
+  useEffect(() => {
+    if (!expanded) return;
+    const k = (e: KeyboardEvent) => { if (e.key === "Escape" && !control) setExpanded(false); };
+    window.addEventListener("keydown", k);
+    return () => window.removeEventListener("keydown", k);
+  }, [expanded, control]);
   if (!awake)
     return (
       <div className="flex h-full flex-col items-center justify-center gap-2 p-6 text-center">
@@ -717,35 +730,59 @@ function ComputerView({ threadId, awake, live, onTakeControl }: { threadId: stri
         <p className="text-[12px] text-ink-faint">It wakes when the moonlet starts working.</p>
       </div>
     );
+  const take = async () => {
+    if (control) return setControl(false);
+    if (live && !window.confirm("Taking control stops the moonlet's current task. Continue?")) return;
+    if (live) await onTakeControl();
+    setControl(true);
+    setExpanded(true);
+  };
+  const status = (
+    <span className="inline-flex min-w-0 items-center gap-1.5 truncate text-[12.5px] font-medium">
+      <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${control ? "bg-gold" : live ? "animate-pulse bg-moss" : "bg-ink-faint"}`} />
+      {control ? "You're in control" : live ? "Moonlet is working" : "Idle"}
+    </span>
+  );
+  const takeBtn = (dark: boolean) => (
+    <button type="button" onClick={take} className={`inline-flex h-8 shrink-0 items-center rounded-lg px-3 text-[12.5px] font-medium transition-colors ${control ? (dark ? "bg-gold text-ink" : "bg-ink text-cream") : dark ? "bg-white/10 text-cream hover:bg-white/15" : "border border-ink/[0.12] bg-white text-ink hover:border-ink/[0.3]"}`}>
+      {control ? "Done" : "Take control"}
+    </button>
+  );
   return (
     <div className="p-3">
-      <div className="mb-2.5 flex items-center gap-2">
-        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-ink-soft">
-          <span className={`h-1.5 w-1.5 rounded-full ${control ? "bg-gold" : live ? "animate-pulse bg-moss" : "bg-ink-faint"}`} />
-          {control ? "You're in control" : live ? "Moonlet is working" : "Idle"}
-        </span>
+      <div className="mb-2.5 flex items-center gap-2 text-ink-soft">
+        {status}
         {stream && (
-          <button
-            type="button"
-            onClick={async () => {
-              if (control) return setControl(false);
-              if (live && !window.confirm("Taking control stops the moonlet's current task. Continue?")) return;
-              if (live) await onTakeControl();
-              setControl(true);
-            }}
-            className={`ml-auto inline-flex h-8 items-center rounded-lg px-3 text-[12.5px] font-medium transition-colors ${control ? "bg-ink text-cream" : "border border-ink/[0.12] bg-white text-ink hover:border-ink/[0.3]"}`}
-          >
-            {control ? "Done" : "Take control"}
-          </button>
+          <div className="ml-auto flex items-center gap-1.5">
+            <button type="button" onClick={() => setExpanded(true)} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg" aria-label="Expand" title="Expand">
+              <Maximize2 size={15} strokeWidth={1.8} />
+            </button>
+            {takeBtn(false)}
+          </div>
         )}
       </div>
-      {stream ? (
-        <LiveDesktop threadId={threadId} control={control} onFail={() => { setControl(false); setStream(false); }} />
-      ) : (
+      {!stream ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={`/api/threads/${threadId}/screen?n=${n}`} alt="The moonlet's screen" className="w-full rounded-lg border border-ink/[0.08] bg-night" />
+      ) : (
+        <div className={expanded ? "fixed inset-0 z-[60] flex flex-col bg-[#0b0c10] pt-[env(safe-area-inset-top)]" : ""}>
+          {expanded && (
+            <div className="flex h-12 shrink-0 items-center gap-2 px-3 text-cream/80">
+              {status}
+              <span className="hidden text-[12px] text-cream/40 sm:inline">{control ? "· Click and type straight into the computer" : ""}</span>
+              <div className="ml-auto flex items-center gap-1.5">
+                {takeBtn(true)}
+                <button type="button" onClick={() => { setControl(false); setExpanded(false); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-cream/70 hover:bg-white/10 hover:text-cream" aria-label="Close expanded view" title="Close">
+                  <Minimize2 size={15} strokeWidth={1.8} />
+                </button>
+              </div>
+            </div>
+          )}
+          <div className={expanded ? "min-h-0 flex-1 px-3 pb-[max(12px,env(safe-area-inset-bottom))]" : ""}>
+            <LiveDesktop fill={expanded} threadId={threadId} control={control} onFail={() => { setControl(false); setExpanded(false); setStream(false); }} />
+          </div>
+        </div>
       )}
-      {control && <p className="mt-2 text-[12px] leading-[1.5] text-ink-faint">Click and type straight into the computer. Tap Done, then tell the moonlet to carry on.</p>}
     </div>
   );
 }

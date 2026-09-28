@@ -36,6 +36,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const allowed = !!address && signed;
   const immersive = pathname.startsWith("/app/threads");
   const [drawer, setDrawer] = useState(false);
+  const [navHidden, setNavHiddenState] = useState(false);
+  useEffect(() => {
+    const id = requestAnimationFrame(() => setNavHiddenState(localStorage.getItem("moonlet.nav.hidden") === "1"));
+    return () => cancelAnimationFrame(id);
+  }, []);
+  const setNavHidden = (v: boolean) => {
+    setNavHiddenState(v);
+    localStorage.setItem("moonlet.nav.hidden", v ? "1" : "0");
+  };
+  const bare = immersive || navHidden;
 
   useEffect(() => {
     if (!ready) return;
@@ -55,12 +65,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <AppDataProvider owner={address!}>
-      <div className="app-root h-dvh overflow-hidden bg-cream text-ink lg:grid lg:grid-cols-[240px_minmax(0,1fr)] lg:grid-rows-[minmax(0,1fr)]">
-        <Suspense fallback={<aside className="hidden lg:block" />}>
-          <Sidebar pathname={pathname} address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} />
-        </Suspense>
+      <div className={`app-root h-dvh overflow-hidden bg-cream text-ink lg:grid lg:grid-rows-[minmax(0,1fr)] ${bare ? "lg:grid-cols-[minmax(0,1fr)]" : "lg:grid-cols-[240px_minmax(0,1fr)]"}`}>
+        {!bare && <Suspense fallback={<aside className="hidden lg:block" />}>
+          <Sidebar onHide={() => setNavHidden(true)} pathname={pathname} address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} />
+        </Suspense>}
 
-        <div className="flex h-full min-h-0 min-w-0 flex-col">
+        <div className="relative flex h-full min-h-0 min-w-0 flex-col">
+          {navHidden && !immersive && (
+            <button type="button" onClick={() => setNavHidden(false)} className="ui-btn ui-btn-ghost ui-btn-icon absolute left-2 top-2.5 z-40 hidden h-8 w-8 rounded-lg bg-cream/80 backdrop-blur lg:inline-flex" aria-label="Show sidebar" title="Show sidebar">
+              <PanelLeft size={16} strokeWidth={1.7} />
+            </button>
+          )}
           <header className={`z-30 flex h-12 shrink-0 items-center gap-1 bg-cream pl-2 pr-3 pt-[env(safe-area-inset-top)] box-content lg:hidden ${immersive ? "!hidden" : ""}`}>
             <button type="button" onClick={() => setDrawer(true)} className="ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg" aria-label="Menu">
               <PanelLeft size={17} strokeWidth={1.7} />
@@ -71,7 +86,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </Link>
             <Suspense><PhoneAccount address={address!} onDisconnect={() => { disconnect(); router.push("/"); }} /></Suspense>
           </header>
-          <main className={`min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto lg:pb-0 ${immersive ? "pt-[env(safe-area-inset-top)] lg:pt-0" : "pb-[env(safe-area-inset-bottom)]"} [scrollbar-width:thin]`}>{children}</main>
+          <main className={`min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto lg:pb-0 ${immersive ? "pt-[env(safe-area-inset-top)] lg:pt-0" : "pb-[env(safe-area-inset-bottom)]"} ${navHidden && !immersive ? "lg:pl-10" : ""} [scrollbar-width:thin]`}>{children}</main>
           <AnimatePresence>
             {drawer && (
               <div className="fixed inset-0 z-50 lg:hidden">
@@ -97,7 +112,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function Sidebar({ pathname, address, onDisconnect, onClose }: { pathname: string; address: string; onDisconnect: () => void; onClose?: () => void }) {
+function Sidebar({ pathname, address, onDisconnect, onClose, onHide }: { pathname: string; address: string; onDisconnect: () => void; onClose?: () => void; onHide?: () => void }) {
   const { moonlets, status } = useAppData();
   const params = useSearchParams();
   const selected = pathname === "/app" ? (params.get("m") ?? moonlets?.[0]?.id ?? null) : null;
@@ -110,6 +125,11 @@ function Sidebar({ pathname, address, onDisconnect, onClose }: { pathname: strin
           <MoonletMark size={24} face="var(--cream)" />
           <Wordmark className="text-[1.05rem] text-ink" />
         </Link>
+        {onHide && (
+          <button type="button" onClick={onHide} className="ui-btn ui-btn-ghost ui-btn-icon h-8 w-8 rounded-lg" aria-label="Hide sidebar" title="Hide sidebar">
+            <PanelLeft size={16} strokeWidth={1.7} />
+          </button>
+        )}
         {onClose && (
           <button type="button" onClick={onClose} className="ui-btn ui-btn-ghost ui-btn-icon h-9 w-9 rounded-lg" aria-label="Close menu">
             <PanelLeft size={17} strokeWidth={1.7} />
@@ -246,7 +266,7 @@ export function Avatar({ n, size = 28, className = "" }: { n: number | undefined
 }
 
 /** The account block at the bottom of the sidebar: press it for a small menu (copy address, the sky, disconnect). */
-function AccountMenu({ address, status, onDisconnect }: { address: string; status: OrbioStatus | null; onDisconnect: () => void }) {
+export function AccountMenu({ address, status, onDisconnect }: { address: string; status: OrbioStatus | null; onDisconnect: () => void }) {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
