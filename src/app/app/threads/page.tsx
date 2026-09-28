@@ -178,6 +178,8 @@ export default function ThreadsPage() {
 
   const send = async (text: string, attachments: Attachment[] = []) => {
     const files = attachments.map((f) => ({ name: f.name, b64: f.b64 }));
+    atBottom.current = true;
+    setUnread(0);
     setError(null);
     setSending(true);
     const s = { model, effort, machine };
@@ -762,25 +764,22 @@ function ComputerView({ threadId, awake, live, onTakeControl }: { threadId: stri
       {!stream ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={`/api/threads/${threadId}/screen?n=${n}`} alt="The moonlet's screen" className="w-full rounded-lg border border-ink/[0.08] bg-night" />
-      ) : expanded ? (
-        <button type="button" onClick={() => setExpanded(true)} className="flex aspect-[16/10] w-full items-center justify-center rounded-lg border border-ink/[0.08] bg-night text-[12.5px] text-cream/60">Open in expanded view</button>
       ) : (
-        <LiveDesktop threadId={threadId} control={control} onFail={() => { setControl(false); setStream(false); }} />
-      )}
-      {expanded && stream && (
-        <div className="fixed inset-0 z-[60] flex flex-col bg-[#0b0c10] pt-[env(safe-area-inset-top)]">
-          <div className="flex h-12 shrink-0 items-center gap-2 px-3 text-cream/80">
-            {status}
-            <span className="hidden text-[12px] text-cream/40 sm:inline">{control ? "· Click and type straight into the computer" : ""}</span>
-            <div className="ml-auto flex items-center gap-1.5">
-              {takeBtn(true)}
-              <button type="button" onClick={() => { setControl(false); setExpanded(false); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-cream/70 hover:bg-white/10 hover:text-cream" aria-label="Close expanded view" title="Close">
-                <Minimize2 size={15} strokeWidth={1.8} />
-              </button>
+        <div className={expanded ? "fixed inset-0 z-[60] flex flex-col bg-[#0b0c10] pt-[env(safe-area-inset-top)]" : ""}>
+          {expanded && (
+            <div className="flex h-12 shrink-0 items-center gap-2 px-3 text-cream/80">
+              {status}
+              <span className="hidden text-[12px] text-cream/40 sm:inline">{control ? "· Click and type straight into the computer" : ""}</span>
+              <div className="ml-auto flex items-center gap-1.5">
+                {takeBtn(true)}
+                <button type="button" onClick={() => { setControl(false); setExpanded(false); }} className="inline-flex h-8 w-8 items-center justify-center rounded-lg text-cream/70 hover:bg-white/10 hover:text-cream" aria-label="Close expanded view" title="Close">
+                  <Minimize2 size={15} strokeWidth={1.8} />
+                </button>
+              </div>
             </div>
-          </div>
-          <div className="min-h-0 flex-1 px-3 pb-[max(12px,env(safe-area-inset-bottom))]">
-            <LiveDesktop fill threadId={threadId} control={control} onFail={() => { setControl(false); setExpanded(false); setStream(false); }} />
+          )}
+          <div className={expanded ? "min-h-0 flex-1 px-3 pb-[max(12px,env(safe-area-inset-bottom))]" : ""}>
+            <LiveDesktop fill={expanded} threadId={threadId} control={control} onFail={() => { setControl(false); setExpanded(false); setStream(false); }} />
           </div>
         </div>
       )}
