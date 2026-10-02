@@ -11,12 +11,14 @@ const COLS: [string, { href: string; label: string; external?: boolean }[]][] = 
   ["Product", [
     { href: "/app", label: "Launch a moonlet" },
     { href: "/sky", label: "The sky" },
+    { href: "/#token", label: "$MOONLET contract" },
     { href: "/sign-in", label: "Sign in" },
   ]],
   ["Learn", [
     { href: "#how", label: "How it works" },
     { href: "https://www.orbio.so/build", label: "Orbio Build Week", external: true },
     { href: "https://github.com/daraijaola/moonlet", label: "Source", external: true },
+    { href: "https://x.com/Moonletxyz", label: "@Moonletxyz on X", external: true },
   ]],
   ["Legal", [
     { href: "/privacy", label: "Privacy" },
