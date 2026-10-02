@@ -1,5 +1,6 @@
 import { Nav } from "@/components/nav";
 import { Hero } from "@/components/hero";
+import { TokenCA } from "@/components/token-ca";
 import { How } from "@/components/how";
 import { UseCases } from "@/components/usecases";
 import { Rails } from "@/components/rails";
@@ -14,6 +15,7 @@ export default function Home() {
       <Nav />
       <main className="flex-1">
         <Hero />
+        <TokenCA />
         <How />
         <UseCases />
         <Rails />
