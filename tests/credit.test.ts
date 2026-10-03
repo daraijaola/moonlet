@@ -30,18 +30,35 @@ const word = (n: bigint | string) => `0x${BigInt(n).toString(16).padStart(64, "0
 function activatedLog(activationId: number, from: string, beneficiary: string, amountUnits: bigint) {
   return { address: ORBIO.credit, topics: [topic, word(BigInt(activationId)), word(from), word(beneficiary)], data: encodeAbiParameters([{ type: "uint256" }], [amountUnits]) };
 }
+const feeTopic = keccak256(toHex("ActivationFeeCharged(uint256,uint256)"));
+function feeLog(activationId: number, feeUnits: bigint) {
+  return { address: ORBIO.credit, topics: [feeTopic, word(BigInt(activationId))], data: encodeAbiParameters([{ type: "uint256" }], [feeUnits]) };
+}
+/** Chain head well past the 10M-block log window from CREDIT's first block, as on mainnet. */
+let HEAD = 79_500_000;
+const blk = (n: number) => `0x${n.toString(16)}`;
+const getLogsCalls: Array<{ from: number; to: number }> = [];
 let gatewaySays: { available: string; used: string } | null = null;
 const chain: typeof fetch = async (u, init) => {
   if (String(u).endsWith("/api/v1/key")) return gatewaySays ? new Response(JSON.stringify({ object: "key", balance: gatewaySays })) : new Response("{\"error\":\"unknown key\"}", { status: 401 });
   const body = JSON.parse(String(init?.body)) as { method: string; params: unknown[] };
   if (body.method === "eth_getTransactionReceipt") return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: receipts.get(String(body.params[0])) ?? null }));
+  if (body.method === "eth_blockNumber") return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: `0x${HEAD.toString(16)}` }));
   if (body.method === "eth_getLogs") {
-    const f = body.params[0] as { topics: (string | null)[]; fromBlock: string };
+    const f = body.params[0] as { topics: (string | string[] | null)[]; fromBlock: string; toBlock: string };
+    getLogsCalls.push({ from: Number(f.fromBlock), to: Number(f.toBlock) });
+    // Robinhood Chain's real limit: a window wider than 10,000,000 blocks is refused.
+    if (Number(f.toBlock) - Number(f.fromBlock) > 10_000_000) return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, error: { code: -32000, message: "only 10000000 blocks are allowed" } }));
     const out: unknown[] = [];
     for (const [hash, rc] of receipts) {
       const r = rc as { status: string; blockNumber: string; logs: Array<{ topics: string[]; data: string }> };
-      if (r.status !== "0x1" || Number(r.blockNumber) < Number(f.fromBlock)) continue;
-      for (const l of r.logs) if (l.topics[3] === f.topics[3]) out.push({ ...l, transactionHash: hash, blockNumber: r.blockNumber });
+      if (r.status !== "0x1" || Number(r.blockNumber) < Number(f.fromBlock) || Number(r.blockNumber) > Number(f.toBlock)) continue;
+      for (const l of r.logs) {
+        if (l.topics[0] !== f.topics[0]) continue;
+        const want = f.topics[1];
+        if (Array.isArray(want) ? !want.includes(l.topics[1]) : f.topics[3] && l.topics[3] !== f.topics[3]) continue;
+        out.push({ ...l, transactionHash: hash, blockNumber: r.blockNumber });
+      }
     }
     return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: out }));
   }
@@ -180,7 +197,9 @@ describe("CREDIT protocol", () => {
     const { syncActivations } = await import("@/moonlet/orbio");
     const before = (await store.getOwner(OWNER))!.orbioBalanceUsd;
     const tx = `0x${"77".repeat(32)}`;
-    receipts.set(tx, { status: "0x1", blockNumber: "0x30", logs: [activatedLog(11, OWNER, OWNER, 7_500_000n)] });
+    // The chain moves on; the activation lands in blocks the ledger has not read yet.
+    HEAD += 1_000;
+    receipts.set(tx, { status: "0x1", blockNumber: blk(HEAD - 10), logs: [activatedLog(11, OWNER, OWNER, 7_500_000n)] });
     await store.updateMoonlet("m_c1", { status: "quiet", nextRunAt: Date.now() + 86_400_000 });
     expect(await syncActivations(OWNER, chain)).toBe(7.5);
     expect(await syncActivations(OWNER, chain)).toBe(0);
@@ -188,6 +207,42 @@ describe("CREDIT protocol", () => {
     expect((await store.getMoonlet("m_c1"))!.nextRunAt).toBeLessThanOrEqual(Date.now());
     expect((await store.getOwner(OWNER))!.orbioBalanceUsd).toBeCloseTo(before + 7.5, 6);
     expect((await makeCreditClient(OWNER, chain).getBalance()).availableUsd).toBeCloseTo(before + 7.5, 6);
+  });
+
+  it("the first sync scans from CREDIT's first block in windows the RPC accepts, then only new blocks after its cursor", async () => {
+    const { syncActivations } = await import("@/moonlet/orbio");
+    const fresh = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
+    receipts.set(`0x${"78".repeat(32)}`, { status: "0x1", blockNumber: blk(79_000_000), logs: [activatedLog(12, fresh, fresh, 2_000_000n)] });
+    getLogsCalls.length = 0;
+    expect(await syncActivations(fresh, chain)).toBe(2);
+    expect(getLogsCalls.length).toBeGreaterThan(1);
+    expect(getLogsCalls.every((c) => c.to - c.from < 10_000_000)).toBe(true);
+    expect(getLogsCalls[0].from).toBe(ORBIO.firstBlock);
+    expect(getLogsCalls.at(-1)!.to).toBe(HEAD);
+    getLogsCalls.length = 0;
+    expect(await syncActivations(fresh, chain)).toBe(0);
+    expect(getLogsCalls.every((c) => c.from >= HEAD - 50)).toBe(true);
+  });
+
+  it("an activation fee credits nothing: the ledger takes the gross burn minus ActivationFeeCharged", async () => {
+    const { syncActivations } = await import("@/moonlet/orbio");
+    const payer = privateKeyToAccount(generatePrivateKey()).address.toLowerCase();
+    const tx = `0x${"79".repeat(32)}`;
+    receipts.set(tx, { status: "0x1", blockNumber: blk(79_100_000), logs: [activatedLog(13, payer, payer, 10_000_000n), feeLog(13, 500_000n)] });
+    expect(await syncActivations(payer, chain)).toBeCloseTo(9.5, 6);
+    expect((await readActivations(tx, chain))[0].amountUsd).toBeCloseTo(9.5, 6);
+  });
+
+  it("staked ORBIO is read with positionOf on the staking proxy (its balanceOf reverts)", async () => {
+    const { stakedOrbioOf } = await import("@/moonlet/orbio");
+    const staking: typeof fetch = async (_u, init) => {
+      const b = JSON.parse(String(init?.body)) as { params: [{ to: string; data: string }] };
+      const { to, data } = b.params[0];
+      if (to === ORBIO.staking && data.startsWith("0x70a08231")) return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, error: { code: 3, message: "execution reverted" } }));
+      if (to === ORBIO.staking && data.startsWith("0xfd2d39c5")) return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: word(1234n * 10n ** 18n) }));
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: "0x0" }));
+    };
+    expect(await stakedOrbioOf(OWNER, staking)).toBe(1234);
   });
 
   it("when the gateway answers, its balance wins and the ledger is reconciled to it; when it does not, the ledger stands", async () => {

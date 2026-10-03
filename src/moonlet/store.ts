@@ -616,7 +616,8 @@ export async function skyStats() {
         SUM(CASE WHEN status IN ('running','idle') THEN burn_per_day_usd ELSE 0 END) AS burn,
         SUM(spent_total_usd) AS spent
       FROM moonlets WHERE status != 'deleted'`),
-    c.execute({ sql: `SELECT COUNT(*) AS today, SUM(CASE WHEN tx_hash IS NOT NULL THEN 1 ELSE 0 END) AS anchored FROM runs WHERE at >= ?`, args: [Date.now() - 86_400_000] }),
+    // Only finished runs count: a quiet no-op (no money, no connection) is not work.
+    c.execute({ sql: `SELECT COUNT(*) AS today, SUM(CASE WHEN tx_hash IS NOT NULL THEN 1 ELSE 0 END) AS anchored FROM runs WHERE at >= ? AND status = 'done'`, args: [Date.now() - 86_400_000] }),
     c.execute(`SELECT COUNT(*) AS bags, COALESCE(SUM(bag),0) AS tokens FROM owners WHERE bag >= 1000 AND address IN (SELECT DISTINCT owner FROM moonlets WHERE status != 'deleted')`),
     c.execute(`SELECT COALESCE(SUM(cost_usd),0) AS spent, COUNT(*) AS runs FROM runs WHERE status = 'done'`),
   ]);

@@ -28,7 +28,14 @@ export const ORBIO = {
   orbio: "0xaa07a0e9209e16ac99708c3ec70159c6ef3128a3",
   /** keccak256("Activated(uint256,address,bytes32,uint256)") */
   activatedTopic: "0x3a293632e41f6556f85d186d28ae95749534c2c9422cec0e1075886560ca7147",
+  /** keccak256("ActivationFeeCharged(uint256,uint256)"): the part of an activation that credits nothing. */
+  feeTopic: "0x22bce9ab29f23f4818afa41ce0ca8cc1d23816cf4544e29580a53aead6f0176c",
+  /** Just before the first Activated event on chain (block 63,743,280); a log scan never needs to start earlier. */
+  firstBlock: 63_700_000,
 } as const;
+
+/** Robinhood Chain's RPC refuses eth_getLogs spanning more than 10,000,000 blocks. */
+const LOG_WINDOW = 9_000_000;
 
 export const keyMessage = (epoch: number) => `Orbio API key · chain ${ORBIO.chainId} · epoch ${epoch}`;
 
@@ -91,13 +98,34 @@ export async function creditTokensOf(owner: string, fetchImpl: typeof fetch = fe
   return Number(await ethCall(ORBIO.credit, `0x70a08231${pad(owner)}`, fetchImpl)) / 1e6;
 }
 
-/** ORBIO staked by the owner, if the staking contract exposes balanceOf; 0 when it does not. */
+/** ORBIO staked by the owner (18 decimals). The staking proxy answers `positionOf(address)`; its `balanceOf` reverts. */
 export async function stakedOrbioOf(owner: string, fetchImpl: typeof fetch = fetch) {
-  try {
-    return Number(await ethCall(ORBIO.staking, `0x70a08231${pad(owner)}`, fetchImpl)) / 1e18;
-  } catch {
-    return 0;
+  return Number(await ethCall(ORBIO.staking, `0xfd2d39c5${pad(owner)}`, fetchImpl)) / 1e18;
+}
+
+/** One JSON-RPC call. The public RPC rate-limits bursts ("Too Many Requests"), so those retry twice with a short backoff. */
+async function rpc<T>(method: string, params: unknown[], fetchImpl: typeof fetch, timeoutMs = 10_000): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    const r = await fetchImpl(RH_RPC, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    const j = (await r.json().catch(() => ({ error: { message: `HTTP ${r.status}` } }))) as { result?: T; error?: { message: string } };
+    const limited = r.status === 429 || /too many requests/i.test(j.error?.message ?? "");
+    if (limited && attempt < 2) {
+      await new Promise((ok) => setTimeout(ok, 600 * (attempt + 1)));
+      continue;
+    }
+    if (j.error) throw new Error(`rpc ${method}: ${j.error.message}`);
+    if (j.result === undefined) throw new Error(`rpc ${method}: no result`);
+    return j.result;
   }
+}
+
+export async function latestBlock(fetchImpl: typeof fetch = fetch) {
+  return Number(BigInt(await rpc<string>("eth_blockNumber", [], fetchImpl)));
 }
 
 export type ActivationReceipt = { txHash: string; activationId: string; from: string; beneficiary: string; amountUsd: number; blockNumber: number };
@@ -118,6 +146,7 @@ export async function readActivations(txHash: string, fetchImpl: typeof fetch = 
   if (!rc) return [];
   if (rc.status !== "0x1") throw new Error("transaction reverted");
   const out: ActivationReceipt[] = [];
+  const fees = feesIn(rc.logs);
   for (const log of rc.logs) {
     if (log.address.toLowerCase() !== ORBIO.credit || log.topics[0]?.toLowerCase() !== ORBIO.activatedTopic) continue;
     // Activated(uint256 indexed activationId, address indexed from, bytes32 indexed beneficiary, uint256 amount)
@@ -129,46 +158,76 @@ export async function readActivations(txHash: string, fetchImpl: typeof fetch = 
       activationId: BigInt(activationId).toString(),
       from: `0x${from.slice(-40)}`.toLowerCase(),
       beneficiary: `0x${beneficiary.slice(-40)}`.toLowerCase(),
-      amountUsd: Number(BigInt(amount)) / 1e6,
+      amountUsd: netUsd(BigInt(amount), fees.get(BigInt(activationId).toString())),
       blockNumber: Number(BigInt(rc.blockNumber)),
     });
   }
   return out;
 }
 
-/**
- * Every Activated event whose beneficiary is this wallet, from the chain's own index. Lets the ledger pick up activations
- * made anywhere (Orbio's dashboard, a script, another app), not only the ones posted through Moonlet.
- */
-export async function findActivations(owner: string, fetchImpl: typeof fetch = fetch, fromBlock = 0): Promise<ActivationReceipt[]> {
-  const r = await fetchImpl(RH_RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getLogs", params: [{ fromBlock: `0x${fromBlock.toString(16)}`, toBlock: "latest", address: ORBIO.credit, topics: [ORBIO.activatedTopic, null, null, `0x${pad(owner)}`] }] }),
-    signal: AbortSignal.timeout(10_000),
-  });
-  const j = (await r.json()) as { result?: Array<{ transactionHash: string; blockNumber: string; topics: string[]; data: string }>; error?: { message: string } };
-  if (j.error) throw new Error(`rpc: ${j.error.message}`);
-  return (j.result ?? []).map((log) => ({
-    txHash: log.transactionHash,
-    activationId: BigInt(log.topics[1]).toString(),
-    from: `0x${log.topics[2].slice(-40)}`.toLowerCase(),
-    beneficiary: `0x${log.topics[3].slice(-40)}`.toLowerCase(),
-    amountUsd: Number(BigInt(log.data.slice(0, 66))) / 1e6,
-    blockNumber: Number(BigInt(log.blockNumber)),
-  }));
+/** ActivationFeeCharged amounts by activationId. Activated carries the gross burn; the fee is the part that credits nothing. */
+function feesIn(logs: Array<{ address: string; topics: string[]; data: string }>) {
+  const m = new Map<string, bigint>();
+  for (const l of logs) if (l.address.toLowerCase() === ORBIO.credit && l.topics[0]?.toLowerCase() === ORBIO.feeTopic && l.topics[1]) m.set(BigInt(l.topics[1]).toString(), BigInt(l.data.slice(0, 66)));
+  return m;
 }
 
-/** Pull any activations the ledger has not seen yet; returns the dollars newly credited. Errors are swallowed: the chain being slow must not stop a run. */
+const netUsd = (gross: bigint, fee = 0n) => Number(gross > fee ? gross - fee : 0n) / 1e6;
+
+type RawLog = { address: string; transactionHash: string; blockNumber: string; topics: string[]; data: string };
+
+/**
+ * Every Activated event whose beneficiary is this wallet, from the chain's own index. Lets the ledger pick up activations
+ * made anywhere (Orbio's dashboard, a script, another app), not only the ones posted through Moonlet. Scans in windows the
+ * RPC accepts; any window failing throws, so the caller never advances past blocks it did not read.
+ */
+export async function findActivations(owner: string, fetchImpl: typeof fetch = fetch, fromBlock: number = ORBIO.firstBlock, toBlock?: number): Promise<ActivationReceipt[]> {
+  const to = toBlock ?? (await latestBlock(fetchImpl));
+  const logs: RawLog[] = [];
+  for (let lo = Math.max(0, fromBlock); lo <= to; lo += LOG_WINDOW) {
+    const hi = Math.min(to, lo + LOG_WINDOW - 1);
+    const filter = { fromBlock: `0x${lo.toString(16)}`, toBlock: `0x${hi.toString(16)}`, address: ORBIO.credit };
+    const found = await rpc<RawLog[]>("eth_getLogs", [{ ...filter, topics: [ORBIO.activatedTopic, null, null, `0x${pad(owner)}`] }], fetchImpl);
+    if (!found.length) continue;
+    logs.push(...found);
+    // The fee events for these activations, same window: one more call only when something was found.
+    const ids = found.map((l) => l.topics[1]);
+    logs.push(...(await rpc<RawLog[]>("eth_getLogs", [{ ...filter, topics: [ORBIO.feeTopic, ids] }], fetchImpl).catch(() => [])));
+  }
+  const fees = feesIn(logs.map((l) => ({ ...l, address: l.address ?? ORBIO.credit })));
+  return logs
+    .filter((l) => l.topics[0]?.toLowerCase() === ORBIO.activatedTopic)
+    .map((log) => {
+      const activationId = BigInt(log.topics[1]).toString();
+      return {
+        txHash: log.transactionHash,
+        activationId,
+        from: `0x${log.topics[2].slice(-40)}`.toLowerCase(),
+        beneficiary: `0x${log.topics[3].slice(-40)}`.toLowerCase(),
+        amountUsd: netUsd(BigInt(log.data.slice(0, 66)), fees.get(activationId)),
+        blockNumber: Number(BigInt(log.blockNumber)),
+      };
+    });
+}
+
+/**
+ * Pull any activations the ledger has not seen yet; returns the dollars newly credited. A per-wallet cursor remembers the
+ * last block read, so each sync scans only new blocks. Errors are logged and return 0: the chain being slow must not stop a run.
+ */
 export async function syncActivations(owner: string, fetchImpl: typeof fetch = fetch) {
+  const cursorKey = `activations.synced.${owner.toLowerCase()}`;
   try {
-    const known = await store.listActivations(owner, 1);
-    const from = known[0] ? Math.max(0, known[0].blockNumber - 1) : 0;
+    const cursor = Number((await store.kvGet(cursorKey)) ?? NaN);
+    const latest = await latestBlock(fetchImpl);
+    // Re-read a few blocks behind the cursor: a block at the tip may not have been indexed yet. Replays are no-ops.
+    const from = Number.isFinite(cursor) ? Math.max(ORBIO.firstBlock, cursor - 50) : ORBIO.firstBlock;
     let credited = 0;
-    for (const a of await findActivations(owner, fetchImpl, from)) if (await store.addActivation({ ...a, owner })) credited += a.amountUsd;
+    for (const a of await findActivations(owner, fetchImpl, from, latest)) if (await store.addActivation({ ...a, owner })) credited += a.amountUsd;
+    await store.kvSet(cursorKey, String(latest));
     if (credited > 0) await store.wakeQuietMoonlets(owner);
     return credited;
-  } catch {
+  } catch (e) {
+    console.error(`activation sync ${owner}:`, (e as Error).message);
     return 0;
   }
 }

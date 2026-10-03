@@ -50,6 +50,9 @@ function withDefaults(spec: JobSpec, input: { sentence: string; template: Templa
   };
 }
 
+/** Without a model to name it, a moonlet is named for its job rather than every one being "Lumen". */
+const FALLBACK_NAMES: Record<TemplateId, string> = { "market-watch": "Market watch", "repo-mechanic": "Repo watch", inbox: "Inbox", digest: "Digest", custom: "Moonlet" };
+
 /** Deterministic spec when the model is unavailable, so launch never dead-ends. */
 export function fallbackSpec(input: { sentence: string; template: TemplateId; name?: string }): JobSpec {
   const d = TEMPLATE_DEFAULTS[input.template];
@@ -61,7 +64,7 @@ export function fallbackSpec(input: { sentence: string; template: TemplateId; na
   const metric = /liquidity/i.test(s) ? "liquidity" : /volume/i.test(s) ? "volume24h" : /balance/i.test(s) && /0x[0-9a-fA-F]{40}/.test(s) ? "wallet_balance" : /price/i.test(s) ? "price" : repo && input.template === "repo-mechanic" ? "repo_activity" : null;
   const target = metric === "repo_activity" ? repo : metric === "wallet_balance" ? /0x[0-9a-fA-F]{40}/.exec(s)?.[0] : (/\$([A-Z]{2,10})\b/.exec(s)?.[1] ?? (/0x[0-9a-fA-F]{40}/.exec(s)?.[0] ?? (/\bORBIO\b/i.test(s) ? "ORBIO" : undefined)));
   return {
-    name: input.name?.trim() || "Lumen",
+    name: input.name?.trim() || FALLBACK_NAMES[input.template],
     template: input.template,
     objective: s.trim(),
     cadence: cadenceFrom(s, alert && metric && target ? "24h" : alert ? "4h" : d.cadence),

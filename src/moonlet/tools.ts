@@ -511,7 +511,7 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
           const [supply, staked] = await Promise.all([call(CREDIT, "0x18160ddd"), call(ORBIO_T, `0x70a08231${pad(STAKING)}`)]);
           const out: Record<string, unknown> = { creditSupply: round6(Number(supply) / 1e6), orbioStaked: Math.round(Number(staked) / 1e18) };
           if (wallet) {
-            const [c, s] = await Promise.all([call(CREDIT, `0x70a08231${pad(wallet)}`), call(STAKING, `0x70a08231${pad(wallet)}`).catch(() => 0n)]);
+            const [c, s] = await Promise.all([call(CREDIT, `0x70a08231${pad(wallet)}`), call(STAKING, `0xfd2d39c5${pad(wallet)}`).catch(() => 0n)]);
             out.wallet = { address: wallet, credit: round6(Number(c) / 1e6), orbioStaked: Math.round(Number(s) / 1e18) };
           }
           return out;
