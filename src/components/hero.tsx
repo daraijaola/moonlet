@@ -37,7 +37,7 @@ export function Hero({ freeUsd = 0 }: { freeUsd?: number }) {
             It works for you.
           </motion.h1>
           <motion.p {...up(0.12)} className="mt-6 max-w-[30rem] text-[17px] leading-[1.55] text-ink-soft">
-            Type one sentence. A moonlet works on your schedule, paid by the CREDIT your staked $ORBIO earns. No card, no key to copy. Sell the bag and it sleeps.
+            Type one sentence. A moonlet watches markets, works your inbox, opens pull requests or researches the web on your schedule, and leaves a receipt for every run on Robinhood Chain. {freeUsd > 0 ? `Start free with $${freeUsd} of AI on us, then pay` : "Pay"} per run from about a cent, by card or crypto.
           </motion.p>
           <motion.div {...up(0.18)} className="mt-9 max-w-[32rem]">
             <JobInput />
