@@ -22,7 +22,7 @@ import type { GmailConn } from "./connections/gmail";
 import { proposeActivation, telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
 import { refreshDueTokens } from "./orbio-oauth";
-import { addTrialSpend, grantIfEligible, isTrialKey, withTrial } from "./trial";
+import { addTrialSpend, isTrialKey, trialOf, withTrial } from "./trial";
 import { followup } from "./followup";
 
 /**
@@ -52,8 +52,8 @@ export async function orbioFor(owner: string, fetchImpl: typeof fetch = fetch): 
   if (o?.orbioKey) own = makeCreditClient(owner, fetchImpl);
   // A wallet that never signed can still run on the account key Orbio's dashboard issued, held by its moonlets.
   else if ((await store.listMoonlets(owner)).some((m) => m.key?.key.startsWith("sk-orbio-") && !isTrialKey(m.key.key))) own = makeCreditClient(owner, fetchImpl);
-  // A new account's free trial pays until their own balance can: no key to sign, no top-up needed to start.
-  const trial = await grantIfEligible(owner).catch(() => null);
+  // A new account's free trial (granted on a real app visit, never here) pays until their own balance can.
+  const trial = await trialOf(owner).catch(() => null);
   if (trial?.active) return withTrial(owner, own);
   return own;
 }

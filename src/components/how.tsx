@@ -11,8 +11,8 @@ const EASE = [0.23, 1, 0.32, 1] as const;
 
 const STEPS: { gesture: Gesture; title: string; body: string; meta: string }[] = [
   { gesture: "listen", title: "Say the job", body: "One sentence is enough. Moonlet writes the plan: what to check, which tools, how often. Change any of it before a cent moves.", meta: "01 · brief" },
-  { gesture: "claim", title: "Your signature is the key", body: "You sign Orbio's key message once in your wallet; that signature is the gateway key your moonlets bill. Nothing to copy, no account to open.", meta: "02 · key" },
-  { gesture: "work", title: "It works while you don't", body: "On the schedule you set, up to the cap you set, billed to the CREDIT you activate from your wallet. It reads the chain, the market and the web, and asks before it posts anything.", meta: "03 · run" },
+  { gesture: "claim", title: "Sign in your way", body: "Google, email or a wallet. New accounts start with free AI on us. After that, top up from $5 by card or crypto, or let your staked $ORBIO earn the CREDIT that pays for it.", meta: "02 · sign in" },
+  { gesture: "work", title: "It works while you don't", body: "On the schedule you set, up to the cap you set: most runs cost about a cent. It reads the chain, the market and the web, and asks before it posts anything.", meta: "03 · run" },
   { gesture: "stamp", title: "It leaves a receipt", body: "Every run leaves a receipt: cost, model, time taken and a hash of what it wrote, stamped on Robinhood Chain when anchoring is on. Anyone can open the page.", meta: "04 · receipt" },
 ];
 
@@ -70,8 +70,8 @@ export function How() {
             No dashboard to babysit. You write the job once; the moonlet handles the money, the schedule and the proof.
           </p>
           <div className="mt-8 flex flex-col gap-2.5 sm:flex-row sm:items-center">
-            <Link href="/app" className="lp-btn lp-btn-primary lp-btn-block">
-              Launch a moonlet <ArrowRight className="lp-arrow" size={15} strokeWidth={2.2} />
+            <Link href="/sign-in" className="lp-btn lp-btn-primary lp-btn-block">
+              Start free <ArrowRight className="lp-arrow" size={15} strokeWidth={2.2} />
             </Link>
             <Link href="#use-cases" className="lp-btn lp-btn-secondary lp-btn-block">See it working</Link>
           </div>

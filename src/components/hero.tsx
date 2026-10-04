@@ -9,7 +9,7 @@ import { DitherField } from "./dither-field";
 
 const EASE = [0.23, 1, 0.32, 1] as const;
 
-export function Hero() {
+export function Hero({ freeUsd = 0 }: { freeUsd?: number }) {
   const reduced = useReducedMotion();
   const up = (delay: number) =>
     reduced ? {} : { initial: { opacity: 0, y: 14 }, animate: { opacity: 1, y: 0 }, transition: { duration: 0.7, delay, ease: EASE } };
@@ -29,12 +29,12 @@ export function Hero() {
       <div className="relative mx-auto grid max-w-[1180px] gap-12 px-5 pt-28 pb-24 sm:px-6 sm:pt-36 lg:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)] lg:items-center lg:gap-8 lg:pb-32">
         <div className="max-w-[36rem]">
           <motion.p {...up(0)} className="font-mono text-[11.5px] uppercase tracking-[0.14em] text-ink-soft">
-            Orbio Build Week · self-funding agents
+            AI agents that work for you{freeUsd > 0 ? " · start free" : ""}
           </motion.p>
           <motion.h1 {...up(0.06)} className="mt-5 text-[3.1rem] font-medium leading-[1.02] tracking-[-0.035em] text-ink sm:text-[4.2rem] lg:text-[4.6rem]">
-            Your bag runs
+            Tell it once.
             <br />
-            an agent.
+            It works for you.
           </motion.h1>
           <motion.p {...up(0.12)} className="mt-6 max-w-[30rem] text-[17px] leading-[1.55] text-ink-soft">
             Type one sentence. A moonlet works on your schedule, paid by the CREDIT your staked $ORBIO earns. No card, no key to copy. Sell the bag and it sleeps.
@@ -42,12 +42,13 @@ export function Hero() {
           <motion.div {...up(0.18)} className="mt-9 max-w-[32rem]">
             <JobInput />
           </motion.div>
-          <motion.div {...up(0.24)} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-5">
-            <Link href="#how" className="lp-btn lp-btn-ghost lp-btn-sm -ml-3 w-fit">
-              How it works <ArrowRight className="lp-arrow" size={14} strokeWidth={2.2} />
+          <motion.div {...up(0.24)} className="mt-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <Link href="/sign-in" className="lp-btn lp-btn-primary lp-btn-sm w-fit">
+              {freeUsd > 0 ? `Start free · $${freeUsd} on us` : "Start"} <ArrowRight className="lp-arrow" size={14} strokeWidth={2.2} />
             </Link>
-            <p className="font-mono text-[12px] text-ink-faint">Stake $ORBIO, earn CREDIT · sign once · every run hashed on Robinhood Chain</p>
+            <Link href="#how" className="lp-btn lp-btn-ghost lp-btn-sm w-fit">How it works</Link>
           </motion.div>
+          <motion.p {...up(0.28)} className="mt-4 font-mono text-[12px] text-ink-faint">Google, email or wallet · pay per run · $ORBIO stakers earn the CREDIT that pays for it</motion.p>
         </div>
 
         <motion.div

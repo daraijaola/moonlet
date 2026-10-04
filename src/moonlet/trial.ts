@@ -1,5 +1,7 @@
 import * as store from "./store";
-import { gatewayBalance, OrbioAuthError, type OrbioClient } from "./orbio";
+import { creditTokensOf, gatewayBalance, OrbioAuthError, type OrbioClient } from "./orbio";
+import { bagOf } from "./bag";
+import { rhRpc } from "./rpc";
 
 /**
  * The free trial: a new account gets TRIAL_CREDIT_USD (default $5) to spend within TRIAL_DAYS (default 7), billed to a
@@ -14,7 +16,7 @@ import { gatewayBalance, OrbioAuthError, type OrbioClient } from "./orbio";
  *   - nothing is granted after TRIAL_UNTIL (optional)
  */
 
-export type TrialConfig = { key: string | null; creditUsd: number; days: number; start: number; until: number; maxAccounts: number; dailyAccounts: number };
+export type TrialConfig = { key: string | null; creditUsd: number; days: number; start: number; until: number; maxAccounts: number; dailyAccounts: number; bonusUsd: number; bonusUntil: number };
 
 export function trialConfig(env: NodeJS.ProcessEnv = process.env): TrialConfig {
   return {
@@ -25,8 +27,17 @@ export function trialConfig(env: NodeJS.ProcessEnv = process.env): TrialConfig {
     until: Date.parse(env.TRIAL_UNTIL ?? "") || Infinity,
     maxAccounts: Number(env.TRIAL_MAX_ACCOUNTS ?? 200) || 0,
     dailyAccounts: Number(env.TRIAL_DAILY_ACCOUNTS ?? 40) || 0,
+    // A limited-time boost on top (e.g. +$5 during a hunt): accounts that start before TRIAL_BONUS_UNTIL get it.
+    bonusUsd: Number(env.TRIAL_BONUS_USD ?? 0) || 0,
+    bonusUntil: Date.parse(env.TRIAL_BONUS_UNTIL ?? "") || 0,
   };
 }
+
+/** What a new account gets if it starts now: the base credit, plus the boost while it runs. */
+export const currentTrialUsd = (c: TrialConfig = trialConfig(), now = Date.now()) => c.creditUsd + (now < c.bonusUntil ? c.bonusUsd : 0);
+
+/** Whether the trial is on offer right now (for pages that advertise it). */
+export const trialOpen = (c: TrialConfig = trialConfig(), now = Date.now()) => !!c.key && c.creditUsd > 0 && c.days > 0 && c.start > 0 && now >= c.start && now < c.until;
 
 const on = (c: TrialConfig) => !!c.key && c.creditUsd > 0 && c.days > 0 && c.start > 0;
 
@@ -35,6 +46,8 @@ export const isTrialKey = (key: string | null | undefined, c: TrialConfig = tria
 async function ensureTable() {
   await store.migrate();
   await store.db().execute(`CREATE TABLE IF NOT EXISTS trials (owner TEXT PRIMARY KEY, granted_at INTEGER NOT NULL, expires_at INTEGER NOT NULL, credit_usd REAL NOT NULL, spent_usd REAL NOT NULL DEFAULT 0)`);
+  await store.db().execute(`ALTER TABLE trials ADD COLUMN device TEXT`).catch(() => undefined);
+  await store.db().execute(`ALTER TABLE trials ADD COLUMN ip_hash TEXT`).catch(() => undefined);
 }
 
 export type Trial = { creditUsd: number; spentUsd: number; remainingUsd: number; expiresAt: number; active: boolean };
@@ -50,21 +63,43 @@ export async function trialOf(owner: string, now = Date.now()): Promise<Trial | 
 }
 
 /** Grant the trial to a new account if it qualifies and there's room today and overall. Idempotent; returns the trial. */
-export async function grantIfEligible(owner: string, opts: { now?: number; config?: TrialConfig } = {}): Promise<Trial | null> {
+/**
+ * Anti-abuse signals for a grant. `device` is a long-lived first-party cookie id: one trial per device. `realWallet` says a
+ * wallet account has history on Robinhood Chain (a transaction, or ORBIO/CREDIT in it), so freshly generated empty wallets,
+ * the cheap way to farm trials, get nothing; email/Google accounts are verified by Orbio. `ipHash` is kept for review only:
+ * mobile networks put thousands of people behind one IP, so it never blocks.
+ */
+export type GrantSignals = { device?: string | null; ipHash?: string | null; realWallet?: (owner: string) => Promise<boolean> };
+
+export type GrantResult = Trial | null;
+
+export async function grantIfEligible(owner: string, opts: { now?: number; config?: TrialConfig; signals?: GrantSignals } = {}): Promise<GrantResult> {
   const c = opts.config ?? trialConfig();
   const now = opts.now ?? Date.now();
   const have = await trialOf(owner, now);
   if (have || !on(c) || now < c.start || now >= c.until) return have;
   const o = await store.getOwner(owner);
   if (!o?.createdAt || o.createdAt < c.start) return null;
+  const sig = opts.signals ?? {};
+  if (!sig.device) return null;
   await ensureTable();
+  if ((await store.db().execute({ sql: `SELECT 1 FROM trials WHERE device=? LIMIT 1`, args: [sig.device] })).rows.length) return null;
+  if (/^0x/.test(owner) && !(await (sig.realWallet ?? (async () => false))(owner).catch(() => false))) return null;
   const day = now - 86_400_000;
-  // One statement: under both caps, once per account. Two sign-ins racing can't both get in past a cap.
+  // One statement: under both caps, once per account and per device. Two sign-ins racing can't both get past a cap.
   await store.db().execute({
-    sql: `INSERT INTO trials(owner,granted_at,expires_at,credit_usd,spent_usd) SELECT ?, ?, ?, ?, 0 WHERE (SELECT COUNT(*) FROM trials) < ? AND (SELECT COUNT(*) FROM trials WHERE granted_at > ?) < ? AND NOT EXISTS (SELECT 1 FROM trials WHERE owner=?)`,
-    args: [owner.toLowerCase(), now, now + c.days * 86_400_000, c.creditUsd, c.maxAccounts, day, c.dailyAccounts, owner.toLowerCase()],
+    sql: `INSERT INTO trials(owner,granted_at,expires_at,credit_usd,spent_usd,device,ip_hash) SELECT ?, ?, ?, ?, 0, ?, ? WHERE (SELECT COUNT(*) FROM trials) < ? AND (SELECT COUNT(*) FROM trials WHERE granted_at > ?) < ? AND NOT EXISTS (SELECT 1 FROM trials WHERE owner=? OR device=?)`,
+    args: [owner.toLowerCase(), now, now + c.days * 86_400_000, currentTrialUsd(c, now), sig.device, sig.ipHash ?? null, c.maxAccounts, day, c.dailyAccounts, owner.toLowerCase(), sig.device],
   });
   return trialOf(owner, now);
+}
+
+/** A wallet with history on Robinhood Chain: it has sent a transaction, or holds ORBIO or CREDIT. */
+export async function walletHasHistory(owner: string, fetchImpl: typeof fetch = fetch): Promise<boolean> {
+  const nonce = await rhRpc<string>("eth_getTransactionCount", [owner, "latest"], fetchImpl).catch(() => "0x0");
+  if (BigInt(nonce) > 0n) return true;
+  const [bag, credit] = await Promise.all([bagOf(owner, fetchImpl).catch(() => 0), creditTokensOf(owner, fetchImpl).catch(() => 0)]);
+  return bag > 0 || credit > 0;
 }
 
 export async function addTrialSpend(owner: string, usd: number) {

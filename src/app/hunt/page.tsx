@@ -5,9 +5,10 @@ import { Nav } from "@/components/nav";
 import { SiteFooter } from "@/components/site-footer";
 import { DitherField } from "@/components/dither-field";
 import { DitherMark } from "@/components/dither-mark";
-import { HuntAnswers, HuntClaim, HuntCountdown } from "@/components/hunt-panel";
+import { HuntAnswers, HuntCountdown } from "@/components/hunt-panel";
 import { huntConfig, huntPhase, listSubmissions, results } from "@/moonlet/hunt";
-import { grantConfig, grantsTaken, treasuryHoldings } from "@/moonlet/hunt-grants";
+import { grantConfig, treasuryHoldings } from "@/moonlet/hunt-grants";
+import { currentTrialUsd, trialOpen } from "@/moonlet/trial";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +23,7 @@ const when = (t: number) => new Date(t).toUTCString().replace(/:\d\d GMT$/, " UT
 const fmt = (n: number, d = 0) => n.toLocaleString("en-US", { maximumFractionDigits: d });
 
 const STEPS = [
-  { n: "01", title: "Claim your CREDIT", body: "The first wallets to claim get CREDIT activated straight into their Moonlet AI balance by the hunt treasury. It pays for your attempt; it can't be withdrawn." },
+  { n: "01", title: "Start free", body: "Sign in with Google, email or a wallet. New accounts get free AI inference on us, enough to take a real shot with the strongest models." },
   { n: "02", title: "Solve it in Threads", body: "Give your moonlet the clue. It gets its own computer: a browser, a terminal and Robinhood Chain. Three stages, each locked by the one before." },
   { n: "03", title: "Have a moonlet say it", body: "Launch a moonlet (Custom) whose report contains one line: ANSWER: followed by the phrase. That report is hashed and anchored on Robinhood Chain." },
   { n: "04", title: "Enter the anchored report", body: "Once it shows anchored on chain, enter it here. Entries stay sealed: nobody, you included, learns whether they're right until the hunt closes." },
@@ -33,15 +34,16 @@ const FAQ = [
   { q: "Is the answer in the code?", a: "No. Moonlet is open source, so the server only knows a hash of the answer. Entries are compared by hash." },
   { q: "Why does it have to be anchored?", a: "The anchor is a transaction with your report's hash in it. Its block is a timestamp nobody can fake or backdate, us included, so the earliest correct anchor wins." },
   { q: "Can I just solve it somewhere else?", a: "You can solve it however you like. It only counts once one of your moonlets says it in a report that lands on chain." },
-  { q: "What do I do with the free CREDIT?", a: "It sits in your Moonlet AI balance and pays for threads and moonlet runs, for the hunt or anything else. It's product access, not cash." },
+  { q: "Is the free inference money I can sell?", a: "No. It's inference credit on Moonlet, not CREDIT tokens: it pays for your threads and moonlet runs and can't be sold, sent or withdrawn. It's there so anyone can play." },
 ];
 
 export default async function HuntPage() {
   const c = huntConfig();
   const g = grantConfig();
   const phase = huntPhase(c);
-  const [subs, res, taken, held] = await Promise.all([listSubmissions(), phase === "ended" ? results({ config: c }) : null, grantsTaken(), treasuryHoldings(g.treasury)]);
-  const left = Math.max(0, g.count - taken);
+  const [subs, res, held] = await Promise.all([listSubmissions(), phase === "ended" ? results({ config: c }) : null, treasuryHoldings(g.treasury)]);
+  const freeUsd = currentTrialUsd();
+  const freeOn = trialOpen() && freeUsd > 0;
   const status = phase === "live" ? "Live now" : phase === "upcoming" ? "Starting soon" : phase === "ended" ? "Finished" : "Coming soon";
   const clueShown = !!c.clue && (phase === "live" || phase === "ended");
 
@@ -68,7 +70,7 @@ export default async function HuntPage() {
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <a href="#play" className="lp-btn lp-btn-primary lp-btn-block">
-                  {phase === "live" && left > 0 ? `Claim ${g.credit} free CREDIT` : "How to play"} <ArrowRight className="lp-arrow" size={15} strokeWidth={2.2} />
+                  {freeOn ? `Start free · $${freeUsd} of AI on us` : "How to play"} <ArrowRight className="lp-arrow" size={15} strokeWidth={2.2} />
                 </a>
                 <a href="#clue" className="lp-btn lp-btn-secondary lp-btn-block">See the clue</a>
               </div>
@@ -99,7 +101,7 @@ export default async function HuntPage() {
         <section className="relative mx-auto max-w-[1180px] px-5 sm:px-6">
           <dl className="grid grid-cols-2 divide-ink/[0.08] rounded-2xl border border-ink/[0.08] bg-white/80 backdrop-blur sm:grid-cols-4 sm:divide-x">
             <Stat label="Prize" value={c.prize} hint={held && held.moonlet > 0 ? `${fmt(held.moonlet)} $MOONLET on chain` : "from the treasury"} />
-            <Stat label="Free CREDIT" value={`${left} of ${g.count} left`} hint={`${g.credit} CREDIT each · hold ${fmt(g.minOrbio)}+ $ORBIO`} />
+            <Stat label="Free AI" value={freeOn ? `$${freeUsd} on us` : "—"} hint={freeOn ? "inference for new accounts, limited time" : "pay per run from about a cent"} />
             <Stat label="Entries" value={`${subs.length}`} hint="sealed until the deadline" />
             <Stat label={phase === "upcoming" ? "Starts" : "Closes"} value={c.deadline ? new Date(phase === "upcoming" ? c.start : c.deadline).toUTCString().slice(5, 11) : "TBA"} hint={c.deadline ? when(phase === "upcoming" ? c.start : c.deadline).slice(17) : "date announced soon"} />
           </dl>
@@ -152,7 +154,15 @@ export default async function HuntPage() {
               </ol>
             </div>
             <div className="flex flex-col gap-4 lg:pt-16">
-              <HuntClaim phase={phase} credit={g.credit} minOrbio={g.minOrbio} total={g.count} left={left} />
+              <div className="rounded-2xl border border-ink/[0.08] bg-white p-5 shadow-[0_1px_2px_rgba(21,22,29,0.04)] sm:p-6">
+                <h3 className="text-[17px] font-medium tracking-[-0.015em] text-ink">{freeOn ? `$${freeUsd} of free AI inference` : "Pay per run"}</h3>
+                <p className="mt-2 text-[13.5px] leading-[1.55] text-ink-soft">
+                  {freeOn
+                    ? "New accounts get it on us for a limited time: enough to solve the hunt with the strongest models. It's inference credit for your Moonlet threads and runs, not CREDIT tokens, so it can't be sold or withdrawn."
+                    : "Runs cost about a cent on the fast models. Top up on orbio.so, by card from $5 or with crypto."}
+                </p>
+                <a href="/sign-in?next=/hunt%23play" className="ui-btn ui-btn-gold mt-4 inline-flex">{freeOn ? "Start free" : "Sign in"}</a>
+              </div>
               {(phase === "live" || phase === "ended") && <HuntAnswers live={phase === "live"} />}
               <p className="rounded-xl bg-white/70 px-4 py-3 font-mono text-[12.5px] leading-[1.6] text-ink-soft">
                 The line your report needs:<br /><span className="text-ink">ANSWER: the final phrase</span>

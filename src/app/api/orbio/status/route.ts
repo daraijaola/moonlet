@@ -7,15 +7,24 @@ import { estimateEarnPerDay } from "@/moonlet/budget";
 import { creditTokensOf, keyMessage, syncActivations } from "@/moonlet/orbio";
 import * as store from "@/moonlet/store";
 import { disconnect as orbioDisconnect, isWalletOwner, oauthConfig } from "@/moonlet/orbio-oauth";
-import { grantIfEligible } from "@/moonlet/trial";
+import { grantIfEligible, walletHasHistory } from "@/moonlet/trial";
+import { createHash, randomBytes } from "node:crypto";
+
+const DEVICE = "moonlet_device";
 
 /** Has this wallet signed for its Orbio key, and what does its bag and CREDIT look like? */
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
   if (!owner) return bad("sign in with your wallet first", 401);
   const wallet = isWalletOwner(owner);
-  // A new account's free trial starts the first time it opens the app.
-  const trial = await grantIfEligible(owner).catch(() => null);
+  // A new account's free trial starts the first time it opens the app, one per device, and only for a real wallet or an
+  // Orbio-verified email account (see trial.ts). The device id is a long-lived first-party cookie set here.
+  const cookies = req.headers.get("cookie") ?? "";
+  const known = /(?:^|;\s*)moonlet_device=([\w-]{16,64})/.exec(cookies)?.[1] ?? null;
+  const device = known ?? randomBytes(18).toString("base64url");
+  const ip = (req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim();
+  const ipHash = ip ? createHash("sha256").update(`${process.env.SECRET_KEY ?? ""}:${ip}`).digest("hex").slice(0, 24) : null;
+  const trial = await grantIfEligible(owner, { signals: { device, ipHash, realWallet: (o) => walletHasHistory(o) } }).catch(() => null);
   if (wallet) await syncActivations(owner);
   const [orbio, bag, staked, creditTokens, o, avatar, activations, pending] = await Promise.all([
     orbioFor(owner),
@@ -48,7 +57,8 @@ export async function GET(req: Request) {
     orbio: { epoch: o?.orbioEpoch ?? 0, signedAt: o?.orbioKeySignedAt ?? null, message: keyMessage(o?.orbioEpoch ?? 0), dev: process.env.ALLOW_DEV_ORBIO === "1", activations, activationCard: activationCard ? { id: activationCard.id, amountUsd: Number(activationCard.payload.amountUsd ?? 0), status: activationCard.status } : null },
   });
   const renewed = renewedCookie(req);
-  if (renewed) res.headers.set("set-cookie", renewed);
+  if (renewed) res.headers.append("set-cookie", renewed);
+  if (!known) res.headers.append("set-cookie", `${DEVICE}=${device}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${400 * 86400}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
   return res;
 }
 
