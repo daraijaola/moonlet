@@ -305,25 +305,32 @@ function NewInner() {
         {step === 3 && spec && p && !launching && (
           <>
             <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">The honest math</h1>
-            <p className="mt-1 text-[13.5px] text-ink-soft">It runs on the schedule you set, up to the cap you set, billed to {status?.oauth ? "your Orbio balance" : "the CREDIT you activate"}. When the balance runs out it goes quiet and asks you for more.</p>
+            <p className="mt-1 text-[13.5px] text-ink-soft">It runs on the schedule you set, up to the cap you set, billed to {status?.trial?.active ? "your own balance first, then your free trial" : status?.oauth ? "your Orbio balance" : "the CREDIT you activate"}. When the balance runs out it goes quiet and asks you for more.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
-              <div className="rounded-lg border border-ink/10 bg-paper p-4">
-                <FuelGauge earnPerDay={p.earnPerDayUsd} burnPerDay={p.burnPerDayUsd} quiet={p.quiet} size="md" />
-              </div>
+              {status && (status.trial?.active || status.oauth || bag <= 0) ? (
+                // No bag to earn from: show what the balance covers instead of an earn/burn gauge that reads 0%.
+                <div className="flex min-w-[180px] flex-col justify-center rounded-lg border border-ink/10 bg-paper p-4">
+                  <p className="font-mono text-[10.5px] uppercase tracking-[0.12em] text-ink-faint">{status.trial?.active ? "Covered by the free trial" : "Your balance covers"}</p>
+                  <p className="mt-1 text-[26px] font-semibold tabular-nums tracking-[-0.02em] text-ink">~{Math.floor(((status.trial?.active ? status.trial.remainingUsd : 0) + status.idleCreditsUsd) / Math.max(p.perRunCapUsd, 0.001)).toLocaleString("en-US")} runs</p>
+                  <p className="text-[12px] text-ink-soft">at up to {fmtUsd(p.perRunCapUsd, 3)} a run; most cost less</p>
+                </div>
+              ) : (
+                <div className="rounded-lg border border-ink/10 bg-paper p-4">
+                  <FuelGauge earnPerDay={p.earnPerDayUsd} burnPerDay={p.burnPerDayUsd} quiet={p.quiet} size="md" />
+                </div>
+              )}
               <dl className="grid grid-cols-2 gap-x-6 gap-y-2 self-center text-[13px]">
-                {!status?.oauth && (<>
+                {!status?.oauth && bag > 0 && (<>
                   <dt className="text-ink-soft">your bag</dt><dd className="text-ink">{status ? `${fmtBag(bag)} $ORBIO` : "reading…"}</dd>
                   <dt className="text-ink-soft">earns</dt><dd className="text-ink">~{fmtUsd(p.earnPerDayUsd)} / day</dd>
                 </>)}
                 <dt className="text-ink-soft">cap per run</dt><dd className="text-ink">{fmtUsd(p.perRunCapUsd, 3)}</dd>
                 <dt className="text-ink-soft">runs</dt><dd className="text-ink">{p.quiet ? "not yet" : CADENCE_LABEL[p.cadence]}</dd>
                 <dt className="text-ink-soft">can spend</dt><dd className="text-ink">up to {fmtUsd(p.burnPerDayUsd)} / day</dd>
-                {status?.idleCreditsUsd !== null && status?.idleCreditsUsd !== undefined && (<><dt className="text-ink-soft">{status.oauth ? "Orbio balance" : "idle credit now"}</dt><dd className="text-ink">{fmtUsd(status.idleCreditsUsd)}</dd></>)}
+                {status?.trial?.active && (<><dt className="text-ink-soft">free trial</dt><dd className="text-ink">{fmtUsd(status.trial.remainingUsd)} left</dd></>)}
+                {status?.idleCreditsUsd !== null && status?.idleCreditsUsd !== undefined && (status.idleCreditsUsd > 0 || !status.trial?.active) && (<><dt className="text-ink-soft">{status.oauth ? "Orbio balance" : "own balance"}</dt><dd className="text-ink">{fmtUsd(status.idleCreditsUsd)}</dd></>)}
               </dl>
             </div>
-            {status?.trial?.active && (
-              <p className="mt-4 rounded-md border border-moss/30 bg-moss/5 px-3 py-2 text-[12.5px] leading-[1.5] text-ink">Free trial: {fmtUsd(status.trial.remainingUsd)} left, on us. Runs use your own balance first, then the trial.</p>
-            )}
             {status?.oauth && !status.trial?.active && status.idleCreditsUsd < p.perRunCapUsd && (
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gold/60 bg-gold/10 px-3 py-2.5 text-[12.5px] leading-[1.5] text-ink">
                 <span>Your Orbio balance can&apos;t cover a run yet. Top up from $5 by card (or crypto); it launches now and starts on its own once the balance lands.</span>

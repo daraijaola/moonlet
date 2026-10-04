@@ -46,7 +46,8 @@ export async function GET(req: Request) {
     staked,
     earnPerDayUsd: estimateEarnPerDay(staked),
     /** Activated AI balance: the gateway's figure when it answers, else verified activations minus recorded spend. */
-    idleCreditsUsd: balance?.availableUsd ?? o?.orbioBalanceUsd ?? 0,
+    // The person's own balance only; the free trial is reported separately under `trial` (never counted twice).
+    idleCreditsUsd: (balance?.raw as { trial?: boolean } | undefined)?.trial ? Math.max(0, o?.orbioBalanceUsd ?? 0) : (balance?.availableUsd ?? o?.orbioBalanceUsd ?? 0),
     balanceSource: balance?.raw && (balance.raw as { gateway?: boolean }).gateway ? "gateway" : "ledger",
     /** CREDIT tokens in the wallet, not yet activated. */
     creditTokensUsd: creditTokens,

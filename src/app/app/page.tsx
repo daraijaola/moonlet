@@ -684,7 +684,9 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
           <Image src="/mascot/moonlet-doze.png" alt="" width={520} height={357} className="mx-auto w-[150px] sm:w-[170px]" />
           <h1 className="mt-1 font-display text-[2.3rem] leading-[0.95] text-ink sm:text-[2.8rem]">What should it do?</h1>
           <p className="mt-2 text-[14px] leading-[1.6] text-ink-soft">
-            {idle !== null && idle !== undefined && idle > 0
+            {status?.trial?.active
+              ? <>You have <span className="font-mono text-ink">{fmtUsd(status.trial.remainingUsd + (idle ?? 0))}</span> of free AI on us. One sentence puts it to work.</>
+              : idle !== null && idle !== undefined && idle > 0
               ? <>You have <span className="font-mono text-ink">{fmtUsd(idle)}</span> of activated AI balance waiting. One sentence puts it to work.</>
               : <>One sentence. You review the plan and the price per run before anything starts.</>}
           </p>

@@ -109,8 +109,8 @@ export function OverviewPanel({ m, runs, status, running, earnAll, burnAll, sett
 
       <section className="ui-card p-4">
         <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-[13px] font-semibold text-ink">Bag</h3>
-          <span className="font-mono text-[11.5px] tabular-nums text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO` : "…"}</span>
+          <h3 className="text-[13px] font-semibold text-ink">{status && (status.trial?.active || status.oauth || status.bag <= 0) ? "Balance" : "Bag"}</h3>
+          <span className="font-mono text-[11.5px] tabular-nums text-ink-faint">{!status ? "…" : status.trial?.active || status.oauth || status.bag <= 0 ? fmtUsd((status.trial?.active ? status.trial.remainingUsd : 0) + status.idleCreditsUsd) : `${fmtBag(status.bag)} $ORBIO`}</span>
         </div>
         {earnAll > 0 ? (
           <>
@@ -128,7 +128,7 @@ export function OverviewPanel({ m, runs, status, running, earnAll, burnAll, sett
           </>
         ) : (
           <p className="mt-2 text-[12.5px] leading-[1.55] text-ink-soft">
-            {status && status.staked <= 0 ? <>Stake $ORBIO with Orbio and the bag starts minting CREDIT. Runs draw on the AI balance you activate{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> now{status.balanceSource === "gateway" ? "" : ", estimate"})</> : null}.</> : <>Runs draw on the AI balance you activate{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> now{status.balanceSource === "gateway" ? "" : ", estimate"})</> : null}.</>}
+            {status?.trial?.active ? <>Free trial: <span className="font-mono tabular-nums text-ink">{fmtUsd(status.trial.remainingUsd)}</span> left, on us for {Math.max(1, status.trial.daysLeft)} more day{status.trial.daysLeft === 1 ? "" : "s"}. Runs use your own balance first{status.idleCreditsUsd > 0 ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span>)</> : null}, then the trial.</> : status?.oauth ? <>Runs bill your Orbio balance (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span>). <a href="https://www.orbio.so/" target="_blank" rel="noreferrer" className="font-medium text-ink underline decoration-ink/30 underline-offset-2">Top up on orbio.so</a>.</> : status && status.staked <= 0 ? <>Stake $ORBIO with Orbio and the bag starts minting CREDIT. Runs draw on the AI balance you activate{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> now{status.balanceSource === "gateway" ? "" : ", estimate"})</> : null}.</> : <>Runs draw on the AI balance you activate{status?.idleCreditsUsd != null ? <> (<span className="font-mono tabular-nums text-ink">{fmtUsd(status.idleCreditsUsd)}</span> now{status.balanceSource === "gateway" ? "" : ", estimate"})</> : null}.</>}
           </p>
         )}
         {approve && <p className="mt-3 rounded-lg bg-gold/10 px-3 py-2 text-[12px] leading-[1.5] text-ink">{approve}</p>}

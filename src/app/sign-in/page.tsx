@@ -136,7 +136,10 @@ function SignInInner() {
               hint="Your wallet signs Orbio's key message; that signature is the gateway key your moonlets bill. No account, no checkout. You activate CREDIT from the same wallet whenever a moonlet asks."
             >
               {address && !orbioChecked && !skipOrbio && (
-                <p className="mt-3 font-mono text-[12px] text-ink-soft">Checking Orbio…</p>
+                <div className="mt-3 flex items-center justify-between gap-3">
+                  <p className="font-mono text-[12px] text-ink-soft">Checking Orbio…</p>
+                  <button onClick={() => router.replace(next)} className="font-mono text-[11.5px] text-ink-faint underline decoration-ink/20 underline-offset-2 hover:text-ink">skip for now →</button>
+                </div>
               )}
               {step === 2 && (
                 <>
@@ -158,7 +161,7 @@ function SignInInner() {
                     {busy === "orbio" ? "Waiting for your wallet…" : "Sign for key"}
                   </button>
                   <button onClick={() => router.replace(next)} className="mt-2 w-full font-mono text-[11.5px] text-ink-faint hover:text-ink">
-                    skip for now — moonlets stay quiet until signed
+                    skip for now → new accounts start with free AI; sign later to use your own CREDIT
                   </button>
                 </>
               )}
