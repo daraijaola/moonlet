@@ -72,7 +72,22 @@ function ConnectionsInner() {
             {
               key: "orbio",
               on: !!orbio?.approved,
-              node: (
+              node: orbio?.oauth ? (
+                <Shell
+                  mark={<OrbioMark size={20} />}
+                  name="Orbio"
+                  blurb="The budget. You're signed in with Orbio, so runs bill your Orbio balance. Top up any time on orbio.so, by card from $5 or with crypto. Moonlet never sees your password or card."
+                  unlocks="runs, threads and plans billed to your Orbio account"
+                  conn={{ label: "signed in with Orbio", createdAt: orbio.orbio.signedAt ?? 0 }}
+                  onDisconnect={async () => { await api.orbioDisconnect(address); await load(); }}
+                  action={<a href="https://www.orbio.so/" target="_blank" rel="noreferrer" className="ui-btn ui-btn-gold"><OrbioMark size={13} /> Top up on orbio.so</a>}
+                >
+                  <div className="mt-2 text-[12.5px] text-ink-soft">
+                    Balance <b className="text-ink">${orbio.idleCreditsUsd.toFixed(2)}</b> <span className="text-ink-faint">{orbio.balanceSource === "gateway" ? "(from Orbio)" : "(estimate)"}</span>
+                    <span className="ml-2 text-ink-faint">A run costs about $0.01–0.08 depending on the model.</span>
+                  </div>
+                </Shell>
+              ) : (
                 <Shell
                   mark={<OrbioMark size={20} />}
                   name="Orbio"

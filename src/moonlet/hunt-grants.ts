@@ -90,6 +90,7 @@ export async function claimGrant(
   const who = owner.toLowerCase();
   if (huntPhase(c, opts.now) !== "live") return { ok: false, error: "claims open when the hunt goes live" };
   if (!send || !g.count || !g.credit) return { ok: false, error: "grants aren't set up" };
+  if (!/^0x[0-9a-f]{40}$/.test(who)) return { ok: false, error: "grants are activated on Robinhood Chain, so they need a wallet account: sign in with a wallet to claim" };
   if (!(await store.getOwner(who))?.orbioKey) return { ok: false, error: "sign your Orbio key first (Connections), so the CREDIT lands somewhere you can use it" };
   const bag = await (opts.bag ?? ((o) => bagOf(o, opts.fetch)))(who).catch(() => 0);
   if (bag < g.minOrbio) return { ok: false, error: `hold or stake at least ${g.minOrbio.toLocaleString("en-US")} $ORBIO in this wallet to claim (you have ${Math.floor(bag).toLocaleString("en-US")})` };

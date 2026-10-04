@@ -15,8 +15,8 @@ import { safeFetchText, type SafeFetchResult } from "./safe-fetch";
 export const ORBIO_GATEWAY = process.env.ORBIO_GATEWAY_URL ?? "https://www.orbio.so/api/v1";
 export const OPENROUTER = "https://openrouter.ai/api/v1";
 
-/** Orbio issues two key shapes: dashboard account keys (sk-orbio-…) and wallet-signed keys (sk-orb-<epoch>-…). Both bill Orbio's gateway. */
-export const isOrbioKey = (key: string) => /^sk-orb(io)?-/.test(key);
+/** Orbio credentials: dashboard account keys (sk-orbio-…), wallet-signed keys (sk-orb-<epoch>-…) and Sign in with Orbio access tokens (orbio_…). All bill Orbio's gateway. */
+export const isOrbioKey = (key: string) => /^sk-orb(io)?-|^orbio_/.test(key);
 export function baseUrlFor(key: string) {
   if (isOrbioKey(key)) return ORBIO_GATEWAY;
   return OPENROUTER;
@@ -106,7 +106,7 @@ export async function runLoop(o: RunLoopOptions): Promise<RunLoopResult> {
       usage: { include: true },
       ...(tools.length && !lastStep ? { tools, tool_choice: "auto" } : {}),
       // Orbio's wallet-signed keys (sk-orb-<epoch>-…) refuse server-side plugins ("needs a supported usage limit"); the web plugin only rides on account keys.
-      ...(o.webSearch && !lastStep && step === 0 && !/^sk-orb-\d/.test(o.key) ? { plugins: [{ id: "web", max_results: 2 }] } : {}),
+      ...(o.webSearch && !lastStep && step === 0 && !/^sk-orb-\d|^orbio_/.test(o.key) ? { plugins: [{ id: "web", max_results: 2 }] } : {}),
       ...(o.jsonSchema && (lastStep || !tools.length) ? { response_format: { type: "json_schema", json_schema: { name: o.jsonSchema.name, strict: true, schema: o.jsonSchema.schema } } } : {}),
     };
     if (lastStep && tools.length && messages[messages.length - 1].role !== "user") {
