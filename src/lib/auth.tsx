@@ -15,8 +15,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import { api } from "./api";
 
-type Saved = { address: string | null; signed: boolean };
-type AuthState = Saved & { ready: boolean; orbioApproved: boolean; orbioChecked: boolean };
+type Saved = { address: string | null; signed: boolean; kind?: "wallet" | "orbio"; label?: string };
+type AuthState = Pick<Saved, "address" | "signed"> & { ready: boolean; orbioApproved: boolean; orbioChecked: boolean };
 
 type Auth = AuthState & {
   signed: boolean;
@@ -26,6 +26,12 @@ type Auth = AuthState & {
   /** Send CREDIT.activate(amount) from the wallet and wait for Moonlet to read the receipt. Resolves the tx hash. */
   activateCredit: (amountUsd: number, proposalId?: string | null) => Promise<string>;
   refreshOrbio: () => Promise<boolean>;
+  /** Pick up a session the server just set (Sign in with Orbio): store the account and check its Orbio access. */
+  adoptSession: () => Promise<string>;
+  /** "orbio" for an email account signed in with Orbio: no wallet, so wallet-only actions are hidden. */
+  kind: "wallet" | "orbio";
+  /** How to show the account: shortened wallet, or the Orbio person's handle/email. */
+  label: string | null;
   disconnect: () => void;
   hasInjected: boolean;
 };
@@ -322,6 +328,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return txHash;
   }, [refreshOrbio, walletFor]);
 
+  const adoptSession = useCallback(async () => {
+    const r = await fetch("/api/auth/me");
+    if (!r.ok) throw new Error("The sign-in didn't stick. Try again.");
+    const me = (await r.json()) as { owner: string; kind: "wallet" | "orbio"; label: string };
+    write({ address: me.owner, signed: true, kind: me.kind, label: me.label });
+    await refreshOrbio();
+    return me.owner;
+  }, [refreshOrbio]);
+
   const disconnect = useCallback(() => {
     void fetch("/api/auth/logout", { method: "POST" });
     write(null);
@@ -339,10 +354,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       approveOrbio,
       activateCredit,
       refreshOrbio,
+      adoptSession,
+      kind: saved.kind ?? "wallet",
+      label: saved.label ?? (saved.address && /^0x/.test(saved.address) ? `${saved.address.slice(0, 6)}…${saved.address.slice(-4)}` : null),
       disconnect,
       hasInjected: !!injected(),
     }),
-    [hydrated, saved.address, saved.signed, orbio, connect, approveOrbio, activateCredit, refreshOrbio, disconnect],
+    [hydrated, saved.address, saved.signed, saved.kind, saved.label, orbio, connect, approveOrbio, activateCredit, refreshOrbio, adoptSession, disconnect],
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;

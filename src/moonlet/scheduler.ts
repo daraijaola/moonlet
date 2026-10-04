@@ -21,6 +21,7 @@ import { probeTripwires, readMetric } from "./tripwire";
 import type { GmailConn } from "./connections/gmail";
 import { proposeActivation, telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
+import { refreshDueTokens } from "./orbio-oauth";
 import { followup } from "./followup";
 
 /**
@@ -58,6 +59,8 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   await store.releaseStale(now() - 10 * 60_000);
   await store.reconcileStuckActions(now() - 5 * 60_000).catch(() => undefined);
   await probeTripwires(now(), deps.fetch).catch((e) => console.error("tripwire probe", (e as Error).message));
+  // Sign in with Orbio tokens last an hour; refresh the ones close to expiry here, the one place that refreshes.
+  if (!deps.orbioFor) await refreshDueTokens({ fetch: deps.fetch }).catch((e) => console.error("orbio token refresh", (e as Error).message));
   // A quiet moonlet is waiting for money. Look at the chain for its owner's activations every tick, so an activation made
   // anywhere wakes it within the minute rather than at its next scheduled slot.
   if (!deps.orbioFor) for (const owner of await store.ownersWithQuietMoonlets()) await wakeIfFunded(owner, now(), deps.fetch);

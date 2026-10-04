@@ -22,6 +22,12 @@ export type OwnerRow = {
   orbioKeySignedAt: number | null;
   bag: number;
   bagCheckedAt: number;
+  /** "orbio" for an email account signed in with Orbio, "wallet" otherwise. */
+  authKind: "wallet" | "orbio";
+  email: string | null;
+  displayName: string | null;
+  /** True when orbio_key holds a Sign in with Orbio access token (refreshed by the tick) rather than a wallet-signed key. */
+  orbioOAuth: boolean;
 };
 
 export const AVATAR_COUNT = 10;
@@ -162,6 +168,10 @@ export function migrate() {
     await c.execute(`ALTER TABLE owners ADD COLUMN orbio_epoch INTEGER NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE owners ADD COLUMN orbio_balance_usd REAL NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE owners ADD COLUMN orbio_key_signed_at INTEGER`).catch(() => undefined);
+    // Sign in with Orbio: who the person is, and their tokens (access token lives in orbio_key, sealed; refresh sealed, plus its hash for compare-and-swap).
+    for (const col of ["auth_kind TEXT", "orbio_sub TEXT", "orbio_email TEXT", "display_name TEXT", "orbio_refresh TEXT", "orbio_refresh_hash TEXT", "orbio_token_exp INTEGER"]) {
+      await c.execute(`ALTER TABLE owners ADD COLUMN ${col}`).catch(() => undefined);
+    }
     await c.execute(`CREATE TABLE IF NOT EXISTS activations (tx_hash TEXT NOT NULL, activation_id TEXT NOT NULL, owner TEXT NOT NULL, from_addr TEXT NOT NULL, amount_usd REAL NOT NULL, block_number INTEGER NOT NULL, proposal_id TEXT, at INTEGER NOT NULL, PRIMARY KEY (tx_hash, activation_id))`).catch(() => undefined);
     await c.execute(`ALTER TABLE moonlets ADD COLUMN avatar INTEGER`).catch(() => undefined);
     await c.execute(`ALTER TABLE proposals ADD COLUMN verification TEXT`).catch(() => undefined);
@@ -231,7 +241,53 @@ export async function getOwner(address: string): Promise<OwnerRow | null> {
     orbioKeySignedAt: row.orbio_key_signed_at == null ? null : Number(row.orbio_key_signed_at),
     bag: Number(row.bag),
     bagCheckedAt: Number(row.bag_checked_at),
+    authKind: row.auth_kind === "orbio" ? "orbio" : "wallet",
+    email: (row.orbio_email as string | null) ?? null,
+    displayName: (row.display_name as string | null) ?? null,
+    orbioOAuth: !!row.orbio_refresh,
   };
+}
+
+const sha = (s: string) => createHash("sha256").update(s).digest("hex");
+
+/** Save a Sign in with Orbio login: identity plus a fresh token pair. The access token becomes the gateway key. */
+export async function setOrbioOAuth(address: string, who: { sub: string; email: string | null; displayName: string | null; kind: "wallet" | "orbio" }, t: { access: string; refresh: string; expiresAt: number }) {
+  await upsertOwner(address);
+  await db().execute({
+    sql: `UPDATE owners SET orbio_key=?, orbio_key_signed_at=?, orbio_refresh=?, orbio_refresh_hash=?, orbio_token_exp=?, orbio_sub=?, orbio_email=?, display_name=COALESCE(?, display_name), auth_kind=CASE WHEN auth_kind='wallet' THEN 'wallet' ELSE ? END WHERE address=?`,
+    args: [seal(t.access), Date.now(), seal(t.refresh), sha(t.refresh), t.expiresAt, who.sub, who.email, who.displayName, who.kind, address.toLowerCase()],
+  });
+}
+
+export async function getOrbioOAuth(address: string): Promise<{ access: string; refresh: string; expiresAt: number } | null> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT orbio_key, orbio_refresh, orbio_token_exp FROM owners WHERE address=?`, args: [address.toLowerCase()] });
+  const x = r.rows[0];
+  if (!x?.orbio_refresh || !x.orbio_key) return null;
+  return { access: open(x.orbio_key as string), refresh: open(x.orbio_refresh as string), expiresAt: Number(x.orbio_token_exp ?? 0) };
+}
+
+/** Replace the token pair only if `spent` is still the stored refresh token. False when another refresh got there first. */
+export async function swapOrbioTokens(address: string, spent: string, t: { access: string; refresh: string; expiresAt: number }) {
+  const r = await db().execute({
+    sql: `UPDATE owners SET orbio_key=?, orbio_refresh=?, orbio_refresh_hash=?, orbio_token_exp=? WHERE address=? AND orbio_refresh_hash=?`,
+    args: [seal(t.access), seal(t.refresh), sha(t.refresh), t.expiresAt, address.toLowerCase(), sha(spent)],
+  });
+  return r.rowsAffected === 1;
+}
+
+/** Forget the Orbio tokens (disconnected or revoked), only if `refresh` is still the stored one. */
+export async function clearOrbioOAuth(address: string, refresh: string) {
+  await db().execute({
+    sql: `UPDATE owners SET orbio_key=NULL, orbio_refresh=NULL, orbio_refresh_hash=NULL, orbio_token_exp=NULL WHERE address=? AND orbio_refresh_hash=?`,
+    args: [address.toLowerCase(), sha(refresh)],
+  });
+}
+
+export async function ownersWithOrbioTokensBefore(t: number): Promise<string[]> {
+  await migrate();
+  const r = await db().execute({ sql: `SELECT address FROM owners WHERE orbio_refresh IS NOT NULL AND orbio_token_exp < ?`, args: [t] });
+  return r.rows.map((x) => x.address as string);
 }
 
 /** Store the wallet-signed gateway key. Signing again with a higher epoch rotates it. */
@@ -831,6 +887,10 @@ export async function kvGet(k: string) {
   await migrate();
   const r = await db().execute({ sql: `SELECT v FROM kv WHERE k=?`, args: [k] });
   return (r.rows[0]?.v as string) ?? null;
+}
+export async function kvDelete(k: string) {
+  await migrate();
+  await db().execute({ sql: `DELETE FROM kv WHERE k=?`, args: [k] });
 }
 export async function kvSet(k: string, v: string) {
   await migrate();

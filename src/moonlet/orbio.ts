@@ -180,6 +180,8 @@ export async function findActivations(owner: string, fetchImpl: typeof fetch = f
  * last block read, so each sync scans only new blocks. Errors are logged and return 0: the chain being slow must not stop a run.
  */
 export async function syncActivations(owner: string, fetchImpl: typeof fetch = fetch) {
+  // An Orbio email account (orbio-…) has no wallet, so nothing on chain can be addressed to it.
+  if (!/^0x[0-9a-f]{40}$/i.test(owner)) return 0;
   const cursorKey = `activations.synced.${owner.toLowerCase()}`;
   try {
     const cursor = Number((await store.kvGet(cursorKey)) ?? NaN);

@@ -86,7 +86,7 @@ function Queue({ owner }: { owner: string }) {
   const [items, setItems] = useState<Proposal[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const { activateCredit } = useAuth();
+  const { activateCredit, kind } = useAuth();
   // Activation cards stay in the queue after "approve" until the wallet transaction lands, so both states show here.
   const load = useCallback(async () => {
     const [pending, approved] = await Promise.all([api.proposals(owner, "pending"), api.proposals(owner, "approved")]);
@@ -119,7 +119,12 @@ function Queue({ owner }: { owner: string }) {
               <time className="shrink-0 text-[11.5px] text-ink-faint">{timeAgo(p.createdAt)}</time>
             </div>
             <div className="mt-3 flex gap-2">
-              {p.kind === "activate_credit" ? (
+              {p.kind === "activate_credit" && kind === "orbio" ? (
+                <>
+                  <a href="https://www.orbio.so/" target="_blank" rel="noreferrer" className="ui-btn ui-btn-sm ui-btn-gold"><Check size={13} strokeWidth={2.4} /> Top up on orbio.so</a>
+                  <button disabled={!!busy} onClick={async () => { setBusy(p.id); await api.decide(owner, p.id, "reject").catch(() => undefined); setNote("Thanks. Quiet moonlets wake within a few minutes of your Orbio balance going up."); await load(); setBusy(null); }} className="ui-btn ui-btn-sm ui-btn-ghost">Done, I topped up</button>
+                </>
+              ) : p.kind === "activate_credit" ? (
                 <button
                   disabled={!!busy}
                   onClick={async () => {

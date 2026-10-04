@@ -13,6 +13,7 @@ async function heldOrbio(owner: string, fetchImpl: typeof fetch) {
 }
 
 export async function bagOf(owner: string, fetchImpl: typeof fetch = fetch): Promise<number> {
+  if (!/^0x[0-9a-f]{40}$/i.test(owner)) return 0;
   const cached = await store.getOwner(owner);
   if (cached && Date.now() - cached.bagCheckedAt < 10 * 60_000) return cached.bag;
   try {
@@ -29,6 +30,7 @@ export async function bagOf(owner: string, fetchImpl: typeof fetch = fetch): Pro
 /** ORBIO the owner has staked: the part of the bag that mints CREDIT. Two-minute memo (every page load asks); 0, logged, when the chain can't be read. */
 const stakedMemo = new Map<string, { at: number; v: number }>();
 export async function stakedOf(owner: string, fetchImpl: typeof fetch = fetch): Promise<number> {
+  if (!/^0x[0-9a-f]{40}$/i.test(owner)) return 0;
   const hit = stakedMemo.get(owner.toLowerCase());
   if (hit && Date.now() - hit.at < 2 * 60_000 && fetchImpl === fetch) return hit.v;
   try {

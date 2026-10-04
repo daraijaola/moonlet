@@ -107,6 +107,10 @@ export type OrbioStatus = {
   creditTokensUsd: number | null;
   canWrite: boolean;
   orbio: { epoch: number; signedAt: number | null; message: string; dev: boolean; activations: OrbioActivation[]; activationCard: { id: string; amountUsd: number; status: string } | null };
+  /** Signed in with Orbio: runs bill the person's Orbio account (top up on orbio.so), not CREDIT activated from a wallet. */
+  oauth?: boolean;
+  /** "orbio" for an email account (no wallet). */
+  kind?: "wallet" | "orbio";
 };
 
 export type ApiThread = { id: string; title: string; model: string; effort: "low" | "medium" | "high" | "xhigh" | "max"; machine: "standard" | "large"; status: "idle" | "working" | "stopping" | "failed"; spentUsd: number; createdAt: number; updatedAt: number };
@@ -192,7 +196,8 @@ export const api = {
   sky: () => req<{ alive: number; total: number; creditsPerDay: number; burnPerDay: number; spentTotalUsd: number; runsToday: number; anchoredToday: number }>(null, "/api/sky/stats"),
 };
 
-export const shortAddr = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+/** 0x8366…0951 for wallets and hashes; an Orbio email account (orbio-…) is shown as orbio·abcd, never as a made-up address. */
+export const shortAddr = (a: string) => (a.startsWith("orbio-") ? `orbio·${a.slice(-4)}` : `${a.slice(0, 6)}…${a.slice(-4)}`);
 /** Display only: full 0x addresses and tx hashes in prose become 0x8366…0951 (the stored/hashed text is untouched). */
 export const shortenHexes = (s: string) => s.replace(/0x[0-9a-fA-F]{40,64}/g, shortAddr);
 export const fmtUsd = (n: number, digits = 2) => (n >= 1000 ? `$${(n / 1000).toFixed(1)}k` : n >= 100 && digits >= 2 ? `$${n.toFixed(0)}` : `$${n.toFixed(digits)}`);

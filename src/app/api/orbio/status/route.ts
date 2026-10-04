@@ -6,17 +6,19 @@ import { stakedOf } from "@/moonlet/bag";
 import { estimateEarnPerDay } from "@/moonlet/budget";
 import { creditTokensOf, keyMessage, syncActivations } from "@/moonlet/orbio";
 import * as store from "@/moonlet/store";
+import { disconnect as orbioDisconnect, isWalletOwner, oauthConfig } from "@/moonlet/orbio-oauth";
 
 /** Has this wallet signed for its Orbio key, and what does its bag and CREDIT look like? */
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
   if (!owner) return bad("sign in with your wallet first", 401);
-  await syncActivations(owner);
+  const wallet = isWalletOwner(owner);
+  if (wallet) await syncActivations(owner);
   const [orbio, bag, staked, creditTokens, o, avatar, activations, pending] = await Promise.all([
     orbioFor(owner),
-    bagOf(owner),
-    stakedOf(owner),
-    creditTokensOf(owner).catch(() => null),
+    wallet ? bagOf(owner) : 0,
+    wallet ? stakedOf(owner) : 0,
+    wallet ? creditTokensOf(owner).catch(() => null) : null,
     store.getOwner(owner),
     store.avatarOf(owner),
     store.listActivations(owner, 5),
@@ -37,6 +39,8 @@ export async function GET(req: Request) {
     /** CREDIT tokens in the wallet, not yet activated. */
     creditTokensUsd: creditTokens,
     canWrite,
+    oauth: !!o?.orbioOAuth,
+    kind: o?.authKind ?? "wallet",
     orbio: { epoch: o?.orbioEpoch ?? 0, signedAt: o?.orbioKeySignedAt ?? null, message: keyMessage(o?.orbioEpoch ?? 0), dev: process.env.ALLOW_DEV_ORBIO === "1", activations, activationCard: activationCard ? { id: activationCard.id, amountUsd: Number(activationCard.payload.amountUsd ?? 0), status: activationCard.status } : null },
   });
   const renewed = renewedCookie(req);
@@ -48,6 +52,10 @@ export async function GET(req: Request) {
 export async function DELETE(req: Request) {
   const owner = ownerFrom(req, { write: true });
   if (!owner) return bad("sign in with your wallet first", 401);
+  // Signed in with Orbio: revoke Moonlet's access on Orbio's side too, then forget the tokens.
+  const o = await store.getOwner(owner);
+  const c = oauthConfig();
+  if (o?.orbioOAuth && c) await orbioDisconnect(c, owner);
   await store.clearOwnerOrbio(owner);
   return NextResponse.json({ ok: true });
 }

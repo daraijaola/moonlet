@@ -139,7 +139,9 @@ export function describe(kind: store.ProposalKind, payload: Record<string, unkno
     return { title: `Forward "${f.subject}" to ${f.to}`, body: `To: ${f.to}${f.from ? `\nOriginal from: ${f.from}` : ""}${f.attachments?.length ? `\nAttachments: ${f.attachments.join(", ")}` : ""}\n\n${f.note}` };
   }
   if (kind === "activate_credit") {
-    const a = payload as { amountUsd: number; reason: string };
+    const a = payload as { amountUsd: number; reason: string; orbio?: boolean };
+    // Signed in with Orbio: the balance is the person's Orbio account, topped up on orbio.so, not CREDIT activated from a wallet.
+    if (a.orbio) return { title: "Top up your Orbio balance", body: `${a.reason}\n\nAdd about $${Math.max(5, Math.ceil(a.amountUsd)).toFixed(0)} on orbio.so (card from $5, or crypto). Moonlet picks it up within a few minutes and the moonlet wakes on its own.` };
     return { title: `Activate ${a.amountUsd.toFixed(2)} CREDIT`, body: `${a.reason}\n\nYour wallet burns ${a.amountUsd.toFixed(2)} CREDIT into $${a.amountUsd.toFixed(2)} of AI balance on Orbio. Moonlet never touches your tokens; you sign the transaction, and the receipt is read back from the chain.` };
   }
   const c = payload as { repo: string; number: number; body: string };
@@ -194,7 +196,8 @@ export async function proposeActivation(ctx: { owner: string; moonletId: string;
   const open = (await store.listProposals(ctx.owner, "pending")).concat(await store.listProposals(ctx.owner, "approved")).some((p) => p.kind === "activate_credit");
   if (open) return null;
   const amountUsd = activationAmount(ctx.perRunCapUsd, ctx.cadence);
-  const payload = { amountUsd, reason: `${ctx.moonletName} runs ${CADENCE_WORDS[ctx.cadence]} at up to $${ctx.perRunCapUsd.toFixed(3)} a run and the AI balance can't pay for the next one. ${amountUsd.toFixed(2)} CREDIT covers about a week.`, cadence: ctx.cadence };
+  const orbio = !!(await store.getOwner(ctx.owner))?.orbioOAuth;
+  const payload = { amountUsd, reason: `${ctx.moonletName} runs ${CADENCE_WORDS[ctx.cadence]} at up to $${ctx.perRunCapUsd.toFixed(3)} a run and the AI balance can't pay for the next one. ${orbio ? `About $${amountUsd.toFixed(2)}` : `${amountUsd.toFixed(2)} CREDIT`} covers about a week.`, cadence: ctx.cadence, ...(orbio ? { orbio: true } : {}) };
   const id = store.newId("p");
   await store.insertProposal({ id, owner: ctx.owner, moonletId: ctx.moonletId, runId: ctx.runId, kind: "activate_credit", payload });
   const conn = await store.getConnection<tg.TelegramConn>(ctx.owner, "telegram");
@@ -202,8 +205,9 @@ export async function proposeActivation(ctx: { owner: string; moonletId: string;
     const d = describe("activate_credit", payload);
     try {
       const rich = activationBlocks({ amountUsd, reason: payload.reason }, { moonletName: ctx.moonletName, proposalId: id, url: `${appUrl()}/app?approve=${id}` });
-      const m =
-        (await tg.sendRichMessage(conn.data.chatId, rich.blocks, { buttons: rich.keyboard, fetch: ctx.fetch })) ??
+      const m = orbio
+        ? await tg.sendMessage(conn.data.chatId, `<b>${tg.esc(ctx.moonletName)}</b> is quiet: <b>${tg.esc(d.title)}</b>\n\n${tg.esc(d.body)}\n\nTop up at https://www.orbio.so`, { fetch: ctx.fetch })
+        : (await tg.sendRichMessage(conn.data.chatId, rich.blocks, { buttons: rich.keyboard, fetch: ctx.fetch })) ??
         (await tg.sendMessage(conn.data.chatId, `<b>${tg.esc(ctx.moonletName)}</b> is quiet: <b>${tg.esc(d.title)}</b>\n\n${tg.esc(d.body)}\n\nSign it from your wallet at ${tg.esc(appUrl())}/app?approve=${id}`, { buttons: [[{ text: "✗ Not now", data: `reject:${id}` }]], fetch: ctx.fetch }));
       await store.setProposalTelegram(id, { chatId: conn.data.chatId, messageId: Number(m.id) });
     } catch {

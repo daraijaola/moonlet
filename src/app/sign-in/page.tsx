@@ -55,15 +55,32 @@ function SignInInner() {
             Sign in to moonlet
           </h1>
           <p className="mt-1.5 text-center text-[13.5px] leading-[1.55] text-ink-soft">
-            Your wallet is the account. The CREDIT your staked $ORBIO earns is the budget.
+            Pay per run, from about a cent. Start with Google or email, or bring your wallet.
           </p>
 
-          <ol className="mt-8 space-y-3">
+          {!address && (
+            <div className="mt-8">
+              <a
+                href={`/api/auth/orbio/start?next=${encodeURIComponent(next)}`}
+                onClick={() => setBusy("orbio")}
+                className="flex w-full items-center justify-center gap-2.5 rounded-md bg-ink px-4 py-3 text-[14.5px] font-medium text-cream transition-colors hover:bg-[#23252f]"
+              >
+                <OrbioMark size={18} /> {busy === "orbio" ? "Opening Orbio…" : "Continue with Google or email"}
+              </a>
+              <p className="mt-2 text-center text-[12px] leading-[1.5] text-ink-soft">Through Orbio. No wallet needed: top up from $5 by card on orbio.so.</p>
+              {params.get("orbio_error") && <p className="mt-2 text-center text-[12.5px] text-red-700">{params.get("orbio_error")}</p>}
+              <div className="my-6 flex items-center gap-3 text-[11px] uppercase tracking-[0.14em] text-ink-faint">
+                <span className="h-px flex-1 bg-ink/10" /> or use a wallet <span className="h-px flex-1 bg-ink/10" />
+              </div>
+            </div>
+          )}
+
+          <ol className={`${address ? "mt-8" : ""} space-y-3`}>
             <Step
               n={1}
               state={step > 1 ? "done" : "active"}
-              title={address ? `Connected ${shortAddr(address)}` : "Connect the wallet that holds $ORBIO"}
-              hint={address ? "Signed in. This signature is your login; it never moves tokens." : "Robinhood Chain · stake $ORBIO to earn CREDIT · you sign one message, no gas"}
+              title={address ? `Connected ${shortAddr(address)}` : "Connect a wallet"}
+              hint={address ? "Signed in. This signature is your login; it never moves tokens." : "Robinhood Chain · pay with CREDIT, or stake $ORBIO to earn it · one signature, no gas"}
             >
               {!address && (
                 <>
@@ -156,8 +173,8 @@ function SignInInner() {
             <span className="inline-flex items-center gap-1.5 font-mono text-[11px]"><RobinhoodMark size={14} /> Robinhood Chain</span>
           </div>
           <p className="mt-4 text-center text-[12px] leading-[1.6] text-ink-faint">
-            No email, no password. Moonlet never sees your private key and never moves your
-            tokens. Forget the signed key any time under Connections; rotate it on Orbio by signing a higher epoch.
+            Moonlet never sees your password or private key and never moves your tokens. Disconnect Orbio or forget a signed
+            key any time under Connections.
           </p>
         </div>
       </section>

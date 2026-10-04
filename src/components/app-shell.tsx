@@ -267,6 +267,7 @@ export function Avatar({ n, size = 28, className = "" }: { n: number | undefined
 
 /** The account block at the bottom of the sidebar: press it for a small menu (copy address, the sky, disconnect). */
 export function AccountMenu({ address, status, onDisconnect }: { address: string; status: OrbioStatus | null; onDisconnect: () => void }) {
+  const { label } = useAuth();
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -285,7 +286,7 @@ export function AccountMenu({ address, status, onDisconnect }: { address: string
           <div className="flex items-center gap-2.5 px-2.5 py-2">
             <Profile n={status?.avatar} size={32} />
             <div className="min-w-0">
-              <p className="truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</p>
+              <p className="truncate font-mono text-[12.5px] text-ink">{label ?? shortAddr(address)}</p>
               <p className="truncate text-[11.5px] text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}` : "…"}</p>
             </div>
           </div>
@@ -313,7 +314,7 @@ export function AccountMenu({ address, status, onDisconnect }: { address: string
           <Profile n={status?.avatar} size={22} />
           <span className={`absolute -bottom-px -right-px h-2 w-2 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
         </span>
-        <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{shortAddr(address)}</span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{label ?? shortAddr(address)}</span>
         {status && <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">{fmtBag(status.bag)}</span>}
         <ChevronsUpDown size={13} strokeWidth={1.75} className="shrink-0 text-ink-faint" />
       </button>
@@ -322,13 +323,14 @@ export function AccountMenu({ address, status, onDisconnect }: { address: string
 }
 
 function PhoneAccount({ address, onDisconnect }: { address: string; onDisconnect: () => void }) {
+  const { label } = useAuth();
   const { status } = useAppData();
   const [open, setOpen] = useState(false);
   return (
     <div className="relative">
       <button type="button" onClick={() => setOpen((v) => !v)} aria-haspopup="menu" aria-expanded={open} className="inline-flex items-center gap-2 rounded-full border border-ink/[0.1] bg-white py-1 pl-1 pr-2.5">
         <Profile n={status?.avatar} size={24} />
-        <span className="font-mono text-[12px] text-ink">{shortAddr(address)}</span>
+        <span className="font-mono text-[12px] text-ink">{label ?? shortAddr(address)}</span>
       </button>
       {open && (
         <>
