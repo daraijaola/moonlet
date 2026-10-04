@@ -89,3 +89,42 @@ describe("hunt", () => {
     expect(byRun.rboblate).toMatchObject({ correct: true, anchorOk: true });
   });
 });
+
+describe("hunt grants", () => {
+  const grants = { count: 2, credit: 10, minOrbio: 100, treasury: "0x" + "77".repeat(20) };
+  const live = T0 + 60_000;
+  const noChain: typeof fetch = async () => new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, error: { message: "offline" } }));
+  const sent: Array<{ to: string; credit: number }> = [];
+  const send = async (to: string, credit: number) => { sent.push({ to, credit }); return { txHash: `0x${String(sent.length).padStart(64, "0")}` }; };
+  const bags: Record<string, number> = {};
+  const wallet = (i: number) => `0x${String(i).padStart(40, "c")}`;
+  const opts = (extra: object = {}) => ({ now: live, config, grants, send, bag: async (o: string) => bags[o] ?? 0, fetch: noChain, ...extra });
+
+  it("needs the hunt live, a signed Orbio key and the minimum ORBIO; then sends exactly the grant", async () => {
+    const { claimGrant } = await import("@/moonlet/hunt-grants");
+    const w = wallet(1);
+    bags[w] = 150;
+    expect(await claimGrant(w, opts({ now: T0 - 1 }))).toMatchObject({ ok: false, error: expect.stringMatching(/live/) });
+    expect(await claimGrant(w, opts())).toMatchObject({ ok: false, error: expect.stringMatching(/Orbio key/) });
+    await store.setOwnerOrbioKey(w, "sk-orb-0-test", 0);
+    bags[w] = 99;
+    expect(await claimGrant(w, opts())).toMatchObject({ ok: false, error: expect.stringMatching(/at least 100/) });
+    bags[w] = 150;
+    expect(await claimGrant(w, opts())).toMatchObject({ ok: true, credit: 10, left: 1 });
+    expect(sent).toEqual([{ to: w, credit: 10 }]);
+    expect(await claimGrant(w, opts())).toMatchObject({ ok: false, error: expect.stringMatching(/already claimed/) });
+  });
+
+  it("a failed send gives the slot back; never more than N grants even when claims arrive together", async () => {
+    const { claimGrant, grantsTaken } = await import("@/moonlet/hunt-grants");
+    const ws = [2, 3, 4, 5].map(wallet);
+    for (const w of ws) { bags[w] = 1000; await store.setOwnerOrbioKey(w, "sk-orb-0-test", 0); }
+    const failing = async () => { throw new Error("out of gas"); };
+    expect(await claimGrant(ws[0], opts({ send: failing }))).toMatchObject({ ok: false, error: expect.stringMatching(/treasury/) });
+    expect(await grantsTaken()).toBe(1);
+    const results = await Promise.all(ws.map((w) => claimGrant(w, opts())));
+    expect(results.filter((r) => r.ok)).toHaveLength(1);
+    expect(results.filter((r) => !r.ok && /all grants/.test(r.error))).toHaveLength(3);
+    expect(await grantsTaken()).toBe(2);
+  });
+});

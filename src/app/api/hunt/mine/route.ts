@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { bad, ownerFrom } from "@/moonlet/http";
 import { extractAnswer, listSubmissions } from "@/moonlet/hunt";
+import { grantOf } from "@/moonlet/hunt-grants";
 import * as store from "@/moonlet/store";
 
 export const dynamic = "force-dynamic";
@@ -20,5 +21,6 @@ export async function GET(req: Request) {
     }
   }
   out.sort((a, b) => b.at - a.at);
-  return NextResponse.json({ runs: out.slice(0, 20) });
+  const grant = await grantOf(owner);
+  return NextResponse.json({ runs: out.slice(0, 20), grant });
 }

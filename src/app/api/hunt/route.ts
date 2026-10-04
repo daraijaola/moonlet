@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { huntConfig, huntPhase, listSubmissions, results } from "@/moonlet/hunt";
+import { grantConfig, grantsTaken, treasuryHoldings } from "@/moonlet/hunt-grants";
 
 export const dynamic = "force-dynamic";
 
@@ -14,11 +15,16 @@ export async function GET() {
   if (phase === "ended" && (!cached || Date.now() - cached.at > 5 * 60_000)) cached = { at: Date.now(), value: await results({ config: c }) };
   const res = phase === "ended" ? cached?.value ?? null : null;
   const short = (a: string) => `${a.slice(0, 6)}…${a.slice(-4)}`;
+  const g = grantConfig();
+  const [taken, held] = await Promise.all([grantsTaken(), treasuryHoldings(g.treasury)]);
   return NextResponse.json({
     phase,
     start: c.start || null,
     deadline: c.deadline || null,
     prize: c.prize,
+    treasury: g.treasury,
+    held,
+    grants: { total: g.count, left: Math.max(0, g.count - taken), credit: g.credit, minOrbio: g.minOrbio },
     clue: phase === "live" || phase === "ended" ? c.clue : null,
     entries: subs.map((s) => ({ wallet: short(s.owner), moonletId: s.moonletId, runId: s.runId, txHash: s.txHash, block: s.block, submittedAt: s.submittedAt })),
     results: res && {
