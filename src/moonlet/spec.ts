@@ -183,7 +183,7 @@ export const RunOutput = z.object({
     .array(z.object({ claim: z.string().min(8).max(200), check: z.string().min(4).max(200) }))
     .max(2)
     .default([])
-    .describe("Pre-committed calls about the next run: a concrete, checkable claim ('ORBIO liquidity above $450K') and exactly how you will check it next time. Empty for jobs with nothing that moves."),
+    .describe("Pre-committed calls about the next run: a concrete, checkable claim ('ORBIO liquidity above $450K') and exactly how you will check it next time. Any job that reads a price, liquidity, volume, balance or count makes one; leave it empty only for inbox, one-off and report-only jobs."),
   scored: z
     .array(z.object({ claim: z.string().max(200), result: z.enum(["hit", "miss", "void"]), evidence: z.string().max(300) }))
     .max(2)

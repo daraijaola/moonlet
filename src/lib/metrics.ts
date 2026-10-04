@@ -1,5 +1,5 @@
-/** Labels whose numbers are dollars (CREDIT is $1 of inference, so burned/activated CREDIT reads as dollars too). */
-const MONEY = /price|usd|\$|liquidity|volume|cap|fdv|tvl|burn|spent|cost|credit|fees?/i;
+/** Labels whose numbers are dollars. Not "CREDIT" alone: "CREDIT activations" is a count. */
+const MONEY = /price|usd|\$|liquidity|volume|cap|fdv|tvl|burned|spent|cost|fees?/i;
 
 function compact(n: number) {
   const a = Math.abs(n);
