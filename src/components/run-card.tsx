@@ -4,6 +4,7 @@ import { LightMarkdown } from "@/components/light-markdown";
 import { useState } from "react";
 import { ChevronDown, ChevronUp, FileText, Hash, ShieldCheck } from "lucide-react";
 import { fmtUsd, shortenHexes, timeAgo, type ApiRun } from "@/lib/api";
+import { metricText } from "@/lib/metrics";
 
 /** A two-word label for a check the model did not label: the first meaningful words before any punctuation. */
 export const labelFor = (check: string, label?: string) => (label?.trim() || check.replace(/[:;,(].*$/, "").split(/\s+/).filter((w) => !/^(the|a|an|and|of|on|in|vs|for|with|to|how|it|its)$/i.test(w)).slice(0, 3).join(" ")).slice(0, 24);
@@ -12,7 +13,10 @@ export function MetricsStrip({ metrics, size = "md" }: { metrics: NonNullable<Ap
   if (!metrics.length) return null;
   return (
     <dl className={`grid gap-2 ${metrics.length >= 4 ? "grid-cols-2 sm:grid-cols-4" : `grid-cols-${metrics.length}`}`}>
-      {metrics.slice(0, 4).map((m, i) => (
+      {metrics.slice(0, 4).map((raw, i) => {
+        const t = metricText(raw.label, raw.value, raw.delta ?? "");
+        const m = { ...raw, value: t.value, delta: t.delta, tone: raw.tone === "flat" && t.tone ? t.tone : raw.tone };
+        return (
         <div key={i} className="rounded-md border border-ink/[0.07] bg-paper/70 px-2.5 py-1.5">
           <dt className="truncate font-mono text-[10px] uppercase tracking-[0.12em] text-ink-soft">{m.label}</dt>
           <dd className={`mt-0.5 flex items-baseline gap-1.5 ${size === "sm" ? "text-[15px]" : "text-[18px]"} font-semibold leading-none tracking-[-0.01em] text-ink tabular-nums`}>
@@ -20,7 +24,8 @@ export function MetricsStrip({ metrics, size = "md" }: { metrics: NonNullable<Ap
             {m.delta && <span className={`text-[11px] font-medium ${m.tone === "up" ? "text-moss" : m.tone === "down" ? "text-red-700" : "text-ink-faint"}`}>{m.delta}</span>}
           </dd>
         </div>
-      ))}
+        );
+      })}
     </dl>
   );
 }
