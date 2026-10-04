@@ -130,7 +130,7 @@ export default async function HuntPage() {
 
         {/* How to play + panels */}
         <section id="play" className="relative mt-20 scroll-mt-20 overflow-hidden border-t border-ink/[0.07]">
-          <div aria-hidden className="absolute inset-y-0 left-0 w-[60%]"><DitherField className="inset-0" from="left" /></div>
+          <div aria-hidden className="absolute left-0 top-0 h-[300px] w-[46%]"><DitherField className="inset-0" from="left" /></div>
           <div className="relative mx-auto grid max-w-[1180px] gap-12 px-5 py-20 sm:px-6 sm:py-24 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)] lg:gap-16">
             <div>
               <p className="font-mono text-[11.5px] uppercase tracking-[0.14em] text-ink-soft">How to play</p>
@@ -139,10 +139,10 @@ export default async function HuntPage() {
                 <br />
                 Anchor it.
               </h2>
-              <ol className="mt-8">
+              <ol className="mt-8 rounded-2xl border border-ink/[0.08] bg-white/85 px-5 backdrop-blur">
                 {STEPS.map((s) => (
                   <li key={s.n} className="grid grid-cols-[52px_1fr] gap-4 border-t border-ink/[0.08] py-5 first:border-t-0">
-                    <span className="font-mono text-[13px] text-ink-faint">{s.n}</span>
+                    <span className="font-mono text-[13px] font-medium text-ink-soft">{s.n}</span>
                     <div>
                       <h3 className="text-[18px] font-medium tracking-[-0.015em] text-ink">{s.title}</h3>
                       <p className="mt-1 text-[14.5px] leading-[1.55] text-ink-soft">{s.body}</p>
