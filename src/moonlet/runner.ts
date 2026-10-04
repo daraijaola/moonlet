@@ -239,7 +239,9 @@ async function ensureFunded(key: KeyState, p: Plan, orbio: OrbioClient, events: 
   // one would be refused on every run.
   const signed = await orbio.createKey().catch((e) => { if (key?.key.startsWith("sk-orbio-") && e instanceof OrbioAuthError) return null; throw e; });
   if (!signed) return { ...key!, limitUsd: bal.availableUsd };
-  if (!key || key.key !== signed.key) events.push({ kind: "claimed", detail: key ? "using the wallet's re-signed Orbio key" : "using the wallet's signed Orbio key; it spends the activated balance", amountUsd: bal.availableUsd });
+  const trialPaid = !!(signed.raw as { trial?: boolean } | undefined)?.trial;
+  if (trialPaid) events.push({ kind: "claimed", detail: "paid from Moonlet's free trial credit", amountUsd: bal.availableUsd });
+  else if (!key || key.key !== signed.key) events.push({ kind: "claimed", detail: key ? "using the wallet's re-signed Orbio key" : "using the wallet's signed Orbio key; it spends the activated balance", amountUsd: bal.availableUsd });
   return { key: signed.key, limitUsd: bal.availableUsd, spentUsd: key?.key === signed.key ? key.spentUsd : 0 };
 }
 

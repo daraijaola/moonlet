@@ -692,7 +692,13 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
         <div className="mt-6"><JobInput id="first-job" /></div>
 
         <div className="mt-10 divide-y divide-ink/[0.07] rounded-lg border border-ink/10 bg-white">
-          {status?.oauth ? (
+          {status?.trial?.active ? (
+            <SetupStep n={1} done title={`${fmtUsd(status.trial.remainingUsd)} free trial credit`} hint={`On us for ${Math.max(1, status.trial.daysLeft)} more day${status.trial.daysLeft === 1 ? "" : "s"}: your first runs and threads are paid. Top up any time to keep going after.`}>
+              {status.oauth && (
+                <a href="https://www.orbio.so/" target="_blank" rel="noreferrer" className="ui-btn ui-btn-sm"><OrbioMark size={13} /> Top up</a>
+              )}
+            </SetupStep>
+          ) : status?.oauth ? (
             <SetupStep n={1} done={(idle ?? 0) >= 0.05} title={(idle ?? 0) >= 0.05 ? `Signed in with Orbio · ${fmtUsd(idle ?? 0)} balance` : "Add balance to run"} hint={(idle ?? 0) >= 0.05 ? "Runs bill your Orbio balance; most cost about a cent. Top up any time." : "You're signed in with Orbio. Top up on orbio.so, by card from $5 or with crypto; Moonlet picks it up in a minute."}>
               <a href="https://www.orbio.so/" target="_blank" rel="noreferrer" className={`ui-btn ui-btn-sm ${(idle ?? 0) >= 0.05 ? "" : "ui-btn-gold"}`}>
                 <OrbioMark size={13} /> Top up

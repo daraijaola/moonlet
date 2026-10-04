@@ -1,6 +1,7 @@
 import { baseUrlFor } from "./llm";
 import { computers, type Machine } from "./computers";
 import * as store from "./store";
+import { addTrialSpend, billingKey, isTrialKey } from "./trial";
 import * as ts from "./threads-store";
 import { threadModel, TITLE_MODEL, VISION_MODEL } from "./thread-models";
 import * as github from "./connections/github";
@@ -69,11 +70,17 @@ function clip(s: string, n: number) {
   return s.length > n ? `${s.slice(0, n)}\n…(${s.length - n} more chars)` : s;
 }
 
-async function ownerKey(owner: string) {
-  const o = await store.getOwner(owner);
-  if (o?.orbioKey) return o.orbioKey;
+/** What a thread bills: the owner's own key, or the free trial's while it's active and their balance can't pay. */
+async function ownerBilling(owner: string) {
+  const b = await billingKey(owner).catch(() => null);
+  if (b) return b;
   const ms = await store.listMoonlets(owner);
-  return ms.find((m) => m.key?.key)?.key?.key ?? null;
+  const k = ms.find((m) => m.key?.key && !isTrialKey(m.key.key))?.key?.key ?? null;
+  return k ? { key: k, trial: false as boolean, remainingUsd: undefined as number | undefined } : null;
+}
+
+async function ownerKey(owner: string) {
+  return (await ownerBilling(owner))?.key ?? null;
 }
 
 async function stopRequested(threadId: string) {
@@ -108,7 +115,8 @@ async function retitle(key: string, threadId: string, owner: string) {
   if (title) await ts.updateThread(threadId, { title });
   const c = r?.j.usage?.cost ?? 0;
   if (c > 0) {
-    await store.debitOwnerBalance(owner, c).catch(() => undefined);
+    if (isTrialKey(key)) await addTrialSpend(owner, c).catch(() => undefined);
+    else await store.debitOwnerBalance(owner, c).catch(() => undefined);
     await ts.updateThread(threadId, { addSpent: c });
   }
 }
@@ -124,7 +132,10 @@ export async function runTurn(threadId: string) {
   const t = await ts.getThread(threadId);
   if (!t) return;
   const started = Date.now();
-  const key = await ownerKey(t.owner);
+  const billing = await ownerBilling(t.owner);
+  const key = billing?.key ?? null;
+  const trial = !!billing?.trial;
+  const trialLeft = billing?.remainingUsd ?? Infinity;
   const model = t.model === "auto" ? AUTO_MODEL : t.model;
   let direct = model === VISION_MODEL;
   let maxTokens = MAX_TOKENS[t.effort];
@@ -136,7 +147,8 @@ export async function runTurn(threadId: string) {
   const spend = async (c: number) => {
     if (c <= 0) return;
     cost += c;
-    await store.debitOwnerBalance(t.owner, c).catch(() => undefined);
+    if (trial) await addTrialSpend(t.owner, c).catch(() => undefined);
+    else await store.debitOwnerBalance(t.owner, c).catch(() => undefined);
     await ts.updateThread(threadId, { addSpent: c });
   };
   const finish = async (text: string, files: string[] = [], status: ts.ThreadStatus = "idle") => {
@@ -147,7 +159,7 @@ export async function runTurn(threadId: string) {
     await ts.updateThread(threadId, { status });
     if (firstTurn && key && status === "idle") await retitle(key, threadId, t.owner).catch(() => undefined);
   };
-  if (!key) return finish("I need an Orbio key before I can work. Sign once for your wallet's key on the Moonlets page, then send this again.", [], "failed");
+  if (!key) return finish("I need a balance to work with. Top up on orbio.so (card from $5), or sign for your wallet's Orbio key on the Moonlets page, then send this again.", [], "failed");
 
   const sid = threadId;
   try {
@@ -273,7 +285,7 @@ export async function runTurn(threadId: string) {
   for (let step = 0; step < budget; step++) {
     if (await stopRequested(threadId)) return finish(`Stopped. ${shown.length ? "What I made so far is attached." : ""}`.trim(), shown);
     compact(8, 1500);
-    const last = wrapUp || step === budget - 1 || Date.now() - started > TURN_MS || cost >= COST_CAP[t.effort];
+    const last = wrapUp || step === budget - 1 || Date.now() - started > TURN_MS || cost >= COST_CAP[t.effort] || (trial && cost >= trialLeft * 0.9);
     if (last && !wrapUp) messages.push({ role: "user", content: "Time, steps or budget for this turn is up. Stop using tools and answer now with what you have." });
     const t0 = Date.now();
     const r = await complete(key, { model, messages, max_tokens: maxTokens, reasoning: { effort: REASONING[t.effort] }, ...(last ? {} : { tools: TOOLS, tool_choice: "auto" }) });

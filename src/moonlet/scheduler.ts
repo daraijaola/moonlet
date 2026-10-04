@@ -22,6 +22,7 @@ import type { GmailConn } from "./connections/gmail";
 import { proposeActivation, telegramCallback } from "./proposals";
 import { concierge } from "./concierge";
 import { refreshDueTokens } from "./orbio-oauth";
+import { addTrialSpend, grantIfEligible, isTrialKey, withTrial } from "./trial";
 import { followup } from "./followup";
 
 /**
@@ -47,10 +48,14 @@ export async function orbioFor(owner: string, fetchImpl: typeof fetch = fetch): 
   const dev = devOrbio();
   if (dev) return dev;
   const o = await store.getOwner(owner);
-  if (o?.orbioKey) return makeCreditClient(owner, fetchImpl);
+  let own: OrbioClient | null = null;
+  if (o?.orbioKey) own = makeCreditClient(owner, fetchImpl);
   // A wallet that never signed can still run on the account key Orbio's dashboard issued, held by its moonlets.
-  if ((await store.listMoonlets(owner)).some((m) => m.key?.key.startsWith("sk-orbio-"))) return makeCreditClient(owner, fetchImpl);
-  return null;
+  else if ((await store.listMoonlets(owner)).some((m) => m.key?.key.startsWith("sk-orbio-") && !isTrialKey(m.key.key))) own = makeCreditClient(owner, fetchImpl);
+  // A new account's free trial pays until their own balance can: no key to sign, no top-up needed to start.
+  const trial = await grantIfEligible(owner).catch(() => null);
+  if (trial?.active) return withTrial(owner, own);
+  return own;
 }
 
 /** Runs due moonlets with bounded concurrency so a burst never trips a model's per-minute cap. */
@@ -256,7 +261,10 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
   const rotated = result.keyEvents.filter((e) => e.kind === "rotated").length;
   if (m.watch?.tripped) result.keyEvents.unshift({ kind: "tripwire", detail: `woke early: ${m.watch.tripped}` });
   // The AI balance is a ledger Moonlet keeps: every run's cost comes off it the moment the run is recorded.
-  await store.debitOwnerBalance(m.owner, result.costUsd);
+  // A trial-paid run comes off the trial; anything else off the owner's ledger.
+  const trialRun = isTrialKey(result.key?.key);
+  if (trialRun) await addTrialSpend(m.owner, result.costUsd);
+  else await store.debitOwnerBalance(m.owner, result.costUsd);
 
   await recordRun(m.id, now(), {
     id: runId,
@@ -275,7 +283,8 @@ async function runOneInner(id: string, deps: SchedulerDeps = {}): Promise<{ stat
 
   await store.updateMoonlet(id, {
     status: result.status === "quiet" ? "quiet" : "idle",
-    key: result.key,
+    // The trial key is picked fresh each run and never kept, so it can't outlive the trial.
+    key: trialRun ? null : result.key,
     ...(result.status === "done" && result.output ? { memory: result.output.remember?.slice(0, 1200) || m.memory } : {}),
     // After a run the watch re-baselines to a fresh reading, so what the moonlet itself just did (a PR it opened, a comment) is not the "activity" that wakes it next.
     ...(m.spec.tripwire ? { watch: { value: (await readMetric(m.spec.tripwire, deps.fetch, ghConn?.data.token).catch(() => null)) ?? m.watch?.value ?? 0, at: now(), tripped: undefined } } : {}),

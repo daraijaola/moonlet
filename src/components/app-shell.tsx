@@ -287,7 +287,7 @@ export function AccountMenu({ address, status, onDisconnect }: { address: string
             <Profile n={status?.avatar} size={32} />
             <div className="min-w-0">
               <p className="truncate font-mono text-[12.5px] text-ink">{label ?? shortAddr(address)}</p>
-              <p className="truncate text-[11.5px] text-ink-faint">{!status ? "…" : status.oauth ? `$${status.idleCreditsUsd.toFixed(2)} Orbio balance · signed in with Orbio` : `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}`}</p>
+              <p className="truncate text-[11.5px] text-ink-faint">{!status ? "…" : status.trial?.active ? `$${status.trial.remainingUsd.toFixed(2)} free trial · $${status.idleCreditsUsd.toFixed(2)} own balance` : status.oauth ? `$${status.idleCreditsUsd.toFixed(2)} Orbio balance · signed in with Orbio` : `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}`}</p>
             </div>
           </div>
           <div className="my-1 h-px bg-ink/[0.06]" />
@@ -322,7 +322,7 @@ export function AccountMenu({ address, status, onDisconnect }: { address: string
           <span className={`absolute -bottom-px -right-px h-2 w-2 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{label ?? shortAddr(address)}</span>
-        {status && <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">{status.oauth ? `$${status.idleCreditsUsd.toFixed(2)}` : fmtBag(status.bag)}</span>}
+        {status && <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">{status.trial?.active ? `$${(status.trial.remainingUsd + status.idleCreditsUsd).toFixed(2)}` : status.oauth ? `$${status.idleCreditsUsd.toFixed(2)}` : fmtBag(status.bag)}</span>}
         <ChevronsUpDown size={13} strokeWidth={1.75} className="shrink-0 text-ink-faint" />
       </button>
     </div>

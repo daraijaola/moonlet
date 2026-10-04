@@ -321,7 +321,10 @@ function NewInner() {
                 {status?.idleCreditsUsd !== null && status?.idleCreditsUsd !== undefined && (<><dt className="text-ink-soft">{status.oauth ? "Orbio balance" : "idle credit now"}</dt><dd className="text-ink">{fmtUsd(status.idleCreditsUsd)}</dd></>)}
               </dl>
             </div>
-            {status?.oauth && status.idleCreditsUsd < p.perRunCapUsd && (
+            {status?.trial?.active && (
+              <p className="mt-4 rounded-md border border-moss/30 bg-moss/5 px-3 py-2 text-[12.5px] leading-[1.5] text-ink">Free trial: {fmtUsd(status.trial.remainingUsd)} left, on us. Runs use your own balance first, then the trial.</p>
+            )}
+            {status?.oauth && !status.trial?.active && status.idleCreditsUsd < p.perRunCapUsd && (
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gold/60 bg-gold/10 px-3 py-2.5 text-[12.5px] leading-[1.5] text-ink">
                 <span>Your Orbio balance can&apos;t cover a run yet. Top up from $5 by card (or crypto); it launches now and starts on its own once the balance lands.</span>
                 <a href="https://www.orbio.so/" target="_blank" rel="noreferrer" className="ui-btn ui-btn-sm ui-btn-gold">Top up on orbio.so</a>

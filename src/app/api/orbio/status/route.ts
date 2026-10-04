@@ -7,12 +7,15 @@ import { estimateEarnPerDay } from "@/moonlet/budget";
 import { creditTokensOf, keyMessage, syncActivations } from "@/moonlet/orbio";
 import * as store from "@/moonlet/store";
 import { disconnect as orbioDisconnect, isWalletOwner, oauthConfig } from "@/moonlet/orbio-oauth";
+import { grantIfEligible } from "@/moonlet/trial";
 
 /** Has this wallet signed for its Orbio key, and what does its bag and CREDIT look like? */
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
   if (!owner) return bad("sign in with your wallet first", 401);
   const wallet = isWalletOwner(owner);
+  // A new account's free trial starts the first time it opens the app.
+  const trial = await grantIfEligible(owner).catch(() => null);
   if (wallet) await syncActivations(owner);
   const [orbio, bag, staked, creditTokens, o, avatar, activations, pending] = await Promise.all([
     orbioFor(owner),
@@ -40,6 +43,7 @@ export async function GET(req: Request) {
     creditTokensUsd: creditTokens,
     canWrite,
     oauth: !!o?.orbioOAuth,
+    trial: trial ? { creditUsd: trial.creditUsd, remainingUsd: Math.round(trial.remainingUsd * 100) / 100, expiresAt: trial.expiresAt, daysLeft: Math.max(0, Math.ceil((trial.expiresAt - Date.now()) / 86_400_000)), active: trial.active } : null,
     kind: o?.authKind ?? "wallet",
     orbio: { epoch: o?.orbioEpoch ?? 0, signedAt: o?.orbioKeySignedAt ?? null, message: keyMessage(o?.orbioEpoch ?? 0), dev: process.env.ALLOW_DEV_ORBIO === "1", activations, activationCard: activationCard ? { id: activationCard.id, amountUsd: Number(activationCard.payload.amountUsd ?? 0), status: activationCard.status } : null },
   });
