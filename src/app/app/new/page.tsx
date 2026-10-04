@@ -305,27 +305,35 @@ function NewInner() {
         {step === 3 && spec && p && !launching && (
           <>
             <h1 className="text-[1.35rem] font-semibold tracking-[-0.02em] text-ink">The honest math</h1>
-            <p className="mt-1 text-[13.5px] text-ink-soft">It runs on the schedule you set, up to the cap you set, billed to the CREDIT you activate. When the balance runs out it goes quiet and asks you for more.</p>
+            <p className="mt-1 text-[13.5px] text-ink-soft">It runs on the schedule you set, up to the cap you set, billed to {status?.oauth ? "your Orbio balance" : "the CREDIT you activate"}. When the balance runs out it goes quiet and asks you for more.</p>
             <div className="mt-5 grid gap-4 sm:grid-cols-[auto_1fr]">
               <div className="rounded-lg border border-ink/10 bg-paper p-4">
                 <FuelGauge earnPerDay={p.earnPerDayUsd} burnPerDay={p.burnPerDayUsd} quiet={p.quiet} size="md" />
               </div>
               <dl className="grid grid-cols-2 gap-x-6 gap-y-2 self-center text-[13px]">
-                <dt className="text-ink-soft">your bag</dt><dd className="text-ink">{status ? `${fmtBag(bag)} $ORBIO` : "reading…"}</dd>
-                <dt className="text-ink-soft">earns</dt><dd className="text-ink">~{fmtUsd(p.earnPerDayUsd)} / day</dd>
+                {!status?.oauth && (<>
+                  <dt className="text-ink-soft">your bag</dt><dd className="text-ink">{status ? `${fmtBag(bag)} $ORBIO` : "reading…"}</dd>
+                  <dt className="text-ink-soft">earns</dt><dd className="text-ink">~{fmtUsd(p.earnPerDayUsd)} / day</dd>
+                </>)}
                 <dt className="text-ink-soft">cap per run</dt><dd className="text-ink">{fmtUsd(p.perRunCapUsd, 3)}</dd>
                 <dt className="text-ink-soft">runs</dt><dd className="text-ink">{p.quiet ? "not yet" : CADENCE_LABEL[p.cadence]}</dd>
                 <dt className="text-ink-soft">can spend</dt><dd className="text-ink">up to {fmtUsd(p.burnPerDayUsd)} / day</dd>
-                {status?.idleCreditsUsd !== null && status?.idleCreditsUsd !== undefined && (<><dt className="text-ink-soft">idle credit now</dt><dd className="text-ink">{fmtUsd(status.idleCreditsUsd)}</dd></>)}
+                {status?.idleCreditsUsd !== null && status?.idleCreditsUsd !== undefined && (<><dt className="text-ink-soft">{status.oauth ? "Orbio balance" : "idle credit now"}</dt><dd className="text-ink">{fmtUsd(status.idleCreditsUsd)}</dd></>)}
               </dl>
             </div>
-            {p.quiet && (
+            {status?.oauth && status.idleCreditsUsd < p.perRunCapUsd && (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-gold/60 bg-gold/10 px-3 py-2.5 text-[12.5px] leading-[1.5] text-ink">
+                <span>Your Orbio balance can&apos;t cover a run yet. Top up from $5 by card (or crypto); it launches now and starts on its own once the balance lands.</span>
+                <a href="https://www.orbio.so/" target="_blank" rel="noreferrer" className="ui-btn ui-btn-sm ui-btn-gold">Top up on orbio.so</a>
+              </div>
+            )}
+            {p.quiet && !status?.oauth && (
               <p className="mt-4 rounded-md border border-gold/60 bg-gold/10 px-3 py-2 text-[12.5px] leading-[1.5] text-ink">
                 {p.reason}. It will launch quiet and wake up on its own once the AI balance can afford a run.
               </p>
             )}
             {status && !status.approved && (
-              <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">This wallet hasn&apos;t signed for its Orbio key yet. Sign once under Connections, or the first run will wait.</p>
+              <p className="mt-4 rounded-md border border-red-700/30 bg-red-50 px-3 py-2 text-[12.5px] text-red-800">{status.kind === "orbio" ? "Your Orbio connection has lapsed. Sign in with Orbio again, or the first run will wait." : "This wallet hasn't signed for its Orbio key yet. Sign once under Connections, or the first run will wait."}</p>
             )}
             <div className="mt-5 rounded-lg border border-ink/10 p-4">
               <p className="text-[12px] font-medium text-ink-soft">{spec.name} · {TEMPLATE_LABEL[spec.template]} · {CADENCE_LABEL[spec.cadence]}</p>
