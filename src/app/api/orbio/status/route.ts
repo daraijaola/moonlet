@@ -24,9 +24,12 @@ export async function GET(req: Request) {
   const device = known ?? randomBytes(18).toString("base64url");
   const ip = (req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim();
   const ipHash = ip ? createHash("sha256").update(`${process.env.SECRET_KEY ?? ""}:${ip}`).digest("hex").slice(0, 24) : null;
+  // A wallet's first activation sync scans the whole CREDIT history; don't hold the page for it. It finishes in the
+  // background and its credits show on the next refresh.
+  const sync = wallet ? syncActivations(owner).catch(() => 0) : Promise.resolve(0);
   const [trial] = await Promise.all([
     grantIfEligible(owner, { signals: { device, ipHash, realWallet: (o) => walletHasHistory(o) } }).catch(() => null),
-    wallet ? syncActivations(owner) : 0,
+    Promise.race([sync, new Promise((ok) => setTimeout(ok, 1000))]),
   ]);
   const [orbio, bag, staked, creditTokens, o, avatar, activations, pending] = await Promise.all([
     orbioFor(owner),
