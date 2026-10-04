@@ -24,8 +24,10 @@ export async function GET(req: Request) {
   const device = known ?? randomBytes(18).toString("base64url");
   const ip = (req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim();
   const ipHash = ip ? createHash("sha256").update(`${process.env.SECRET_KEY ?? ""}:${ip}`).digest("hex").slice(0, 24) : null;
-  const trial = await grantIfEligible(owner, { signals: { device, ipHash, realWallet: (o) => walletHasHistory(o) } }).catch(() => null);
-  if (wallet) await syncActivations(owner);
+  const [trial] = await Promise.all([
+    grantIfEligible(owner, { signals: { device, ipHash, realWallet: (o) => walletHasHistory(o) } }).catch(() => null),
+    wallet ? syncActivations(owner) : 0,
+  ]);
   const [orbio, bag, staked, creditTokens, o, avatar, activations, pending] = await Promise.all([
     orbioFor(owner),
     wallet ? bagOf(owner) : 0,

@@ -86,9 +86,14 @@ async function ethCall(to: string, data: string, fetchImpl: typeof fetch): Promi
   return result && result !== "0x" ? BigInt(result) : 0n;
 }
 
-/** Unactivated CREDIT in the wallet, in dollars (6 decimals). */
+/** Unactivated CREDIT in the wallet, in dollars (6 decimals). Memoized 30s in production: every page load asks. */
+const creditMemo = new Map<string, { at: number; v: number }>();
 export async function creditTokensOf(owner: string, fetchImpl: typeof fetch = fetch) {
-  return Number(await ethCall(ORBIO.credit, `0x70a08231${pad(owner)}`, fetchImpl)) / 1e6;
+  const k = owner.toLowerCase(), hit = creditMemo.get(k);
+  if (fetchImpl === fetch && hit && Date.now() - hit.at < 30_000) return hit.v;
+  const v = Number(await ethCall(ORBIO.credit, `0x70a08231${pad(owner)}`, fetchImpl)) / 1e6;
+  if (fetchImpl === fetch) creditMemo.set(k, { at: Date.now(), v });
+  return v;
 }
 
 /** ORBIO staked by the owner (18 decimals). The staking proxy answers `positionOf(address)`; its `balanceOf` reverts. */
@@ -179,9 +184,17 @@ export async function findActivations(owner: string, fetchImpl: typeof fetch = f
  * Pull any activations the ledger has not seen yet; returns the dollars newly credited. A per-wallet cursor remembers the
  * last block read, so each sync scans only new blocks. Errors are logged and return 0: the chain being slow must not stop a run.
  */
+const syncedAt = new Map<string, number>();
 export async function syncActivations(owner: string, fetchImpl: typeof fetch = fetch) {
   // An Orbio email account (orbio-…) has no wallet, so nothing on chain can be addressed to it.
   if (!/^0x[0-9a-f]{40}$/i.test(owner)) return 0;
+  // A page load, the balance read inside it and the tick all ask; one sync per owner per 30s is plenty (production only).
+  const k = owner.toLowerCase();
+  if (fetchImpl === fetch) {
+    const last = syncedAt.get(k) ?? 0;
+    if (Date.now() - last < 30_000) return 0;
+    syncedAt.set(k, Date.now());
+  }
   const cursorKey = `activations.synced.${owner.toLowerCase()}`;
   try {
     const cursor = Number((await store.kvGet(cursorKey)) ?? NaN);

@@ -59,7 +59,7 @@ export async function trialOf(owner: string, now = Date.now()): Promise<Trial | 
   if (!x) return null;
   const credit = Number(x.credit_usd), spent = Number(x.spent_usd), exp = Number(x.expires_at);
   const remaining = Math.max(0, credit - spent);
-  return { creditUsd: credit, spentUsd: spent, remainingUsd: remaining, expiresAt: exp, active: now < exp && remaining >= 0.005 };
+  return { creditUsd: credit, spentUsd: spent, remainingUsd: remaining, expiresAt: exp, active: now < exp && remaining >= 0.02 };
 }
 
 /** Grant the trial to a new account if it qualifies and there's room today and overall. Idempotent; returns the trial. */
