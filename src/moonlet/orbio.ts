@@ -1,6 +1,6 @@
 import { recoverMessageAddress } from "viem";
 import * as store from "./store";
-import { RH_RPC } from "./tools";
+import { rhRpc } from "./rpc";
 
 /**
  * Orbio's CREDIT protocol (September 2026). Inference is a token on Robinhood
@@ -82,15 +82,8 @@ export class OrbioAuthError extends Error {
 const pad = (hex: string) => hex.replace(/^0x/, "").padStart(64, "0");
 
 async function ethCall(to: string, data: string, fetchImpl: typeof fetch): Promise<bigint> {
-  const r = await fetchImpl(RH_RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to, data }, "latest"] }),
-    signal: AbortSignal.timeout(8000),
-  });
-  const j = (await r.json()) as { result?: string; error?: { message: string } };
-  if (j.error) throw new Error(`rpc: ${j.error.message}`);
-  return j.result && j.result !== "0x" ? BigInt(j.result) : 0n;
+  const result = await rhRpc<string>("eth_call", [{ to, data }, "latest"], fetchImpl, 8000);
+  return result && result !== "0x" ? BigInt(result) : 0n;
 }
 
 /** Unactivated CREDIT in the wallet, in dollars (6 decimals). */
@@ -103,29 +96,8 @@ export async function stakedOrbioOf(owner: string, fetchImpl: typeof fetch = fet
   return Number(await ethCall(ORBIO.staking, `0xfd2d39c5${pad(owner)}`, fetchImpl)) / 1e18;
 }
 
-/** One JSON-RPC call. The public RPC rate-limits bursts ("Too Many Requests"), so those retry twice with a short backoff. */
-async function rpc<T>(method: string, params: unknown[], fetchImpl: typeof fetch, timeoutMs = 10_000): Promise<T> {
-  for (let attempt = 0; ; attempt++) {
-    const r = await fetchImpl(RH_RPC, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
-    const j = (await r.json().catch(() => ({ error: { message: `HTTP ${r.status}` } }))) as { result?: T; error?: { message: string } };
-    const limited = r.status === 429 || /too many requests/i.test(j.error?.message ?? "");
-    if (limited && attempt < 2) {
-      await new Promise((ok) => setTimeout(ok, 600 * (attempt + 1)));
-      continue;
-    }
-    if (j.error) throw new Error(`rpc ${method}: ${j.error.message}`);
-    if (j.result === undefined) throw new Error(`rpc ${method}: no result`);
-    return j.result;
-  }
-}
-
 export async function latestBlock(fetchImpl: typeof fetch = fetch) {
-  return Number(BigInt(await rpc<string>("eth_blockNumber", [], fetchImpl)));
+  return Number(BigInt(await rhRpc<string>("eth_blockNumber", [], fetchImpl)));
 }
 
 export type ActivationReceipt = { txHash: string; activationId: string; from: string; beneficiary: string; amountUsd: number; blockNumber: number };
@@ -135,14 +107,7 @@ export type ActivationReceipt = { txHash: string; activationId: string; from: st
  * The caller checks the beneficiary; this only proves the burn happened on chain.
  */
 export async function readActivations(txHash: string, fetchImpl: typeof fetch = fetch): Promise<ActivationReceipt[]> {
-  const r = await fetchImpl(RH_RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_getTransactionReceipt", params: [txHash] }),
-    signal: AbortSignal.timeout(8000),
-  });
-  const j = (await r.json()) as { result?: { status: string; blockNumber: string; logs: Array<{ address: string; topics: string[]; data: string }> } | null };
-  const rc = j.result;
+  const rc = await rhRpc<{ status: string; blockNumber: string; logs: Array<{ address: string; topics: string[]; data: string }> } | null>("eth_getTransactionReceipt", [txHash], fetchImpl, 8000);
   if (!rc) return [];
   if (rc.status !== "0x1") throw new Error("transaction reverted");
   const out: ActivationReceipt[] = [];
@@ -187,12 +152,12 @@ export async function findActivations(owner: string, fetchImpl: typeof fetch = f
   for (let lo = Math.max(0, fromBlock); lo <= to; lo += LOG_WINDOW) {
     const hi = Math.min(to, lo + LOG_WINDOW - 1);
     const filter = { fromBlock: `0x${lo.toString(16)}`, toBlock: `0x${hi.toString(16)}`, address: ORBIO.credit };
-    const found = await rpc<RawLog[]>("eth_getLogs", [{ ...filter, topics: [ORBIO.activatedTopic, null, null, `0x${pad(owner)}`] }], fetchImpl);
+    const found = await rhRpc<RawLog[]>("eth_getLogs", [{ ...filter, topics: [ORBIO.activatedTopic, null, null, `0x${pad(owner)}`] }], fetchImpl);
     if (!found.length) continue;
     logs.push(...found);
     // The fee events for these activations, same window: one more call only when something was found.
     const ids = found.map((l) => l.topics[1]);
-    logs.push(...(await rpc<RawLog[]>("eth_getLogs", [{ ...filter, topics: [ORBIO.feeTopic, ids] }], fetchImpl).catch(() => [])));
+    logs.push(...(await rhRpc<RawLog[]>("eth_getLogs", [{ ...filter, topics: [ORBIO.feeTopic, ids] }], fetchImpl).catch(() => [])));
   }
   const fees = feesIn(logs.map((l) => ({ ...l, address: l.address ?? ORBIO.credit })));
   return logs

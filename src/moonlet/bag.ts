@@ -1,5 +1,5 @@
 import * as store from "./store";
-import { RH_RPC } from "./tools";
+import { rhRpc } from "./rpc";
 import { ORBIO, stakedOrbioOf } from "./orbio";
 
 /**
@@ -8,15 +8,8 @@ import { ORBIO, stakedOrbioOf } from "./orbio";
  */
 
 async function heldOrbio(owner: string, fetchImpl: typeof fetch) {
-  const r = await fetchImpl(RH_RPC, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_call", params: [{ to: ORBIO.orbio, data: `0x70a08231${owner.slice(2).padStart(64, "0")}` }, "latest"] }),
-    signal: AbortSignal.timeout(8000),
-  });
-  const j = (await r.json()) as { result?: string; error?: { message: string } };
-  if (j.error) throw new Error(`rpc: ${j.error.message}`);
-  return j.result && j.result !== "0x" ? Number(BigInt(j.result)) / 1e18 : 0;
+  const result = await rhRpc<string>("eth_call", [{ to: ORBIO.orbio, data: `0x70a08231${owner.slice(2).padStart(64, "0")}` }, "latest"], fetchImpl, 8000);
+  return result && result !== "0x" ? Number(BigInt(result)) / 1e18 : 0;
 }
 
 export async function bagOf(owner: string, fetchImpl: typeof fetch = fetch): Promise<number> {
@@ -33,10 +26,17 @@ export async function bagOf(owner: string, fetchImpl: typeof fetch = fetch): Pro
   }
 }
 
-/** ORBIO the owner has staked, uncached: the part of the bag that mints CREDIT. 0 (logged) when the chain can't be read. */
+/** ORBIO the owner has staked: the part of the bag that mints CREDIT. Two-minute memo (every page load asks); 0, logged, when the chain can't be read. */
+const stakedMemo = new Map<string, { at: number; v: number }>();
 export async function stakedOf(owner: string, fetchImpl: typeof fetch = fetch): Promise<number> {
-  return stakedOrbioOf(owner, fetchImpl).catch((e) => {
+  const hit = stakedMemo.get(owner.toLowerCase());
+  if (hit && Date.now() - hit.at < 2 * 60_000 && fetchImpl === fetch) return hit.v;
+  try {
+    const v = await stakedOrbioOf(owner, fetchImpl);
+    if (fetchImpl === fetch) stakedMemo.set(owner.toLowerCase(), { at: Date.now(), v });
+    return v;
+  } catch (e) {
     console.error(`staked read ${owner}:`, (e as Error).message);
     return 0;
-  });
+  }
 }
