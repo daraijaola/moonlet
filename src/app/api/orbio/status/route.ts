@@ -7,13 +7,30 @@ import { estimateEarnPerDay } from "@/moonlet/budget";
 import { creditTokensOf, keyMessage, syncActivations } from "@/moonlet/orbio";
 import * as store from "@/moonlet/store";
 import { disconnect as orbioDisconnect, isWalletOwner, oauthConfig } from "@/moonlet/orbio-oauth";
+import { grantIfEligible, walletHasHistory } from "@/moonlet/trial";
+import { createHash, randomBytes } from "node:crypto";
+
+const DEVICE = "moonlet_device";
 
 /** Has this wallet signed for its Orbio key, and what does its bag and CREDIT look like? */
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
   if (!owner) return bad("sign in with your wallet first", 401);
   const wallet = isWalletOwner(owner);
-  if (wallet) await syncActivations(owner);
+  // A new account's free trial starts the first time it opens the app, one per device, and only for a real wallet or an
+  // Orbio-verified email account (see trial.ts). The device id is a long-lived first-party cookie set here.
+  const cookies = req.headers.get("cookie") ?? "";
+  const known = /(?:^|;\s*)moonlet_device=([\w-]{16,64})/.exec(cookies)?.[1] ?? null;
+  const device = known ?? randomBytes(18).toString("base64url");
+  const ip = (req.headers.get("x-real-ip") ?? req.headers.get("x-forwarded-for")?.split(",")[0] ?? "").trim();
+  const ipHash = ip ? createHash("sha256").update(`${process.env.SECRET_KEY ?? ""}:${ip}`).digest("hex").slice(0, 24) : null;
+  // A wallet's first activation sync scans the whole CREDIT history; don't hold the page for it. It finishes in the
+  // background and its credits show on the next refresh.
+  const sync = wallet ? syncActivations(owner).catch(() => 0) : Promise.resolve(0);
+  const [trial] = await Promise.all([
+    grantIfEligible(owner, { signals: { device, ipHash, realWallet: (o) => walletHasHistory(o) } }).catch(() => null),
+    Promise.race([sync, new Promise((ok) => setTimeout(ok, 1000))]),
+  ]);
   const [orbio, bag, staked, creditTokens, o, avatar, activations, pending] = await Promise.all([
     orbioFor(owner),
     wallet ? bagOf(owner) : 0,
@@ -34,17 +51,20 @@ export async function GET(req: Request) {
     staked,
     earnPerDayUsd: estimateEarnPerDay(staked),
     /** Activated AI balance: the gateway's figure when it answers, else verified activations minus recorded spend. */
-    idleCreditsUsd: balance?.availableUsd ?? o?.orbioBalanceUsd ?? 0,
+    // The person's own balance only; the free trial is reported separately under `trial` (never counted twice).
+    idleCreditsUsd: (balance?.raw as { trial?: boolean } | undefined)?.trial ? Math.max(0, o?.orbioBalanceUsd ?? 0) : (balance?.availableUsd ?? o?.orbioBalanceUsd ?? 0),
     balanceSource: balance?.raw && (balance.raw as { gateway?: boolean }).gateway ? "gateway" : "ledger",
     /** CREDIT tokens in the wallet, not yet activated. */
     creditTokensUsd: creditTokens,
     canWrite,
     oauth: !!o?.orbioOAuth,
+    trial: trial ? { creditUsd: trial.creditUsd, remainingUsd: Math.round(trial.remainingUsd * 100) / 100, expiresAt: trial.expiresAt, daysLeft: Math.max(0, Math.ceil((trial.expiresAt - Date.now()) / 86_400_000)), active: trial.active } : null,
     kind: o?.authKind ?? "wallet",
     orbio: { epoch: o?.orbioEpoch ?? 0, signedAt: o?.orbioKeySignedAt ?? null, message: keyMessage(o?.orbioEpoch ?? 0), dev: process.env.ALLOW_DEV_ORBIO === "1", activations, activationCard: activationCard ? { id: activationCard.id, amountUsd: Number(activationCard.payload.amountUsd ?? 0), status: activationCard.status } : null },
   });
   const renewed = renewedCookie(req);
-  if (renewed) res.headers.set("set-cookie", renewed);
+  if (renewed) res.headers.append("set-cookie", renewed);
+  if (!known) res.headers.append("set-cookie", `${DEVICE}=${device}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${400 * 86400}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`);
   return res;
 }
 

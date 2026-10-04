@@ -28,6 +28,8 @@ export type OwnerRow = {
   displayName: string | null;
   /** True when orbio_key holds a Sign in with Orbio access token (refreshed by the tick) rather than a wallet-signed key. */
   orbioOAuth: boolean;
+  /** When the account first appeared; null for accounts older than the column. */
+  createdAt: number | null;
 };
 
 export const AVATAR_COUNT = 10;
@@ -169,6 +171,8 @@ export function migrate() {
     await c.execute(`ALTER TABLE owners ADD COLUMN orbio_balance_usd REAL NOT NULL DEFAULT 0`).catch(() => undefined);
     await c.execute(`ALTER TABLE owners ADD COLUMN orbio_key_signed_at INTEGER`).catch(() => undefined);
     // Sign in with Orbio: who the person is, and their tokens (access token lives in orbio_key, sealed; refresh sealed, plus its hash for compare-and-swap).
+    // When the account first appeared (accounts from before this column have none, so they never count as new).
+    await c.execute(`ALTER TABLE owners ADD COLUMN created_at INTEGER`).catch(() => undefined);
     for (const col of ["auth_kind TEXT", "orbio_sub TEXT", "orbio_email TEXT", "display_name TEXT", "orbio_refresh TEXT", "orbio_refresh_hash TEXT", "orbio_token_exp INTEGER"]) {
       await c.execute(`ALTER TABLE owners ADD COLUMN ${col}`).catch(() => undefined);
     }
@@ -213,7 +217,7 @@ export const newId = (prefix: string) => `${prefix}_${randomBytes(6).toString("b
 
 export async function upsertOwner(address: string) {
   await migrate();
-  await db().execute({ sql: `INSERT INTO owners(address) VALUES(?) ON CONFLICT(address) DO NOTHING`, args: [address.toLowerCase()] });
+  await db().execute({ sql: `INSERT INTO owners(address, created_at) VALUES(?, ?) ON CONFLICT(address) DO NOTHING`, args: [address.toLowerCase(), Date.now()] });
 }
 
 /** Ten faces. Wallets and moonlets each draw one and keep it. */
@@ -245,6 +249,7 @@ export async function getOwner(address: string): Promise<OwnerRow | null> {
     email: (row.orbio_email as string | null) ?? null,
     displayName: (row.display_name as string | null) ?? null,
     orbioOAuth: !!row.orbio_refresh,
+    createdAt: row.created_at == null ? null : Number(row.created_at),
   };
 }
 

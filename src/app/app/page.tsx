@@ -684,7 +684,9 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
           <Image src="/mascot/moonlet-doze.png" alt="" width={520} height={357} className="mx-auto w-[150px] sm:w-[170px]" />
           <h1 className="mt-1 font-display text-[2.3rem] leading-[0.95] text-ink sm:text-[2.8rem]">What should it do?</h1>
           <p className="mt-2 text-[14px] leading-[1.6] text-ink-soft">
-            {idle !== null && idle !== undefined && idle > 0
+            {status?.trial?.active
+              ? <>You have <span className="font-mono text-ink">{fmtUsd(status.trial.remainingUsd + (idle ?? 0))}</span> of free AI on us. One sentence puts it to work.</>
+              : idle !== null && idle !== undefined && idle > 0
               ? <>You have <span className="font-mono text-ink">{fmtUsd(idle)}</span> of activated AI balance waiting. One sentence puts it to work.</>
               : <>One sentence. You review the plan and the price per run before anything starts.</>}
           </p>
@@ -692,6 +694,19 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
         <div className="mt-6"><JobInput id="first-job" /></div>
 
         <div className="mt-10 divide-y divide-ink/[0.07] rounded-lg border border-ink/10 bg-white">
+          {status?.trial?.active ? (
+            <SetupStep n={1} done title={`${fmtUsd(status.trial.remainingUsd)} free trial credit`} hint={`On us for ${Math.max(1, status.trial.daysLeft)} more day${status.trial.daysLeft === 1 ? "" : "s"}: your first runs and threads are paid. Top up any time to keep going after.`}>
+              {status.oauth && (
+                <a href="https://www.orbio.so/" target="_blank" rel="noreferrer" className="ui-btn ui-btn-sm"><OrbioMark size={13} /> Top up</a>
+              )}
+            </SetupStep>
+          ) : status?.oauth ? (
+            <SetupStep n={1} done={(idle ?? 0) >= 0.05} title={(idle ?? 0) >= 0.05 ? `Signed in with Orbio · ${fmtUsd(idle ?? 0)} balance` : "Add balance to run"} hint={(idle ?? 0) >= 0.05 ? "Runs bill your Orbio balance; most cost about a cent. Top up any time." : "You're signed in with Orbio. Top up on orbio.so, by card from $5 or with crypto; Moonlet picks it up in a minute."}>
+              <a href="https://www.orbio.so/" target="_blank" rel="noreferrer" className={`ui-btn ui-btn-sm ${(idle ?? 0) >= 0.05 ? "" : "ui-btn-gold"}`}>
+                <OrbioMark size={13} /> Top up
+              </a>
+            </SetupStep>
+          ) : (
           <SetupStep n={1} done={orbioOk} title={orbioOk ? "Orbio key signed" : "Sign for your Orbio key"} hint={orbioOk ? "Runs bill the CREDIT you activate." : "One signature in your wallet becomes the gateway key. Then activate CREDIT under Connections."}>
             {!orbioOk && (
               <button onClick={() => void approveOrbio("/app").catch(() => undefined)} className="ui-btn ui-btn-sm ui-btn-gold">
@@ -699,6 +714,7 @@ function EmptyState({ status, conns }: { status: OrbioStatus | null; conns: Conn
               </button>
             )}
           </SetupStep>
+          )}
           <SetupStep n={2} done={telegramOk} title={telegramOk ? "Telegram linked" : "Link Telegram"} hint={telegramOk ? "Results and approvals reach your phone." : telegramAvailable ? "Where results and approvals reach you. Open the bot, press Start." : "Not switched on here yet; results stay on this dashboard."}>
             {!telegramOk && telegramAvailable && (
               <Link href="/app/connections" className="ui-btn ui-btn-sm">

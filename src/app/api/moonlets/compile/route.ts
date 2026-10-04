@@ -5,6 +5,7 @@ import { bad, ownerFrom } from "@/moonlet/http";
 import { TEMPLATE_IDS } from "@/moonlet/spec";
 import { connectionFor, listRepos } from "@/moonlet/connections/github";
 import * as store from "@/moonlet/store";
+import { billingKey } from "@/moonlet/trial";
 
 const Body = z.object({ sentence: z.string().min(8).max(500), template: z.enum(TEMPLATE_IDS), name: z.string().max(24).optional() });
 
@@ -22,7 +23,9 @@ export async function POST(req: Request) {
   const signedKey = (await store.getOwner(owner))?.orbioKey ?? null;
   const ownKey = signedKey ?? (await store.listMoonlets(owner)).find((m) => m.key?.key)?.key?.key;
   // A fresh holder's own key usually has no balance yet, so a refusal there falls through to the platform key.
-  const keys = [ownKey, process.env.COMPILE_API_KEY || process.env.OPENROUTER_API_KEY].filter((k): k is string => !!k);
+  // A brand-new account on the free trial plans on the trial key (a fraction of a cent) when it has no balance of its own.
+  const trialKey = (await billingKey(owner).catch(() => null))?.key;
+  const keys = [...new Set([ownKey, trialKey, process.env.COMPILE_API_KEY || process.env.OPENROUTER_API_KEY].filter((k): k is string => !!k))];
   if (!keys.length) return NextResponse.json({ spec: fallbackSpec(body.data), compiled: false });
   const gh = await connectionFor(owner).catch(() => null);
   const repos = gh ? await listRepos(gh.data.token, 30).then((r) => r.map((x) => x.repo)).catch(() => []) : [];

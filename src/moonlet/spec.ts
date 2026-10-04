@@ -73,7 +73,7 @@ export const CADENCE_MS: Record<Cadence, number> = {
 };
 
 export const JobSpec = z.object({
-  name: z.string().min(1).max(24).describe("Short moon-ish name: Lumen, Pebble, Tide."),
+  name: z.string().min(1).max(24).describe("A short name (1-3 words) that says what this moonlet does, moon-flavoured if it fits: \"Moon Facts\", \"ORBIO Watch\", \"Inbox Orbit\", \"Repo Tide\". Never a generic name like Lumen."),
   template: z.enum(TEMPLATE_IDS),
   objective: z.string().min(8).max(400).describe("One or two plain sentences: what this moonlet is for."),
   cadence: Cadence.describe("How often to run. Prefer the slowest cadence that still does the job."),

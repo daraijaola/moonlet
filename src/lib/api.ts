@@ -111,6 +111,8 @@ export type OrbioStatus = {
   oauth?: boolean;
   /** "orbio" for an email account (no wallet). */
   kind?: "wallet" | "orbio";
+  /** A new account's free trial, paid by Moonlet: used until it runs out or expires, after the person's own balance. */
+  trial?: { creditUsd: number; remainingUsd: number; expiresAt: number; daysLeft: number; active: boolean } | null;
 };
 
 export type ApiThread = { id: string; title: string; model: string; effort: "low" | "medium" | "high" | "xhigh" | "max"; machine: "standard" | "large"; status: "idle" | "working" | "stopping" | "failed"; spentUsd: number; createdAt: number; updatedAt: number };

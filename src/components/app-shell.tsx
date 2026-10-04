@@ -9,7 +9,7 @@ import { AppDataProvider, useAppData } from "@/lib/app-data";
 import { MoonletMark, Wordmark } from "./logo";
 import { OpenRouterMark, OrbioMark, RobinhoodMark } from "./marks";
 import { AnimatePresence, motion } from "motion/react";
-import { PanelLeft, Orbit, Rocket, Cable, Telescope, MessagesSquare, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, ExternalLink, Trash2, type LucideIcon } from "lucide-react";
+import { PanelLeft, Orbit, Rocket, Cable, Telescope, MessagesSquare, Plus, LogOut, ChevronsUpDown, Copy, Check, Globe, Ellipsis, Share2, ExternalLink, Trash2, Wallet, type LucideIcon } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -287,19 +287,26 @@ export function AccountMenu({ address, status, onDisconnect }: { address: string
             <Profile n={status?.avatar} size={32} />
             <div className="min-w-0">
               <p className="truncate font-mono text-[12.5px] text-ink">{label ?? shortAddr(address)}</p>
-              <p className="truncate text-[11.5px] text-ink-faint">{status ? `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}` : "…"}</p>
+              <p className="truncate text-[11.5px] text-ink-faint">{!status ? "…" : status.trial?.active ? `$${status.trial.remainingUsd.toFixed(2)} free trial · $${status.idleCreditsUsd.toFixed(2)} own balance` : status.oauth ? `$${status.idleCreditsUsd.toFixed(2)} Orbio balance · signed in with Orbio` : `${fmtBag(status.bag)} $ORBIO · ${status.approved ? "Orbio approved" : "Orbio pending"}`}</p>
             </div>
           </div>
           <div className="my-1 h-px bg-ink/[0.06]" />
-          <button role="menuitem" type="button" onClick={copy} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">
-            <span className="text-ink-soft">{copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.75} />}</span>{copied ? "Copied" : "Copy address"}
-          </button>
+          {status?.oauth && (
+            <a role="menuitem" href="https://www.orbio.so/" target="_blank" rel="noreferrer" className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-ink hover:bg-ink/[0.05]">
+              <span className="text-ink-soft"><Wallet size={14} strokeWidth={1.75} /></span>Top up on orbio.so
+            </a>
+          )}
+          {address.startsWith("0x") && (
+            <button role="menuitem" type="button" onClick={copy} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">
+              <span className="text-ink-soft">{copied ? <Check size={14} strokeWidth={2} /> : <Copy size={14} strokeWidth={1.75} />}</span>{copied ? "Copied" : "Copy address"}
+            </button>
+          )}
           <Link role="menuitem" href="/sky" onClick={() => setOpen(false)} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">
             <span className="text-ink-soft"><Globe size={14} strokeWidth={1.75} /></span>The sky
           </Link>
           <div className="my-1 h-px bg-ink/[0.06]" />
           <button role="menuitem" type="button" onClick={onDisconnect} className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] text-ink hover:bg-ink/[0.05]">
-            <span className="text-ink-soft"><LogOut size={14} strokeWidth={1.75} /></span>Disconnect wallet
+            <span className="text-ink-soft"><LogOut size={14} strokeWidth={1.75} /></span>{address.startsWith("0x") ? "Disconnect wallet" : "Sign out"}
           </button>
         </div>
       )}
@@ -315,7 +322,7 @@ export function AccountMenu({ address, status, onDisconnect }: { address: string
           <span className={`absolute -bottom-px -right-px h-2 w-2 rounded-full ring-2 ring-paper ${status?.approved ? "bg-moss" : "bg-ink-faint"}`} />
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-[12.5px] text-ink">{label ?? shortAddr(address)}</span>
-        {status && <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">{fmtBag(status.bag)}</span>}
+        {status && <span className="shrink-0 font-mono text-[11px] tabular-nums text-ink-faint">{status.trial?.active ? `$${(status.trial.remainingUsd + status.idleCreditsUsd).toFixed(2)}` : status.oauth ? `$${status.idleCreditsUsd.toFixed(2)}` : fmtBag(status.bag)}</span>}
         <ChevronsUpDown size={13} strokeWidth={1.75} className="shrink-0 text-ink-faint" />
       </button>
     </div>
