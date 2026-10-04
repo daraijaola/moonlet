@@ -23,5 +23,23 @@ services:
           sleep 60
         done
 
+  # Nightly SQLite snapshot to ~/backups on the host (online .backup, safe while web writes), keeping fourteen days.
+  backup:
+    image: alpine:3
+    restart: unless-stopped
+    volumes:
+      - data:/data
+      - ${BACKUP_DIR:-${HOME}/backups}:/backups
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        apk add --no-cache sqlite >/dev/null
+        while true; do
+          f=/backups/moonlet-$$(date -u +%Y%m%d-%H%M).db
+          sqlite3 /data/moonlet.db ".backup '$$f'" && gzip -f "$$f" && echo "backup $$f.gz" || echo "backup failed $$(date)"
+          find /backups -name 'moonlet-*.db.gz' -mtime +14 -delete
+          sleep 86400
+        done
+
 volumes:
   data:

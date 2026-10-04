@@ -12,9 +12,11 @@ export function AppDataProvider({ owner, children }: { owner: string; children: 
   const [status, setStatus] = useState<OrbioStatus | null>(null);
   const [conns, setConns] = useState<Connections | null>(null);
   const reload = useCallback(async () => {
+    // The Orbio status reads the chain and the gateway and can take seconds; it lands when it lands. Callers wait only for
+    // moonlets and connections, so a finished run's button doesn't sit on "Running…" behind it.
+    void api.orbioStatus(owner).then(setStatus, () => undefined);
     await Promise.all([
       api.listMoonlets(owner).then((m) => setMoonlets(m.moonlets)),
-      api.orbioStatus(owner).then(setStatus, () => undefined),
       api.connections(owner).then(setConns, () => undefined),
     ]);
   }, [owner]);

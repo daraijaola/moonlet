@@ -36,6 +36,8 @@ export type ToolDeps = {
   files?: FileSink;
   /** Called after every local tool call with a one-line summary of what it did. */
   trace?: (e: { tool: string; summary: string }) => void;
+  /** Called with the URLs a tool's result points at (plus the page behind a contract read), so a report can name what it read. */
+  sourced?: (urls: string[]) => void;
   /** Called the moment a tool touches something the owner alone should see (their mailbox, a private repo). The run is then published as a receipt only. */
   onPrivate?: (why: string) => void;
 };
@@ -56,6 +58,9 @@ function tool<S extends z.ZodType>(t: { name: string; description: string; input
   return { name: t.name, description: t.description, schema: t.inputSchema, execute: t.execute as never };
 }
 
+/** Tools that read contracts rather than pages: the public page where a reader can check the same numbers. */
+const TOOL_SOURCE: Record<string, string> = { credit_market: "https://www.orbio.so/protocol", chain_read: "https://robinhoodchain.blockscout.com" };
+
 export type BuiltTools = { tools: LocalTool[]; webSearch: boolean };
 
 export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
@@ -65,6 +70,10 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
     if (name.startsWith("gmail_")) deps.onPrivate?.(name);
     const r = await run(a);
     deps.trace?.({ tool: name, summary: label(a, r) });
+    if (!name.startsWith("gmail_")) {
+      const urls = JSON.stringify(r ?? "").slice(0, 20_000).match(/https?:\/\/[^\s"'\\)<>]+/g) ?? [];
+      deps.sourced?.([...urls, ...(TOOL_SOURCE[name] ? [TOOL_SOURCE[name]] : [])]);
+    }
     return r;
   };
 
@@ -511,7 +520,7 @@ export function buildTools(ids: readonly ToolId[], deps: ToolDeps): BuiltTools {
           const [supply, staked] = await Promise.all([call(CREDIT, "0x18160ddd"), call(ORBIO_T, `0x70a08231${pad(STAKING)}`)]);
           const out: Record<string, unknown> = { creditSupply: round6(Number(supply) / 1e6), orbioStaked: Math.round(Number(staked) / 1e18) };
           if (wallet) {
-            const [c, s] = await Promise.all([call(CREDIT, `0x70a08231${pad(wallet)}`), call(STAKING, `0x70a08231${pad(wallet)}`).catch(() => 0n)]);
+            const [c, s] = await Promise.all([call(CREDIT, `0x70a08231${pad(wallet)}`), call(STAKING, `0xfd2d39c5${pad(wallet)}`).catch(() => 0n)]);
             out.wallet = { address: wallet, credit: round6(Number(c) / 1e6), orbioStaked: Math.round(Number(s) / 1e18) };
           }
           return out;

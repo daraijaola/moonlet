@@ -1,7 +1,7 @@
 import type { Hex } from "viem";
 import { makeAnchorer, type Anchorer } from "./anchor";
 import { estimateEarnPerDay } from "./budget";
-import { makeCreditClient, OrbioAuthError, syncActivations, type OrbioClient } from "./orbio";
+import { gatewayBalance, makeCreditClient, OrbioAuthError, syncActivations, type OrbioClient } from "./orbio";
 import { devOrbio } from "./orbio-dev";
 import { runMoonlet } from "./runner";
 import { CADENCE_MS, type Cadence } from "./spec";
@@ -60,7 +60,7 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   await probeTripwires(now(), deps.fetch).catch((e) => console.error("tripwire probe", (e as Error).message));
   // A quiet moonlet is waiting for money. Look at the chain for its owner's activations every tick, so an activation made
   // anywhere wakes it within the minute rather than at its next scheduled slot.
-  if (!deps.orbioFor) for (const owner of await store.ownersWithQuietMoonlets()) await syncActivations(owner, deps.fetch);
+  if (!deps.orbioFor) for (const owner of await store.ownersWithQuietMoonlets()) await wakeIfFunded(owner, now(), deps.fetch);
   const due = await store.listDue(now(), limit);
   const results: Array<{ id: string; status: string; error?: string }> = [];
   const queue = [...due];
@@ -72,11 +72,29 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
     }
   };
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
-  await anchorPending(deps).catch(() => undefined);
+  for (const a of await anchorPending(deps).catch((e) => [{ runId: "-", anchored: false, error: (e as Error).message }])) if (!a.anchored) console.error(`anchor ${a.runId}:`, a.error);
   await tg.configureBot(deps.fetch).catch(() => undefined);
   installChatHandler(deps);
   await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
   return results;
+}
+
+/**
+ * An owner with quiet moonlets: money can arrive two ways. An activation on chain (read every tick from the CREDIT index), or
+ * balance the gateway already holds for the key, e.g. activated on Orbio's own site to a wallet we never saw activate. The
+ * gateway is asked at most every five minutes per owner; either one wakes the quiet moonlets for the next tick.
+ */
+async function wakeIfFunded(owner: string, at: number, fetchImpl?: typeof fetch) {
+  if ((await syncActivations(owner, fetchImpl)) > 0) return;
+  const k = `gateway.checked.${owner}`;
+  if (at - Number((await store.kvGet(k)) ?? 0) < 5 * 60_000) return;
+  await store.kvSet(k, String(at));
+  const o = await store.getOwner(owner);
+  const live = o?.orbioKey ? await gatewayBalance(o.orbioKey, fetchImpl) : null;
+  if (!live) return;
+  await store.setOwnerBalance(owner, live.availableUsd);
+  // Only new money wakes them: an unchanged small balance would otherwise re-run a quiet check every five minutes.
+  if (live.availableUsd > (o?.orbioBalanceUsd ?? 0) + 0.005) await store.wakeQuietMoonlets(owner);
 }
 
 /** Free text from a linked Telegram chat, whether it arrives on the webhook or the tick's poll. */

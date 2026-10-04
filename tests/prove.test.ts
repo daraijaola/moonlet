@@ -40,9 +40,10 @@ describe("prove: calls and scores", () => {
     expect(text).toContain("liquidity above $450K");
     expect(text).toContain("3 hits, 1 miss.");
     const fresh = buildInstructions(spec, { ownerShort: "0x…", bag: 1_000_000, runAt: "now" });
-    expect(fresh).toContain("No open calls.");
+    expect(fresh).toMatch(/No open calls/);
+    if (spec.template === "market-watch") expect(fresh).toContain("exactly one call");
     const inbox = buildInstructions({ ...spec, template: "inbox", tools: ["gmail_read", "deliver"] }, { ownerShort: "0x…", bag: 1_000_000, runAt: "now" });
-    expect(inbox).not.toContain("No open calls.");
+    expect(inbox).not.toMatch(/No open calls/);
   });
 
   it("scheduler: calls made this run wait as open; the next run's scores settle into hits and misses", async () => {
