@@ -24,7 +24,8 @@ export function metricText(label: string, value: string, delta: string) {
     const sign = signed ? (n > 0 ? "+" : n < 0 ? "−" : "±") : n < 0 ? "−" : "";
     return `${sign}${money ? "$" : ""}${compact(Math.abs(n))}`;
   };
-  const d = delta.trim();
+  // "+ $6.5K" → "+$6.5K": models sometimes space the sign off.
+  const d = delta.trim().replace(/^([+−-])\s+/, "$1");
   const dn = bare(d) ? Number(d.replace("−", "-")) : NaN;
   return {
     value: bare(value) ? fmt(value, false) : value,

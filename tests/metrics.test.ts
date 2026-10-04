@@ -15,5 +15,6 @@ describe("metric tiles", () => {
   it("leaves numbers the model already formatted alone", () => {
     expect(metricText("Price", "$0.1061", "+0.7%")).toEqual({ value: "$0.1061", delta: "+0.7%", tone: undefined });
     expect(metricText("Activations", "124 (+1)", "")).toEqual({ value: "124 (+1)", delta: "", tone: undefined });
+    expect(metricText("24h volume", "$3.684M", "+ $6.5K").delta).toBe("+$6.5K");
   });
 });
