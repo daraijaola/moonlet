@@ -12,7 +12,7 @@ export default async function Image({ params }: { params: Promise<{ id: string }
   const { id } = await params;
   const m = await store.getMoonlet(id);
   const owner = m ? await store.getOwner(m.owner) : null;
-  const name = m?.name ?? "moonlet";
+  const name = m ? sealHunt(m.name) : "moonlet";
   const job = m ? (isPrivateSpec(m.spec) ? PRIVATE_OBJECTIVE : sealHunt(m.spec.objective)) : "Your bag runs an agent.";
   const meta = m ? `${TEMPLATE_LABEL[m.spec.template]} · orbits ${shortAddr(m.owner)}${owner ? ` · ${fmtBag(owner.bag)} $ORBIO` : ""}` : "";
   const alive = m ? m.status === "running" || m.status === "idle" : false;

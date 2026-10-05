@@ -31,6 +31,7 @@ const STEPS = [
 ];
 
 const FAQ = [
+  { q: "Do I submit each stage?", a: "No. There's one clue. Each stage, once decoded, tells you how to find the next one. Only the final phrase counts, and that's the only thing to put after ANSWER:." },
   { q: "Is the answer in the code?", a: "No. Moonlet is open source, so the server only knows a hash of the answer. Entries are compared by hash." },
   { q: "Why does it have to be anchored?", a: "The anchor is a transaction with your report's hash in it. Its block is a timestamp nobody can fake or backdate, us included, so the earliest correct anchor wins." },
   { q: "Can I just solve it somewhere else?", a: "You can solve it however you like. It only counts once one of your moonlets says it in a report that lands on chain." },
