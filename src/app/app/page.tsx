@@ -267,7 +267,7 @@ function Detail({ m, all, owner, onChange, conns, launched, askDelete, status }:
     try {
       const r = (await fn()) as { status?: string; error?: string } | undefined;
       await Promise.all([onChange(), loadRuns()]);
-      flash(r?.status === "failed" ? `Run failed: ${r.error ?? "see the run below"}` : r?.status === "quiet" ? "Run went quiet: no credits for a run right now." : done);
+      flash(r?.status === "failed" ? `Run failed: ${r.error ?? "see the run below"}` : r?.status === "quiet" ? "Run went quiet. The run below says why." : done);
     } catch (e) {
       flash(`Failed: ${(e as Error).message}`);
       setBusy(null);
@@ -278,12 +278,15 @@ function Detail({ m, all, owner, onChange, conns, launched, askDelete, status }:
 
   const go = (...args: Parameters<typeof act>) => act(...args).catch(() => undefined);
   const running = m.status === "running";
+  // Quiet has several causes (no balance, a connection it needs); the latest quiet run says which.
+  const lastRun = runs?.[0];
+  const quietWhy = lastRun?.status === "quiet" && lastRun.summary ? lastRun.summary.replace(/\.$/, "") + "." : null;
   const statusLine = running
     ? <>Working on {m.runsTotal === 0 ? "its first report" : "a report"} now — about a minute.</>
     : m.status === "paused"
       ? <>Paused. Resume to pick the schedule back up.</>
       : m.status === "quiet"
-        ? <>Quiet: out of credits. It wakes up as the bag earns.</>
+        ? <>Quiet: {quietWhy ?? "no balance for a run right now. It picks back up once there is."}</>
         : m.spec.tripwire
           ? m.spec.tripwire.metric === "repo_activity"
             ? <>Watching {m.spec.tripwire.target} for free every 15 min; wakes on a new push, issue or pull request. Heartbeat <span className="font-semibold">{timeUntil(m.nextRunAt)}</span>.</>

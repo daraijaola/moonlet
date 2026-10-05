@@ -184,11 +184,11 @@ function NewInner() {
             </div>
             <label className="mt-5 block">
               <span className="text-[12.5px] font-medium text-ink">The job, in one sentence</span>
-              <textarea value={sentence} onChange={(e) => setSentence(e.target.value)} rows={2} placeholder={TEMPLATE_EXAMPLE[template]} className="mt-1.5 w-full resize-none rounded-lg border border-ink/12 bg-white px-3.5 py-2.5 text-[14px] text-ink outline-none transition-[border-color,box-shadow] focus:border-ink/30 focus:shadow-[0_0_0_3px_rgba(233,182,76,0.22)]" />
+              <textarea value={sentence} onChange={(e) => setSentence(e.target.value)} onFocus={(e) => { if (Object.values(TEMPLATE_EXAMPLE).includes(sentence)) e.currentTarget.select(); }} rows={2} placeholder={TEMPLATE_EXAMPLE[template]} className="mt-1.5 w-full resize-none rounded-lg border border-ink/12 bg-white px-3.5 py-2.5 text-[14px] text-ink outline-none transition-[border-color,box-shadow] focus:border-ink/30 focus:shadow-[0_0_0_3px_rgba(233,182,76,0.22)]" />
             </label>
             <label className="mt-3 block">
               <span className="text-[12.5px] font-medium text-ink">Name <span className="font-normal text-ink-faint">(optional)</span></span>
-              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={24} placeholder="Lumen, Pebble, Tide…" className="mt-1.5 w-full rounded-lg border border-ink/12 bg-white px-3.5 py-2.5 text-[14px] text-ink outline-none transition-[border-color,box-shadow] focus:border-ink/30 focus:shadow-[0_0_0_3px_rgba(233,182,76,0.22)]" />
+              <input value={name} onChange={(e) => setName(e.target.value)} maxLength={24} placeholder="Moon Facts, Repo Watch…" className="mt-1.5 w-full rounded-lg border border-ink/12 bg-white px-3.5 py-2.5 text-[14px] text-ink outline-none transition-[border-color,box-shadow] focus:border-ink/30 focus:shadow-[0_0_0_3px_rgba(233,182,76,0.22)]" />
             </label>
           </>
         )}
