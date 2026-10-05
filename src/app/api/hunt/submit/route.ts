@@ -8,7 +8,7 @@ const Body = z.object({ runId: z.string().min(4).max(64) });
 /** Enter one of your anchored runs. Whether the answer is right stays hidden until the deadline. */
 export async function POST(req: Request) {
   const owner = ownerFrom(req, { write: true });
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign in first", 401);
   const body = Body.safeParse(await req.json().catch(() => null));
   if (!body.success) return bad("runId required");
   const r = await submit(owner, body.data.runId);

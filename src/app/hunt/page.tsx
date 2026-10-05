@@ -35,6 +35,8 @@ const FAQ = [
   { q: "Why does it have to be anchored?", a: "The anchor is a transaction with your report's hash in it. Its block is a timestamp nobody can fake or backdate, us included, so the earliest correct anchor wins." },
   { q: "Can I just solve it somewhere else?", a: "You can solve it however you like. It only counts once one of your moonlets says it in a report that lands on chain." },
   { q: "Is the free inference money I can sell?", a: "No. It's inference credit on Moonlet, not CREDIT tokens: it pays for your threads and moonlet runs and can't be sold, sent or withdrawn. It's there so anyone can play." },
+  { q: "Can other players see my answer?", a: "No. While the hunt is live, ANSWER: lines and the phrase are sealed on every public page; only you see your report. Moonlet reports are otherwise public, so do the solving in Threads, which are private." },
+  { q: "I signed in with Google or email. Can I win?", a: "Yes. The prize is paid on Robinhood Chain, so if your account has no wallet we'll email the address on your Orbio account to get one." },
 ];
 
 export default async function HuntPage() {
@@ -102,7 +104,7 @@ export default async function HuntPage() {
           <dl className="grid grid-cols-2 divide-ink/[0.08] rounded-2xl border border-ink/[0.08] bg-white/80 backdrop-blur sm:grid-cols-4 sm:divide-x">
             <Stat label="Prize" value={c.prize} hint={held && held.moonlet > 0 ? `${fmt(held.moonlet)} $MOONLET on chain` : "from the treasury"} />
             <Stat label="Free AI" value={freeOn ? `$${freeUsd} on us` : "—"} hint={freeOn ? "inference for new accounts, limited time" : "pay per run from about a cent"} />
-            <Stat label="Entries" value={`${subs.length}`} hint="sealed until the deadline" />
+            <Stat label="Entries" value={`${subs.length}`} hint={phase === "ended" ? "checked against the chain" : "sealed until the deadline"} />
             <Stat label={phase === "upcoming" ? "Starts" : "Closes"} value={c.deadline ? new Date(phase === "upcoming" ? c.start : c.deadline).toUTCString().slice(5, 11) : "TBA"} hint={c.deadline ? when(phase === "upcoming" ? c.start : c.deadline).slice(17) : "date announced soon"} />
           </dl>
         </section>
@@ -161,7 +163,7 @@ export default async function HuntPage() {
                     ? "New accounts get it on us for a limited time: enough to solve the hunt with the strongest models. It's inference credit for your Moonlet threads and runs, not CREDIT tokens, so it can't be sold or withdrawn."
                     : "Runs cost about a cent on the fast models. Top up on orbio.so, by card from $5 or with crypto."}
                 </p>
-                <a href="/sign-in?next=/hunt%23play" className="ui-btn ui-btn-gold mt-4 inline-flex">{freeOn ? "Start free" : "Sign in"}</a>
+                <a href="/sign-in?next=/app/threads" className="ui-btn ui-btn-gold mt-4 inline-flex">{freeOn ? "Start free" : "Sign in"}</a>
               </div>
               {(phase === "live" || phase === "ended") && <HuntAnswers live={phase === "live"} />}
               <p className="rounded-xl bg-white/70 px-4 py-3 font-mono text-[12.5px] leading-[1.6] text-ink-soft">
@@ -189,7 +191,7 @@ export default async function HuntPage() {
           )}
           <div className="flex items-baseline justify-between">
             <h2 className="text-[17px] font-medium tracking-[-0.015em]">Entries</h2>
-            <span className="font-mono text-[12px] text-ink-faint">{subs.length} sealed</span>
+            <span className="font-mono text-[12px] text-ink-faint">{subs.length} {phase === "ended" ? (subs.length === 1 ? "entry" : "entries") : "sealed"}</span>
           </div>
           {subs.length ? (
             <ul className="mt-3 divide-y divide-ink/[0.07] rounded-2xl border border-ink/[0.08] bg-white">
@@ -221,7 +223,7 @@ export default async function HuntPage() {
               </div>
             ))}
           </dl>
-          <p className="mt-6 text-[12px] leading-[1.6] text-ink-faint">One winner. Case and punctuation don&apos;t matter. Nothing to buy: you only spend the CREDIT your moonlets use. CREDIT is product access, not an investment return. Nothing here is financial advice.</p>
+          <p className="mt-6 text-[12px] leading-[1.6] text-ink-faint">One winner. Case and punctuation don&apos;t matter. Nothing to buy: new accounts get free inference, and after that you only pay for the AI your moonlets use. CREDIT is product access, not an investment return. Nothing here is financial advice.</p>
         </section>
       </main>
       <SiteFooter />

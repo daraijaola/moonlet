@@ -16,6 +16,7 @@ import type { Cadence } from "@/moonlet/spec";
 import * as store from "@/moonlet/store";
 import { bagOf, stakedOf } from "@/moonlet/bag";
 import { isPrivateSpec, redactMoonlet, redactRun } from "@/moonlet/privacy";
+import { sealHunt } from "@/moonlet/hunt";
 import { COOKIE, openSession } from "@/moonlet/session";
 import { fmtBag, fmtUsd, shortAddr, shortenHexes, timeAgo, timeUntil } from "@/lib/api";
 
@@ -23,7 +24,7 @@ export const dynamic = "force-dynamic";
 
 export async function generateMetadata({ params }: PageProps<"/s/[id]">): Promise<Metadata> {
   const { id } = await params;
-  const m = (await store.getMoonlet(id).then((x) => x && redactMoonlet(x)));
+  const m = (await store.getMoonlet(id).then((x) => x && sealHunt(redactMoonlet(x))));
   return {
     title: m ? `${m.name} · a moonlet` : "moonlet",
     description: m ? `“${m.spec.objective}” — running on ${shortAddr(m.owner)}'s bag, every run hashed and public.` : undefined,
@@ -37,8 +38,9 @@ export default async function PublicMoonletPage({ params }: PageProps<"/s/[id]">
   // The owner sees their own inbox moonlet in full here; everyone else gets the receipts.
   const mine = openSession((await cookies()).get(COOKIE)?.value) === stored.owner;
   const hidden = !mine && isPrivateSpec(stored.spec);
-  const m = hidden ? redactMoonlet(stored) : stored;
-  const runs = (await store.listRuns(m.id)).map((r) => ({ ...(!mine && r.private ? redactRun(r) : r), explorerUrl: r.txHash ? explorerTx(r.txHash) : null }));
+  // During the hunt strangers don't see ANSWER: lines or the phrase; the owner does.
+  const m = mine ? stored : sealHunt(hidden ? redactMoonlet(stored) : stored);
+  const runs = (await store.listRuns(m.id)).map((r) => ({ ...(mine ? r : sealHunt(r.private ? redactRun(r) : r)), explorerUrl: r.txHash ? explorerTx(r.txHash) : null }));
   const owner = await store.getOwner(m.owner);
   const bagNow = await bagOf(m.owner).catch(() => owner?.bag ?? 0);
   const quiet = m.status === "quiet" || m.status === "paused";

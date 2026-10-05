@@ -12,13 +12,14 @@ import * as store from "./store";
  *   HUNT_START          ISO time the clue goes up        HUNT_DEADLINE  ISO time submissions close
  *   HUNT_CLUE           the opening clue, shown from HUNT_START
  *   HUNT_PRIZE          what the winner gets (text)
+ *   HUNT_SEAL_SHA256    optional, comma-separated sha256s of other fragments to hide while live (same normalising)
  *
  * Submissions are recorded without saying whether they are right. After the deadline the results are computed in the
  * open: every submission whose answer hashes to HUNT_ANSWER_SHA256 is checked against its anchor transaction (the
  * calldata must name that moonlet, that run and that output hash), and the earliest block wins.
  */
 
-export type HuntConfig = { start: number; deadline: number; clue: string | null; prize: string; answerSha: string | null };
+export type HuntConfig = { start: number; deadline: number; clue: string | null; prize: string; answerSha: string | null; seal?: string[] };
 export type HuntPhase = "off" | "upcoming" | "live" | "ended";
 
 export function huntConfig(env: NodeJS.ProcessEnv = process.env): HuntConfig {
@@ -28,6 +29,7 @@ export function huntConfig(env: NodeJS.ProcessEnv = process.env): HuntConfig {
     clue: env.HUNT_CLUE?.trim() || null,
     prize: env.HUNT_PRIZE?.trim() || "100 CREDIT",
     answerSha: env.HUNT_ANSWER_SHA256?.trim().toLowerCase() || null,
+    seal: (env.HUNT_SEAL_SHA256 ?? "").split(",").map((x) => x.trim().toLowerCase()).filter((x) => /^[0-9a-f]{64}$/.test(x)),
   };
 }
 
@@ -38,7 +40,7 @@ export function huntPhase(c: HuntConfig, now = Date.now()): HuntPhase {
   return "ended";
 }
 
-/** "The Sleepy  Moonlet…  dreams." → "the sleepy moonlet dreams": case, quotes, trailing punctuation and spacing don't matter. */
+/** "The Quiet  Lantern…  hums." → "the quiet lantern hums": case, quotes, trailing punctuation and spacing don't matter. */
 export const normaliseAnswer = (s: string) =>
   s.toLowerCase().replace(/[“”"'`*_]/g, "").replace(/\s+/g, " ").trim().replace(/^[^a-z0-9]+|[^a-z0-9]+$/g, "");
 
@@ -55,6 +57,51 @@ export function extractAnswer(r: RunText): string | null {
     if (a.length >= 3) return a;
   }
   return null;
+}
+
+// ---- sealing -----------------------------------------------------------------
+
+export const SEALED = "sealed until the hunt closes";
+
+/** True when some run of 1–14 words in the line hashes to the answer or another sealed fragment. The server only knows hashes. */
+function lineHasSealed(line: string, shas: Set<string>) {
+  const words = line.split(/\s+/).filter(Boolean);
+  for (let i = 0; i < words.length; i++) {
+    for (let k = 1; k <= 14 && i + k <= words.length; k++) if (shas.has(answerSha(words.slice(i, i + k).join(" ")))) return true;
+  }
+  return false;
+}
+
+/** An ANSWER: line (the hunt's own marker, upper case) keeps its label; any other line holding a sealed fragment goes whole. */
+function sealText(s: string, shas: Set<string>) {
+  return s
+    .split("\n")
+    .map((line) => {
+      const marked = line.replace(/(ANSWER\s*[:：]\s*)\S.*/g, `$1${SEALED}`);
+      return marked !== line ? marked : line.length <= 4000 && lineHasSealed(line, shas) ? `[${SEALED}]` : line;
+    })
+    .join("\n");
+}
+
+function sealAll<T>(v: T, shas: Set<string>): T {
+  if (typeof v === "string") return sealText(v, shas) as T;
+  if (Array.isArray(v)) return v.map((x) => sealAll(x, shas)) as T;
+  if (v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) {
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sealAll(x, shas)])) as T;
+  }
+  return v;
+}
+
+/**
+ * While the hunt is live, what strangers see of moonlets and reports hides anything that would give the answer away:
+ * every ANSWER: line, and the phrase (or another sealed fragment) wherever it appears. The anchored hash still covers
+ * the full report, the owner still sees everything, and it all shows again when the hunt closes so anyone can check
+ * the winner.
+ */
+export function sealHunt<T>(v: T, opts: { now?: number; config?: HuntConfig } = {}): T {
+  const c = opts.config ?? huntConfig();
+  if (huntPhase(c, opts.now) !== "live" || !c.answerSha) return v;
+  return sealAll(v, new Set([c.answerSha, ...(c.seal ?? [])]));
 }
 
 // ---- submissions -------------------------------------------------------------

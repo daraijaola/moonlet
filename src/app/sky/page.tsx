@@ -7,6 +7,7 @@ import { PoweredBy, PublicMobileTabs } from "@/components/app-shell";
 import { fuelTone } from "@/components/fuel-gauge";
 import * as store from "@/moonlet/store";
 import { isPrivateSpec, PRIVATE_OBJECTIVE } from "@/moonlet/privacy";
+import { sealHunt } from "@/moonlet/hunt";
 import { SkyCard, type SkyItem } from "@/components/sky-card";
 import { fmtUsd } from "@/lib/api";
 
@@ -23,7 +24,7 @@ export default async function SkyPage() {
   const [all, stats, headlines] = await Promise.all([store.listMoonlets(), store.skyStats(), store.latestHeadlines()]);
   const owners = new Map<string, { bag: number }>();
   for (const m of all) if (!owners.has(m.owner)) owners.set(m.owner, { bag: (await store.getOwner(m.owner))?.bag ?? 0 });
-  const items: SkyItem[] = all.map((m) => ({ id: m.id, name: m.name, status: m.status, objective: isPrivateSpec(m.spec) ? PRIVATE_OBJECTIVE : m.spec.objective, private: isPrivateSpec(m.spec), template: m.spec.template, cadence: m.cadence, owner: m.owner, bag: owners.get(m.owner)?.bag ?? 0, avatar: m.avatar, earn: m.earnPerDayUsd, burn: m.burnPerDayUsd, runs: m.runsTotal, lastRunAt: m.lastRunAt, headline: headlines.get(m.id) ?? null }));
+  const items: SkyItem[] = sealHunt(all.map((m) => ({ id: m.id, name: m.name, status: m.status, objective: isPrivateSpec(m.spec) ? PRIVATE_OBJECTIVE : m.spec.objective, private: isPrivateSpec(m.spec), template: m.spec.template, cadence: m.cadence, owner: m.owner, bag: owners.get(m.owner)?.bag ?? 0, avatar: m.avatar, earn: m.earnPerDayUsd, burn: m.burnPerDayUsd, runs: m.runsTotal, lastRunAt: m.lastRunAt, headline: headlines.get(m.id) ?? null })));
   const running = items.filter((m) => m.status === "running").length;
 
   return (

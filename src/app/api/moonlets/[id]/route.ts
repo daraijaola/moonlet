@@ -7,6 +7,7 @@ import { JobSpec } from "@/moonlet/spec";
 import * as store from "@/moonlet/store";
 import { publicMoonlet } from "../route";
 import { redactMoonlet } from "@/moonlet/privacy";
+import { sealHunt } from "@/moonlet/hunt";
 
 type Ctx = { params: Promise<{ id: string }> };
 
@@ -15,7 +16,7 @@ export async function GET(req: Request, { params }: Ctx) {
   const { id } = await params;
   const m = await store.getMoonlet(id);
   if (!m) return bad("not found", 404);
-  return NextResponse.json({ moonlet: publicMoonlet(ownerFrom(req) === m.owner ? m : redactMoonlet(m)) });
+  return NextResponse.json({ moonlet: publicMoonlet(ownerFrom(req) === m.owner ? m : sealHunt(redactMoonlet(m))) });
 }
 
 const Patch = z.object({

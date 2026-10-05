@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { rmSync } from "node:fs";
 import * as store from "@/moonlet/store";
 import { encodeAnchor } from "@/moonlet/anchor";
-import { answerSha, extractAnswer, huntPhase, normaliseAnswer, results, submit, type HuntConfig } from "@/moonlet/hunt";
+import { answerSha, extractAnswer, huntPhase, normaliseAnswer, results, sealHunt, SEALED, submit, type HuntConfig } from "@/moonlet/hunt";
 import type { JobSpec } from "@/moonlet/spec";
 
 /**
@@ -12,7 +12,7 @@ import type { JobSpec } from "@/moonlet/spec";
  */
 
 const ALICE = "0x" + "a1".repeat(20), BOB = "0x" + "b2".repeat(20);
-const RIGHT = "The Sleepy Moonlet dreams of a fjord";
+const RIGHT = "The Quiet Lantern hums over a meadow";
 const spec: JobSpec = { name: "Solver", template: "custom", objective: "say the answer", cadence: "7d", sources: [], checks: [], tools: ["deliver"], output: { kind: "note", maxWords: 60, alwaysReport: true }, voice: "terse", spendCapUsd: 0.02, model: "auto", tripwire: null };
 const T0 = Date.parse("2026-10-10T12:00:00Z");
 const config: HuntConfig = { start: T0, deadline: T0 + 86_400_000, clue: "block 1", prize: "100 CREDIT", answerSha: answerSha(RIGHT) };
@@ -45,11 +45,25 @@ beforeAll(async () => {
 
 describe("hunt", () => {
   it("normalises answers so case, quotes and punctuation don't matter, and finds ANSWER: anywhere in a report", () => {
-    expect(normaliseAnswer('  "The Sleepy  Moonlet dreams of a FJORD."  ')).toBe("the sleepy moonlet dreams of a fjord");
-    expect(answerSha("the sleepy moonlet dreams of a fjord!")).toBe(answerSha(RIGHT));
-    expect(extractAnswer({ title: "Solved", summary: "", body: "Stage three done.\nANSWER: the sleepy moonlet dreams of a fjord\nbye" })).toBe("the sleepy moonlet dreams of a fjord");
-    expect(extractAnswer({ title: "x", summary: "", body: "", sections: [{ finding: "answer： The Sleepy Moonlet Dreams Of A Fjord" }] })).toBe("the sleepy moonlet dreams of a fjord");
+    expect(normaliseAnswer('  "The Quiet  Lantern hums over a MEADOW."  ')).toBe("the quiet lantern hums over a meadow");
+    expect(answerSha("the quiet lantern hums over a meadow!")).toBe(answerSha(RIGHT));
+    expect(extractAnswer({ title: "Solved", summary: "", body: "Stage three done.\nANSWER: the quiet lantern hums over a meadow\nbye" })).toBe("the quiet lantern hums over a meadow");
+    expect(extractAnswer({ title: "x", summary: "", body: "", sections: [{ finding: "answer： The Quiet Lantern Hums Over A Meadow" }] })).toBe("the quiet lantern hums over a meadow");
     expect(extractAnswer({ title: "no answer here", summary: "", body: "" })).toBeNull();
+  });
+
+  it("while live, public views hide ANSWER: lines, the phrase and sealed fragments; nothing is hidden before or after", () => {
+    const sealCfg = { ...config, seal: [answerSha("meadow"), answerSha("quiet lantern hums over a")] };
+    const run = { title: "Solved it: The quiet lantern hums over a meadow.", summary: "Short answer: yes, it worked.", body: "Stage one done.\nANSWER: the quiet lantern hums over a meadow\nThe word was meadow, found by brute force.\nPhrase: the quiet lantern hums over a ____", sections: [{ finding: "nothing secret here" }], at: 5 };
+    const sealed = sealHunt(run, { now: T0 + 1, config: sealCfg });
+    expect(sealed.title).toBe(`[${SEALED}]`);
+    expect(sealed.summary).toBe("Short answer: yes, it worked.");
+    expect(sealed.body.split("\n")).toEqual(["Stage one done.", `ANSWER: ${SEALED}`, `[${SEALED}]`, `[${SEALED}]`]);
+    expect(sealed.sections[0].finding).toBe("nothing secret here");
+    expect(sealed.at).toBe(5);
+    expect(JSON.stringify(sealed)).not.toMatch(/meadow/i);
+    expect(sealHunt(run, { now: T0 - 1, config: sealCfg })).toEqual(run);
+    expect(sealHunt(run, { now: config.deadline + 1, config: sealCfg })).toEqual(run);
   });
 
   it("is off without an answer hash, and moves upcoming → live → ended on the clock", () => {

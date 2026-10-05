@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 /** Your finished runs that carry an ANSWER line, newest first, with whether each is anchored and already entered. */
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
-  if (!owner) return bad("sign in with your wallet first", 401);
+  if (!owner) return bad("sign in first", 401);
   const entered = new Set((await listSubmissions()).filter((s) => s.owner === owner).map((s) => s.runId));
   const out: Array<{ runId: string; moonletId: string; moonlet: string; at: number; answer: string; anchored: boolean; txHash: string | null; entered: boolean }> = [];
   for (const m of await store.listMoonlets(owner)) {
