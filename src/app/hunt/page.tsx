@@ -6,7 +6,8 @@ import { SiteFooter } from "@/components/site-footer";
 import { DitherField } from "@/components/dither-field";
 import { DitherMark } from "@/components/dither-mark";
 import { HuntAnswers, HuntCountdown } from "@/components/hunt-panel";
-import { huntConfig, huntPhase, listSubmissions, results } from "@/moonlet/hunt";
+import { huntConfig, huntPhase, listSubmissions, nextStageAt, releasedStages, results, stageSignedBy } from "@/moonlet/hunt";
+import { anchorLow } from "@/moonlet/anchor-gas";
 import { grantConfig, treasuryHoldings } from "@/moonlet/hunt-grants";
 import { currentTrialUsd, trialOpen } from "@/moonlet/trial";
 
@@ -40,15 +41,52 @@ const FAQ = [
   { q: "I signed in with Google or email. Can I win?", a: "Yes. The prize is paid on Robinhood Chain, so if your account has no wallet we'll email the address on your Orbio account to get one." },
 ];
 
+/** The rule that makes copying useless, said the same way everywhere it appears. */
+const PER_PLAYER_RULE = "Your answer is unique to your account: it's the first 16 characters of sha256(phrase:your account id). Copying someone else's won't work.";
+
+/** Seasons with per-player answers and stages released over time say so in the steps and the questions. */
+function stepsFor(perPlayer: boolean, staged: boolean) {
+  return STEPS.map((s) =>
+    s.n === "02" && staged ? { ...s, body: "Give your moonlet the stages as they drop. It gets its own computer: a browser, a terminal and Robinhood Chain. Each stage is released on a schedule and signed by the hunt address." }
+    : s.n === "03" && perPlayer ? { ...s, body: "Once you have the phrase, work out your own answer: the first 16 characters of sha256(phrase:your account id). Launch a moonlet (Custom) whose report contains one line: ANSWER: followed by those 16 characters. That report is hashed and anchored on Robinhood Chain." }
+    : s.n === "05" && perPlayer ? { ...s, body: "At the deadline every entry is checked against its anchor transaction. The earliest block holding that player's correct answer wins." }
+    : s,
+  );
+}
+
+function faqFor(perPlayer: boolean, staged: boolean) {
+  const base = FAQ.map((f) =>
+    f.q === "Do I submit each stage?" && staged ? { ...f, a: "No. Stages are released one at a time; each one helps with the next. Only the final answer counts, and that's the only thing to put after ANSWER:." }
+    : f.q === "Is the answer in the code?" && perPlayer ? { ...f, a: "No. Moonlet is open source, but the phrase lives only in the server's environment. It's never in the code, never sent to a browser and never logged." }
+    : f,
+  );
+  if (!perPlayer) return base;
+  return [
+    { q: "Why is my answer different from everyone else's?", a: `${PER_PLAYER_RULE} Your account id is shown in the Your answers panel once you sign in.` },
+    ...base,
+    ...(staged ? [{ q: "How do I know a stage is really from Moonlet?", a: "Every stage is signed by the hunt address with a standard Ethereum message signature (EIP-191, personal_sign) over the clue text exactly as shown. Check it with any wallet tool, e.g. cast wallet verify." }] : []),
+  ];
+}
+
 export default async function HuntPage() {
   const c = huntConfig();
   const g = grantConfig();
   const phase = huntPhase(c);
-  const [subs, res, held] = await Promise.all([listSubmissions(), phase === "ended" ? results({ config: c }) : null, treasuryHoldings(g.treasury)]);
+  const season = c.season ?? "1";
+  const [subs, res, held, low] = await Promise.all([listSubmissions(season), phase === "ended" ? results({ config: c }) : null, treasuryHoldings(g.treasury), anchorLow()]);
   const freeUsd = currentTrialUsd();
   const freeOn = trialOpen() && freeUsd > 0;
   const status = phase === "live" ? "Live now" : phase === "upcoming" ? "Starting soon" : phase === "ended" ? "Finished" : phase === "void" ? "Round 1 closed" : "Coming soon";
   const clueShown = !!c.clue && (phase === "live" || phase === "ended" || phase === "void");
+  const perPlayer = !!c.phrase;
+  const total = (c.stages ?? []).length;
+  const staged = total > 0;
+  // Only released stages reach the page; a future stage is known here only by its release time.
+  const stages = await Promise.all(releasedStages(c).map(async (s) => ({ ...s, valid: await stageSignedBy(s, c.signer) })));
+  const next = nextStageAt(c);
+  const seasonLabel = season !== "1" || c.seasonTitle ? `Season ${season}${c.seasonTitle ? ` · ${c.seasonTitle}` : ""}` : null;
+  const steps = stepsFor(perPlayer, staged);
+  const faq = faqFor(perPlayer, staged);
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-cream text-ink">
@@ -61,7 +99,7 @@ export default async function HuntPage() {
             <div className="max-w-[38rem]">
               <p className="inline-flex items-center gap-2 font-mono text-[11.5px] uppercase tracking-[0.14em] text-ink-soft">
                 {phase === "live" && <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-moss" />}
-                The Moonlet hunt · {status}
+                The Moonlet hunt · {seasonLabel ? `${seasonLabel} · ` : ""}{status}
               </p>
               <h1 className="mt-5 text-[3.1rem] font-medium leading-[1.02] tracking-[-0.035em] text-ink sm:text-[4.2rem] lg:text-[4.5rem]">
                 Find the phrase.
@@ -69,7 +107,7 @@ export default async function HuntPage() {
                 Let your moonlet prove it.
               </h1>
               <p className="mt-6 max-w-[32rem] text-[17px] leading-[1.55] text-ink-soft">
-                Three locked stages hidden on Robinhood Chain and around Moonlet. Solving it isn&apos;t enough: the answer counts when one of your moonlets says it in a report anchored on chain. Earliest anchor wins {c.prize}.
+                {staged ? `${total} stages, released one at a time on Robinhood Chain and around Moonlet.` : "Three locked stages hidden on Robinhood Chain and around Moonlet."} Solving it isn&apos;t enough: the answer counts when one of your moonlets says it in a report anchored on chain. Earliest anchor wins {c.prize}.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <a href="#play" className="lp-btn lp-btn-primary lp-btn-block">
@@ -78,7 +116,10 @@ export default async function HuntPage() {
                 <a href="#clue" className="lp-btn lp-btn-secondary lp-btn-block">See the clue</a>
               </div>
               {(phase === "upcoming" || phase === "live") && (
-                <div className="mt-5"><HuntCountdown to={phase === "upcoming" ? c.start : c.deadline} label={phase === "upcoming" ? "Clue drops in" : "Closes in"} /></div>
+                <div className="mt-5 flex flex-wrap gap-2">
+                  {next && next < c.deadline && <HuntCountdown to={next} label={stages.length ? `Stage ${stages.length + 1} drops in` : "Stage 1 drops in"} refreshAtZero />}
+                  {!(next && next < c.deadline && phase === "upcoming") &&<HuntCountdown to={phase === "upcoming" ? c.start : c.deadline} label={phase === "upcoming" ? "Clue drops in" : "Closes in"} refreshAtZero={phase === "upcoming"} />}
+                </div>
               )}
             </div>
 
@@ -121,7 +162,72 @@ export default async function HuntPage() {
           </dl>
         </section>
 
-        {/* Clue */}
+        {low && (phase === "live" || phase === "upcoming") && (
+          <section className="mx-auto max-w-[1180px] px-5 pt-6 sm:px-6">
+            <div role="status" className="rounded-2xl border border-gold/50 bg-white px-5 py-4">
+              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-soft">Anchoring delayed</p>
+              <p className="mt-1 text-[14px] leading-[1.55] text-ink">Our anchor wallet is low on gas, so new reports are waiting to be anchored on Robinhood Chain. We&apos;re topping it up; your reports will anchor shortly after, and you can enter them then.</p>
+            </div>
+          </section>
+        )}
+
+        {staged ? (
+          <section id="clue" className="mx-auto max-w-[1180px] scroll-mt-24 px-5 pt-16 sm:px-6">
+            <div className="flex flex-wrap items-baseline justify-between gap-3">
+              <h2 className="text-[17px] font-medium tracking-[-0.015em]">The stages</h2>
+              <span className="font-mono text-[12px] text-ink-faint">{stages.length} of {total} released</span>
+            </div>
+            {c.signer && (
+              <p className="mt-2 max-w-[52rem] text-[13px] leading-[1.6] text-ink-soft">
+                Every stage is signed by the hunt address. Verify signatures against{" "}
+                <a href={`${EXPLORER}/address/${c.signer}`} target="_blank" rel="noreferrer" className="break-all font-mono text-ink underline decoration-ink/30 underline-offset-2">{c.signer}</a>
+                : EIP-191 (personal_sign) over the clue text exactly as shown, e.g. <code className="font-mono text-ink">cast wallet verify --address {short(c.signer)} &quot;clue&quot; signature</code>.
+              </p>
+            )}
+            <div className="mt-5 flex flex-col gap-5">
+              {stages.map((s, i) => (
+                <article key={s.id} className="overflow-hidden rounded-2xl bg-ink text-cream shadow-[0_24px_60px_-30px_rgba(21,22,29,0.6)]">
+                  <div className="flex flex-wrap items-center gap-2 border-b border-cream/10 px-5 py-3">
+                    <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" /><span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" /><span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+                    <span className="ml-2 font-mono text-[11.5px] text-cream/50">stage {i + 1} of {total} · {s.title}</span>
+                    <span className="ml-auto font-mono text-[11.5px] text-cream/40">released {when(s.releaseAt)}</span>
+                  </div>
+                  <div className="px-5 py-7 sm:px-8 sm:py-9">
+                    <p className="max-w-[48rem] whitespace-pre-line font-mono text-[16px] leading-[1.75] text-cream sm:text-[18px]">{s.clue}</p>
+                    {s.artifacts.length > 0 && (
+                      <ul className="mt-6 flex flex-wrap gap-2">
+                        {s.artifacts.map((a) => (
+                          <li key={`${a.label}-${a.url ?? a.tx}`}>
+                            <a href={a.url ?? `${EXPLORER}/tx/${a.tx}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 rounded-full bg-cream/10 px-3 py-1 font-mono text-[11.5px] text-cream hover:bg-cream/20">
+                              {a.label} <ArrowRight size={11} strokeWidth={2.4} />
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {s.signature && (
+                      <div className="mt-6 border-t border-cream/10 pt-4">
+                        <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-cream/40">
+                          Signature{s.valid === true ? <span className="ml-2 rounded-full bg-gold px-2 py-0.5 text-ink">signed by the hunt address</span> : s.valid === false ? <span className="ml-2 rounded-full bg-[#ff5f57]/20 px-2 py-0.5 text-[#ff8a84]">doesn&apos;t match the hunt address</span> : null}
+                        </p>
+                        <p className="mt-1.5 break-all font-mono text-[11.5px] leading-[1.6] text-cream/60">{s.signature}</p>
+                      </div>
+                    )}
+                  </div>
+                </article>
+              ))}
+              {next && (
+                <div className="overflow-hidden rounded-2xl border border-dashed border-ink/15 bg-white/60 px-5 py-6 sm:px-8">
+                  <p className="inline-flex items-center gap-2 font-mono text-[11.5px] uppercase tracking-[0.14em] text-ink-soft"><Lock size={11} strokeWidth={2.4} /> Stage {stages.length + 1} of {total}</p>
+                  <p className="mt-2 text-[15px] text-ink">Drops {when(next)}.</p>
+                  <div className="mt-3"><HuntCountdown to={next} label="In" refreshAtZero /></div>
+                </div>
+              )}
+              {!stages.length && !next && <p className="rounded-2xl border border-dashed border-ink/15 bg-white/60 p-8 text-center text-[13.5px] text-ink-soft">Announced soon. Follow @Moonletxyz.</p>}
+            </div>
+            <p className="mt-3 text-[13px] text-ink-soft">Your moonlet has its own computer in <Link href="/app/threads" className="font-medium text-ink underline decoration-ink/30 underline-offset-2">Threads</Link>. That&apos;s where to start.</p>
+          </section>
+        ) : (
         <section id="clue" className="mx-auto max-w-[1180px] scroll-mt-24 px-5 pt-16 sm:px-6">
           <div className="overflow-hidden rounded-2xl bg-ink text-cream shadow-[0_24px_60px_-30px_rgba(21,22,29,0.6)]">
             <div className="flex flex-wrap items-center gap-2 border-b border-cream/10 px-5 py-3">
@@ -143,6 +249,7 @@ export default async function HuntPage() {
           </div>
           <p className="mt-3 text-[13px] text-ink-soft">Your moonlet has its own computer in <Link href="/app/threads" className="font-medium text-ink underline decoration-ink/30 underline-offset-2">Threads</Link>. That&apos;s where to start.</p>
         </section>
+        )}
 
         {/* How to play + panels */}
         <section id="play" className="relative mt-20 scroll-mt-20 overflow-hidden border-t border-ink/[0.07]">
@@ -156,7 +263,7 @@ export default async function HuntPage() {
                 Anchor it.
               </h2>
               <ol className="mt-8 rounded-2xl border border-ink/[0.08] bg-white/85 px-5 backdrop-blur">
-                {STEPS.map((s) => (
+                {steps.map((s) => (
                   <li key={s.n} className="grid grid-cols-[52px_1fr] gap-4 border-t border-ink/[0.08] py-5 first:border-t-0">
                     <span className="font-mono text-[13px] font-medium text-ink-soft">{s.n}</span>
                     <div>
@@ -177,10 +284,18 @@ export default async function HuntPage() {
                 </p>
                 <a href="/sign-in?next=/app/threads" className="ui-btn ui-btn-gold mt-4 inline-flex">{freeOn ? "Start free" : "Sign in"}</a>
               </div>
-              {(phase === "live" || phase === "ended") && <HuntAnswers live={phase === "live"} />}
-              <p className="rounded-xl bg-white/70 px-4 py-3 font-mono text-[12.5px] leading-[1.6] text-ink-soft">
-                The line your report needs:<br /><span className="text-ink">ANSWER: the final phrase</span>
-              </p>
+              {(phase === "live" || phase === "ended") && <HuntAnswers live={phase === "live"} perPlayer={perPlayer} />}
+              {perPlayer ? (
+                <div className="rounded-xl bg-white/70 px-4 py-3 text-[13px] leading-[1.6] text-ink-soft">
+                  <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-faint">The rule</p>
+                  <p className="mt-1 text-ink">{PER_PLAYER_RULE}</p>
+                  <p className="mt-2 font-mono text-[12.5px]">The line your report needs:<br /><span className="text-ink">ANSWER: your 16 characters</span></p>
+                </div>
+              ) : (
+                <p className="rounded-xl bg-white/70 px-4 py-3 font-mono text-[12.5px] leading-[1.6] text-ink-soft">
+                  The line your report needs:<br /><span className="text-ink">ANSWER: the final phrase</span>
+                </p>
+              )}
             </div>
           </div>
         </section>
@@ -228,14 +343,14 @@ export default async function HuntPage() {
         <section className="mx-auto max-w-[1180px] px-5 py-16 sm:px-6">
           <h2 className="text-[17px] font-medium tracking-[-0.015em]">Questions</h2>
           <dl className="mt-4 grid gap-3 sm:grid-cols-2">
-            {FAQ.map((f) => (
+            {faq.map((f) => (
               <div key={f.q} className="rounded-2xl border border-ink/[0.08] bg-white/80 p-5">
                 <dt className="text-[15px] font-medium text-ink">{f.q}</dt>
                 <dd className="mt-1.5 text-[14px] leading-[1.6] text-ink-soft">{f.a}</dd>
               </div>
             ))}
           </dl>
-          <p className="mt-6 text-[12px] leading-[1.6] text-ink-faint">One winner. Case and punctuation don&apos;t matter. Nothing to buy: new accounts get free inference, and after that you only pay for the AI your moonlets use. CREDIT is product access, not an investment return. Nothing here is financial advice.</p>
+          <p className="mt-6 text-[12px] leading-[1.6] text-ink-faint">One winner. {perPlayer ? "Case doesn't matter, and the 0x prefix is optional. " : "Case and punctuation don't matter. "}Nothing to buy: new accounts get free inference, and after that you only pay for the AI your moonlets use. CREDIT is product access, not an investment return. Nothing here is financial advice.</p>
         </section>
       </main>
       <SiteFooter />

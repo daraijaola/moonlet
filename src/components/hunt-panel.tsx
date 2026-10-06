@@ -1,22 +1,32 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 
 type MineRun = { runId: string; moonletId: string; moonlet: string; at: number; answer: string; anchored: boolean; txHash: string | null; entered: boolean };
-type Mine = { runs: MineRun[]; grant: { status: string; txHash: string | null; amount: number } | null };
+type Mine = { account?: string; runs: MineRun[]; grant: { status: string; txHash: string | null; amount: number } | null };
 
 const TX = "https://robinhoodchain.blockscout.com/tx/";
 
-/** Ticks down to a moment; "0s" once it has passed. */
-export function HuntCountdown({ to, label }: { to: number; label: string }) {
+/** Ticks down to a moment; "0s" once it has passed. With refreshAtZero the page re-renders then (a stage just dropped). */
+export function HuntCountdown({ to, label, refreshAtZero }: { to: number; label: string; refreshAtZero?: boolean }) {
   const [now, setNow] = useState<number | null>(null);
+  const router = useRouter();
+  const refreshed = useRef(false);
   useEffect(() => {
     const first = setTimeout(() => setNow(Date.now()), 0);
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => { clearTimeout(first); clearInterval(t); };
   }, []);
+  useEffect(() => {
+    if (!refreshAtZero || refreshed.current || now === null || now < to) return;
+    refreshed.current = true;
+    // A little slack so the server's clock has passed the release too.
+    const t = setTimeout(() => router.refresh(), 1500);
+    return () => clearTimeout(t);
+  }, [refreshAtZero, now, to, router]);
   if (now === null) return null;
   const s = Math.max(0, Math.floor((to - now) / 1000));
   const parts = [[Math.floor(s / 86400), "d"], [Math.floor(s / 3600) % 24, "h"], [Math.floor(s / 60) % 60, "m"], [s % 60, "s"]] as const;
@@ -103,7 +113,7 @@ export function HuntClaim({ phase, credit, minOrbio, total, left }: { phase: str
 }
 
 /** Your reports that carry an ANSWER line, and a button to enter each anchored one. */
-export function HuntAnswers({ live }: { live: boolean }) {
+export function HuntAnswers({ live, perPlayer }: { live: boolean; perPlayer?: boolean }) {
   const { signedIn, mine, load } = useMine();
   const [busy, setBusy] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -122,6 +132,13 @@ export function HuntAnswers({ live }: { live: boolean }) {
     <Card>
       <h3 className="text-[17px] font-medium tracking-[-0.015em] text-ink">Your answers</h3>
       <p className="mt-1 text-[13px] text-ink-soft">Reports from your moonlets with an <code className="font-mono text-ink">ANSWER:</code> line. Only anchored ones can be entered.</p>
+      {perPlayer && signedIn && mine?.account && (
+        <p className="mt-3 rounded-xl bg-cream px-3 py-2 text-[12.5px] leading-[1.55] text-ink-soft">
+          Your account id: <code className="break-all font-mono text-ink">{mine.account}</code>
+          <br />
+          Your answer is the first 16 characters of sha256(phrase:this id).
+        </p>
+      )}
       {!signedIn ? (
         <p className="mt-4 text-[13.5px] text-ink-soft"><Link href="/sign-in?next=/hunt%23play" className="font-medium text-ink underline decoration-ink/30 underline-offset-2">Sign in</Link> to see them.</p>
       ) : !mine ? (
