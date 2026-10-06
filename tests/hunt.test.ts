@@ -1,8 +1,14 @@
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
+import { createHash } from "node:crypto";
 import { rmSync } from "node:fs";
+import { privateKeyToAccount } from "viem/accounts";
 import * as store from "@/moonlet/store";
 import { encodeAnchor } from "@/moonlet/anchor";
-import { answerSha, extractAnswer, huntPhase, normaliseAnswer, results, sealHunt, SEALED, submit, type HuntConfig } from "@/moonlet/hunt";
+import { anchorCheckDue, anchorIsLow, anchorLow, anchorMinWei, checkAnchorGas, ANCHOR_GAS_EVERY_MS } from "@/moonlet/anchor-gas";
+import {
+  answerSha, entryCorrect, extractAnswer, hexAnswer, huntPhase, listSubmissions, nextStageAt, normaliseAnswer, parseStages, playerAnswer, releasedStages, results, sealHunt, SEALED, stageSignedBy, submit,
+  type HuntConfig, type HuntStage,
+} from "@/moonlet/hunt";
 import type { JobSpec } from "@/moonlet/spec";
 
 /**
@@ -41,6 +47,9 @@ beforeAll(async () => {
   process.env.DATABASE_URL = "file:/tmp/moonlet-hunt.db";
   process.env.SECRET_KEY = "test";
   await store.migrate();
+  // A Season 1 database: the table as it was before seasons, with one entry already in it.
+  await store.db().execute(`CREATE TABLE hunt_submissions (owner TEXT NOT NULL, run_id TEXT NOT NULL PRIMARY KEY, moonlet_id TEXT NOT NULL, answer_sha TEXT NOT NULL, tx_hash TEXT NOT NULL, block INTEGER NOT NULL, submitted_at INTEGER NOT NULL)`);
+  await store.db().execute({ sql: `INSERT INTO hunt_submissions VALUES(?,?,?,?,?,?,?)`, args: [BOB, "rlegacy", "m_rlegacy", "0".repeat(64), "0x" + "1".repeat(64), 50, T0 + 1] });
 });
 
 describe("hunt", () => {
@@ -147,5 +156,156 @@ describe("hunt grants", () => {
     expect(results.filter((r) => r.ok)).toHaveLength(1);
     expect(results.filter((r) => !r.ok && /all grants/.test(r.error))).toHaveLength(3);
     expect(await grantsTaken()).toBe(2);
+  });
+});
+
+describe("hunt season 2", () => {
+  const PHRASE = "Under the vault the tide keeps time";
+  const HOUR = 3600_000;
+  const stage = (id: string, releaseAt: number, clue: string): HuntStage => ({ id, title: `Stage ${id}`, releaseAt, clue, signature: null, artifacts: [] });
+  const stages = [stage("1", T0, "the first door"), stage("2", T0 + 6 * HOUR, "SECRET-FUTURE-CLUE-two"), stage("3", T0 + 12 * HOUR, "SECRET-FUTURE-CLUE-three")];
+  const s2: HuntConfig = { ...config, answerSha: null, phrase: normaliseAnswer(PHRASE), season: "2", stages };
+
+  it("a player's answer is the first 16 hex of sha256(phrase:owner); right for Alice is wrong for Bob", () => {
+    const a = playerAnswer(PHRASE, ALICE), b = playerAnswer(PHRASE, BOB);
+    expect(a).toBe(createHash("sha256").update(`under the vault the tide keeps time:${ALICE}`).digest("hex").slice(0, 16));
+    expect(a).toMatch(/^[0-9a-f]{16}$/);
+    expect(a).not.toBe(b);
+    // The owner id is lowercased and the phrase normalised before hashing.
+    expect(playerAnswer('"under THE vault the tide keeps time."', ALICE.toUpperCase().replace("0X", "0x"))).toBe(a);
+    expect(entryCorrect(s2, { owner: ALICE, answerSha: answerSha(a) })).toBe(true);
+    expect(entryCorrect(s2, { owner: BOB, answerSha: answerSha(a) })).toBe(false);
+    expect(entryCorrect(s2, { owner: BOB, answerSha: answerSha(b) })).toBe(true);
+    // Hex answers: an 0x prefix and a full pasted hash are fine; a phrase or a short hex isn't an answer.
+    expect(hexAnswer(`0x${a}`)).toBe(a);
+    expect(hexAnswer(`${a}${"0".repeat(48)} my answer`)).toBe(a);
+    expect(hexAnswer(normaliseAnswer(PHRASE))).toBeNull();
+    expect(hexAnswer(a.slice(0, 15))).toBeNull();
+  });
+
+  it("is live on a phrase alone, and seals per-player ANSWER lines and the phrase while live", () => {
+    expect(huntPhase(s2, T0 + 1)).toBe("live");
+    expect(huntPhase({ ...s2, phrase: null }, T0 + 1)).toBe("off");
+    const run = { title: "Done", summary: "Short answer: yes.", body: `answer: ${playerAnswer(PHRASE, ALICE)}\nThe phrase was under the vault the tide keeps time.` };
+    const sealed = sealHunt(run, { now: T0 + 1, config: s2 });
+    expect(sealed.body.split("\n")).toEqual([`answer: ${SEALED}`, `[${SEALED}]`]);
+    expect(sealed.summary).toBe("Short answer: yes.");
+    expect(sealHunt(run, { now: s2.deadline + 1, config: s2 })).toEqual(run);
+  });
+
+  it("exposes only released stages and the next release time, never a future stage's clue", async () => {
+    expect(releasedStages(s2, T0 - 1)).toEqual([]);
+    expect(releasedStages(s2, T0 + HOUR).map((s) => s.id)).toEqual(["1"]);
+    expect(nextStageAt(s2, T0 + HOUR)).toBe(T0 + 6 * HOUR);
+    expect(releasedStages(s2, T0 + 6 * HOUR).map((s) => s.id)).toEqual(["1", "2"]);
+    expect(nextStageAt(s2, T0 + 13 * HOUR)).toBeNull();
+    expect(releasedStages({ ...s2, phrase: null }, T0 + 13 * HOUR)).toEqual([]);
+
+    // The public API, end to end from the environment.
+    const now = Date.now();
+    const future = new Date(now + HOUR).toISOString();
+    const env = {
+      HUNT_START: new Date(now - HOUR).toISOString(), HUNT_DEADLINE: new Date(now + 24 * HOUR).toISOString(), HUNT_PHRASE: PHRASE, HUNT_SEASON: "2", HUNT_SEASON_TITLE: "The Moonlet Vault",
+      HUNT_SIGNER: "0x" + "5".repeat(40),
+      HUNT_STAGES: JSON.stringify([
+        { id: "2", title: "Second door", releaseAt: future, clue: "SECRET-FUTURE-CLUE-two" },
+        { id: "1", title: "First door", releaseAt: new Date(now - HOUR).toISOString(), clue: "the first door", artifacts: [{ label: "the tx", tx: "0x" + "ab".repeat(32) }] },
+      ]),
+    };
+    const saved = Object.fromEntries(Object.keys(env).map((k) => [k, process.env[k]]));
+    Object.assign(process.env, env);
+    try {
+      const { GET } = await import("@/app/api/hunt/route");
+      const text = await (await GET()).text();
+      const j = JSON.parse(text) as { stages: Array<{ id: string }>; nextStageAt: number };
+      expect(j).toMatchObject({ phase: "live", season: "2", seasonTitle: "The Moonlet Vault", perPlayer: true, signer: env.HUNT_SIGNER, stagesTotal: 2, anchorLow: false });
+      expect(j.stages.map((s) => s.id)).toEqual(["1"]);
+      expect(j.stages[0]).toMatchObject({ clue: "the first door", artifacts: [{ label: "the tx", tx: "0x" + "ab".repeat(32), url: null }] });
+      expect(j.nextStageAt).toBe(Date.parse(future));
+      expect(text).not.toContain("SECRET-FUTURE-CLUE");
+      expect(text).not.toContain("Second door");
+      expect(text.toLowerCase()).not.toContain("tide keeps time");
+    } finally {
+      for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
+    }
+  });
+
+  it("validates HUNT_STAGES and checks each stage's signature against the hunt address", async () => {
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(parseStages("not json")).toEqual([]);
+    expect(parseStages(JSON.stringify([{ id: 1, title: "x", releaseAt: "soon", clue: "a secret clue" }]))).toEqual([]);
+    expect(err.mock.calls.flat().join(" ")).not.toContain("a secret clue");
+    err.mockRestore();
+    const hunt = privateKeyToAccount(`0x${"42".repeat(32)}`);
+    const clue = "the first door\nopens at block 7";
+    const signed = { ...stage("1", T0, clue), signature: await hunt.signMessage({ message: clue }) };
+    expect(await stageSignedBy(signed, hunt.address)).toBe(true);
+    expect(await stageSignedBy({ ...signed, clue: "the first door" }, hunt.address)).toBe(false);
+    expect(await stageSignedBy(signed, "0x" + "5".repeat(40))).toBe(false);
+    expect(await stageSignedBy(stage("1", T0, clue), hunt.address)).toBeNull();
+  });
+
+  it("results count only this season's entries, by each player's own answer; Season 1 stays stored", async () => {
+    const live = { now: T0 + 2 * HOUR, fetch: chain, config: s2 };
+    const aliceAnswer = playerAnswer(PHRASE, ALICE);
+    // Bob copies Alice's answer and anchors it first; it's wrong for him.
+    expect(await submit(BOB, await runFor(BOB, "s2bobcopy", { body: `ANSWER: ${aliceAnswer}` }, { block: 400 }), live)).toMatchObject({ ok: true });
+    // The phrase itself isn't an answer this season.
+    expect(await submit(BOB, await runFor(BOB, "s2bobphrase", { body: `ANSWER: ${PHRASE}` }, { block: 410 }), live)).toMatchObject({ ok: false, error: expect.stringMatching(/16 hex/) });
+    expect(await submit(ALICE, await runFor(ALICE, "s2alice", { body: `ANSWER: ${aliceAnswer}` }, { block: 500 }), live)).toMatchObject({ ok: true, submission: { season: "2" } });
+    const bobFull = createHash("sha256").update(`${normaliseAnswer(PHRASE)}:${BOB}`).digest("hex");
+    expect(await submit(BOB, await runFor(BOB, "s2bobright", { body: `answer: 0x${bobFull}` }, { block: 600 }), live)).toMatchObject({ ok: true });
+
+    const r = await results({ now: s2.deadline + 1, fetch: chain, config: s2 });
+    expect(r?.winner).toMatchObject({ owner: ALICE, runId: "s2alice", block: 500 });
+    expect(r!.entries.map((e) => e.runId).sort()).toEqual(["s2alice", "s2bobcopy", "s2bobright"]);
+    const byRun = Object.fromEntries(r!.entries.map((e) => [e.runId, e]));
+    expect(byRun.s2bobcopy).toMatchObject({ correct: false });
+    expect(byRun.s2bobright).toMatchObject({ correct: true, anchorOk: true });
+
+    // Season 1 is history: still stored (the pre-season row reads as season 1), not judged in season 2.
+    const one = await listSubmissions("1");
+    expect(one.map((s) => s.runId)).toEqual(expect.arrayContaining(["rlegacy", "raliceok", "rbobforged"]));
+    expect(one.every((s) => s.season === "1")).toBe(true);
+    expect((await listSubmissions("2")).map((s) => s.runId).sort()).toEqual(["s2alice", "s2bobcopy", "s2bobright"]);
+    expect((await listSubmissions()).length).toBe(one.length + 3);
+    expect((await results({ now: config.deadline + 1, fetch: chain, config }))?.winner).toMatchObject({ runId: "raliceok" });
+  });
+});
+
+describe("anchor gas alert", () => {
+  const ETH = 10n ** 18n;
+  it("flags a balance strictly under ANCHOR_MIN_ETH (0.0001 by default), and checks at most every ten minutes", () => {
+    expect(anchorMinWei({})).toBe(ETH / 10_000n);
+    expect(anchorMinWei({ ANCHOR_MIN_ETH: "0.01" })).toBe(ETH / 100n);
+    expect(anchorMinWei({ ANCHOR_MIN_ETH: "lots" })).toBe(ETH / 10_000n);
+    expect(anchorIsLow(ETH / 10_000n - 1n, anchorMinWei({}))).toBe(true);
+    expect(anchorIsLow(ETH / 10_000n, anchorMinWei({}))).toBe(false);
+    expect(anchorIsLow(0n, anchorMinWei({}))).toBe(true);
+    expect(anchorCheckDue(0, T0)).toBe(true);
+    expect(anchorCheckDue(T0, T0 + ANCHOR_GAS_EVERY_MS - 1)).toBe(false);
+    expect(anchorCheckDue(T0, T0 + ANCHOR_GAS_EVERY_MS)).toBe(true);
+  });
+
+  it("reads the anchor wallet's balance, remembers anchorLow and logs loudly when low", async () => {
+    let balance = 5n * 10n ** 13n, reads = 0;
+    const rpc: typeof fetch = async (_u, init) => {
+      const b = JSON.parse(String(init?.body)) as { method: string };
+      reads++;
+      expect(b.method).toBe("eth_getBalance");
+      return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result: `0x${balance.toString(16)}` }));
+    };
+    const env = { ANCHOR_PRIVATE_KEY: `0x${"24".repeat(32)}` };
+    const err = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect(await checkAnchorGas({ now: T0, fetch: rpc, env: {} })).toBeNull();
+    expect(await checkAnchorGas({ now: T0, fetch: rpc, env })).toMatchObject({ low: true, balanceWei: balance });
+    expect(await anchorLow()).toBe(true);
+    expect(err.mock.calls.flat().join(" ")).toMatch(/ANCHOR WALLET LOW ON GAS/);
+    balance = ETH;
+    expect(await checkAnchorGas({ now: T0 + 60_000, fetch: rpc, env })).toBeNull();
+    expect(reads).toBe(1);
+    expect(await checkAnchorGas({ now: T0 + ANCHOR_GAS_EVERY_MS, fetch: rpc, env })).toMatchObject({ low: false });
+    expect(await anchorLow()).toBe(false);
+    err.mockRestore();
   });
 });

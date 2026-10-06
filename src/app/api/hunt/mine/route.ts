@@ -6,7 +6,10 @@ import * as store from "@/moonlet/store";
 
 export const dynamic = "force-dynamic";
 
-/** Your finished runs that carry an ANSWER line, newest first, with whether each is anchored and already entered. */
+/**
+ * Your finished runs that carry an ANSWER line, newest first, with whether each is anchored and already entered (in any
+ * season: a run is entered once), and your account id, which per-player answers are computed from.
+ */
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
   if (!owner) return bad("sign in first", 401);
@@ -22,5 +25,5 @@ export async function GET(req: Request) {
   }
   out.sort((a, b) => b.at - a.at);
   const grant = await grantOf(owner);
-  return NextResponse.json({ runs: out.slice(0, 20), grant });
+  return NextResponse.json({ account: owner, runs: out.slice(0, 20), grant });
 }
