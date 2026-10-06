@@ -1,5 +1,6 @@
 import type { Hex } from "viem";
 import { makeAnchorer, type Anchorer } from "./anchor";
+import { checkAnchorGas } from "./anchor-gas";
 import { estimateEarnPerDay } from "./budget";
 import { gatewayBalance, makeCreditClient, OrbioAuthError, syncActivations, type OrbioClient } from "./orbio";
 import { devOrbio } from "./orbio-dev";
@@ -81,6 +82,8 @@ export async function tick(deps: SchedulerDeps = {}, limit = 10, concurrency = N
   };
   await Promise.all(Array.from({ length: Math.max(1, concurrency) }, worker));
   for (const a of await anchorPending(deps).catch((e) => [{ runId: "-", anchored: false, error: (e as Error).message }])) if (!a.anchored) console.error(`anchor ${a.runId}:`, a.error);
+  // The anchor wallet's gas, at most every ten minutes (logs loudly when low). Skipped when a test injects its own anchorer.
+  if (!deps.anchor) await checkAnchorGas({ now: now(), fetch: deps.fetch }).catch((e) => console.error("anchor gas check", (e as Error).message));
   await tg.configureBot(deps.fetch).catch(() => undefined);
   installChatHandler(deps);
   await tg.processUpdates(telegramCallback, deps.fetch).catch(() => undefined);
