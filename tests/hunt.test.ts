@@ -3,10 +3,11 @@ import { createHash } from "node:crypto";
 import { rmSync } from "node:fs";
 import { privateKeyToAccount } from "viem/accounts";
 import * as store from "@/moonlet/store";
-import { encodeAnchor } from "@/moonlet/anchor";
+import { encodeAnchor, nonceQueue } from "@/moonlet/anchor";
 import { anchorCheckDue, anchorIsLow, anchorLow, anchorMinWei, checkAnchorGas, ANCHOR_GAS_EVERY_MS } from "@/moonlet/anchor-gas";
 import {
-  answerSha, entryCorrect, extractAnswer, hexAnswer, huntPhase, listSubmissions, nextStageAt, normaliseAnswer, parseStages, playerAnswer, releasedStages, results, sealHunt, SEALED, stageSignedBy, submit,
+  answerSha, entryCorrect, extractAnswer, hexAnswer, huntId, huntPhase, listSubmissions, nextStageAt, normaliseAnswer, parseStages, phraseCommitment, playerAnswer, releasedStages, results, revealedPhrase, sealHunt, SEALED,
+  stageSignedBy, submit,
   type HuntConfig, type HuntStage,
 } from "@/moonlet/hunt";
 import type { JobSpec } from "@/moonlet/spec";
@@ -24,21 +25,21 @@ const T0 = Date.parse("2026-10-10T12:00:00Z");
 const config: HuntConfig = { start: T0, deadline: T0 + 86_400_000, clue: "block 1", prize: "100 CREDIT", answerSha: answerSha(RIGHT) };
 
 /** A fake chain: receipts and transactions keyed by hash. */
-const txs = new Map<string, { block: number; input: string; status?: string }>();
+const txs = new Map<string, { block: number; txIndex: number; input: string; status?: string }>();
 const chain: typeof fetch = async (_u, init) => {
   const b = JSON.parse(String(init?.body)) as { method: string; params: [string] };
   const t = txs.get(b.params[0]);
-  const result = !t ? null : b.method === "eth_getTransactionReceipt" ? { status: t.status ?? "0x1", blockNumber: `0x${t.block.toString(16)}` } : { input: t.input };
+  const result = !t ? null : b.method === "eth_getTransactionReceipt" ? { status: t.status ?? "0x1", blockNumber: `0x${t.block.toString(16)}`, transactionIndex: `0x${t.txIndex.toString(16)}` } : { input: t.input };
   return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1, result }));
 };
 
-async function runFor(owner: string, id: string, text: { title?: string; body?: string }, anchor?: { block: number; forgedHash?: boolean }) {
+async function runFor(owner: string, id: string, text: { title?: string; body?: string }, anchor?: { block: number; txIndex?: number; forgedHash?: boolean }) {
   const moonletId = `m_${id}`;
   await store.insertMoonlet({ id: moonletId, owner, name: id, spec, status: "idle", delivery: {}, key: null, cadence: "7d", perRunCapUsd: 0.02, earnPerDayUsd: 0, burnPerDayUsd: 0, nextRunAt: T0 + 9e9, createdAt: T0 });
   const outputHash = `0x${id.padEnd(64, "0").replace(/[^0-9a-f]/g, "0")}` as `0x${string}`;
   const txHash = anchor ? `0x${(id + "tx").padEnd(64, "f").replace(/[^0-9a-f]/g, "e")}` : null;
   await store.insertRun({ id, moonletId, at: T0 + 1000, status: "done", title: text.title ?? "Report", summary: "", body: text.body ?? "", sources: [], signal: "low", nothingHappened: false, costUsd: 0.01, model: "m", modelCalls: 1, durationMs: 1, outputHash, txHash, keyEvents: [], error: null });
-  if (anchor && txHash) txs.set(txHash, { block: anchor.block, input: encodeAnchor({ moonletId, runId: id, outputHash: anchor.forgedHash ? (`0x${"9".repeat(64)}` as `0x${string}`) : outputHash, costUsd: 0.01, at: T0 }) });
+  if (anchor && txHash) txs.set(txHash, { block: anchor.block, txIndex: anchor.txIndex ?? 0, input: encodeAnchor({ moonletId, runId: id, outputHash: anchor.forgedHash ? (`0x${"9".repeat(64)}` as `0x${string}`) : outputHash, costUsd: 0.01, at: T0 }) });
   return id;
 }
 
@@ -66,8 +67,9 @@ describe("hunt", () => {
     const run = { title: "Solved it: The quiet lantern hums over a meadow.", summary: "Short answer: yes, it worked.", body: "Stage one done.\nANSWER: the quiet lantern hums over a meadow\nThe word was meadow, found by brute force.\nPhrase: the quiet lantern hums over a ____", sections: [{ finding: "nothing secret here" }], at: 5 };
     const sealed = sealHunt(run, { now: T0 + 1, config: sealCfg });
     expect(sealed.title).toBe(`[${SEALED}]`);
-    expect(sealed.summary).toBe("Short answer: yes, it worked.");
-    expect(sealed.body.split("\n")).toEqual(["Stage one done.", `ANSWER: ${SEALED}`, `[${SEALED}]`, `[${SEALED}]`]);
+    // Any answer marker takes its whole line while live, even an innocent one.
+    expect(sealed.summary).toBe(`[${SEALED}]`);
+    expect(sealed.body.split("\n")).toEqual(["Stage one done.", `[${SEALED}]`, `[${SEALED}]`, `[${SEALED}]`]);
     expect(sealed.sections[0].finding).toBe("nothing secret here");
     expect(sealed.at).toBe(5);
     expect(JSON.stringify(sealed)).not.toMatch(/meadow/i);
@@ -160,22 +162,32 @@ describe("hunt grants", () => {
 });
 
 describe("hunt season 2", () => {
-  const PHRASE = "Under the vault the tide keeps time";
+  // A decoy: the real phrase is never in the repository.
+  const PHRASE = "Amber kites drift past seven harbours";
+  const SALT = "decoy-salt-7f3a";
   const HOUR = 3600_000;
   const stage = (id: string, releaseAt: number, clue: string): HuntStage => ({ id, title: `Stage ${id}`, releaseAt, clue, signature: null, artifacts: [] });
   const stages = [stage("1", T0, "the first door"), stage("2", T0 + 6 * HOUR, "SECRET-FUTURE-CLUE-two"), stage("3", T0 + 12 * HOUR, "SECRET-FUTURE-CLUE-three")];
-  const s2: HuntConfig = { ...config, answerSha: null, phrase: normaliseAnswer(PHRASE), season: "2", stages };
+  /** While live the server holds only the commitment (and, for sealing, the phrase's hash); no phrase. */
+  const s2: HuntConfig = { ...config, answerSha: null, phraseCommit: phraseCommitment(SALT, PHRASE), season: "2", stages, seal: [answerSha(PHRASE)] };
+  /** After the deadline the operator reveals the phrase and salt. */
+  const revealed: HuntConfig = { ...s2, phrase: normaliseAnswer(PHRASE), phraseSalt: SALT };
 
-  it("a player's answer is the first 16 hex of sha256(phrase:owner); right for Alice is wrong for Bob", () => {
-    const a = playerAnswer(PHRASE, ALICE), b = playerAnswer(PHRASE, BOB);
-    expect(a).toBe(createHash("sha256").update(`under the vault the tide keeps time:${ALICE}`).digest("hex").slice(0, 16));
-    expect(a).toMatch(/^[0-9a-f]{16}$/);
+  it("a hunt id is an opaque HMAC of the owner; a player's answer is the first 16 hex of sha256(phrase:huntId)", () => {
+    const idA = huntId(ALICE), idB = huntId(BOB);
+    expect(idA).toMatch(/^[0-9a-f]{12}$/);
+    expect(idA).not.toBe(idB);
+    expect(huntId(ALICE.toUpperCase().replace("0X", "0x"))).toBe(idA);
+    expect(idA).not.toBe(huntId(ALICE, "another-secret"));
+    const a = playerAnswer(PHRASE, idA), b = playerAnswer(PHRASE, idB);
+    expect(a).toBe(createHash("sha256").update(`amber kites drift past seven harbours:${idA}`).digest("hex").slice(0, 16));
     expect(a).not.toBe(b);
-    // The owner id is lowercased and the phrase normalised before hashing.
-    expect(playerAnswer('"under THE vault the tide keeps time."', ALICE.toUpperCase().replace("0X", "0x"))).toBe(a);
-    expect(entryCorrect(s2, { owner: ALICE, answerSha: answerSha(a) })).toBe(true);
-    expect(entryCorrect(s2, { owner: BOB, answerSha: answerSha(a) })).toBe(false);
-    expect(entryCorrect(s2, { owner: BOB, answerSha: answerSha(b) })).toBe(true);
+    expect(playerAnswer('"amber KITES drift past seven harbours."', idA)).toBe(a);
+    // Right for Alice is wrong for Bob; nothing is right without the revealed phrase.
+    expect(entryCorrect(revealed, { owner: ALICE, answerSha: answerSha(a) }, revealed.phrase)).toBe(true);
+    expect(entryCorrect(revealed, { owner: BOB, answerSha: answerSha(a) }, revealed.phrase)).toBe(false);
+    expect(entryCorrect(revealed, { owner: BOB, answerSha: answerSha(b) }, revealed.phrase)).toBe(true);
+    expect(entryCorrect(s2, { owner: ALICE, answerSha: answerSha(a) }, null)).toBe(false);
     // Hex answers: an 0x prefix and a full pasted hash are fine; a phrase or a short hex isn't an answer.
     expect(hexAnswer(`0x${a}`)).toBe(a);
     expect(hexAnswer(`${a}${"0".repeat(48)} my answer`)).toBe(a);
@@ -183,13 +195,56 @@ describe("hunt season 2", () => {
     expect(hexAnswer(a.slice(0, 15))).toBeNull();
   });
 
-  it("is live on a phrase alone, and seals per-player ANSWER lines and the phrase while live", () => {
+  it("the phrase counts only after the deadline and only if it matches the commitment", () => {
     expect(huntPhase(s2, T0 + 1)).toBe("live");
-    expect(huntPhase({ ...s2, phrase: null }, T0 + 1)).toBe("off");
-    const run = { title: "Done", summary: "Short answer: yes.", body: `answer: ${playerAnswer(PHRASE, ALICE)}\nThe phrase was under the vault the tide keeps time.` };
+    expect(huntPhase({ ...s2, phraseCommit: null }, T0 + 1)).toBe("off");
+    // Even if someone sets HUNT_PHRASE early, it isn't used before the deadline.
+    expect(revealedPhrase(revealed, T0 + 1)).toEqual({ ok: false, error: "phrase not revealed yet" });
+    expect(revealedPhrase(s2, s2.deadline + 1)).toEqual({ ok: false, error: "phrase not revealed yet" });
+    expect(revealedPhrase({ ...revealed, phraseSalt: "wrong" }, s2.deadline + 1)).toMatchObject({ ok: false, error: expect.stringMatching(/commitment/) });
+    expect(revealedPhrase({ ...revealed, phrase: "amber kites drift past six harbours" }, s2.deadline + 1)).toMatchObject({ ok: false });
+    expect(revealedPhrase(revealed, s2.deadline + 1)).toEqual({ ok: true, phrase: "amber kites drift past seven harbours" });
+    expect(phraseCommitment(SALT, PHRASE)).toBe(createHash("sha256").update(`${SALT}amber kites drift past seven harbours`).digest("hex"));
+  });
+
+  it("while live, sealing closes each leak from the review: prefix text, separators, lowercase answer:, hex shards", () => {
+    const answer = playerAnswer(PHRASE, huntId(ALICE));
+    const shard = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+    const run = {
+      title: "Day 4 notes",
+      summary: "All clear, nothing found.",
+      body: [
+        `amber kites drift ANSWER: past seven harbours`, // (a) text before the marker
+        `the phrase is amber, kites, drift, past, seven, harbours`, // (b) commas
+        `amber-kites-drift-past-seven-harbours`, // (b) hyphens
+        `AMBER.KITES/drift_past seven—harbours`, // (b) mixed separators
+        `final answer: ${answer}`, // lowercase marker
+        `answer：${answer}`, // full-width colon, no space
+        `shard two is ${shard.slice(0, 20)} and that's all`, // (c) hex shard piece
+        `0x${shard}`, // (c) a whole key
+        `The moon rose over the harbour at 7pm.`, // innocent
+        `answers are not here`, // "answers" without a colon is not a marker
+        `deadbeef is only 8 hex`, // short hex is fine
+      ].join("\n"),
+      sections: [{ finding: `Stage 2: ${shard.slice(0, 16)}` }],
+      id: "run_1",
+      txHash: "0x" + "ab".repeat(32),
+      outputHash: "0x" + "cd".repeat(32),
+      owner: ALICE,
+    };
     const sealed = sealHunt(run, { now: T0 + 1, config: s2 });
-    expect(sealed.body.split("\n")).toEqual([`answer: ${SEALED}`, `[${SEALED}]`]);
-    expect(sealed.summary).toBe("Short answer: yes.");
+    const S = `[${SEALED}]`;
+    expect(sealed.body.split("\n")).toEqual([S, S, S, S, S, S, S, S, "The moon rose over the harbour at 7pm.", "answers are not here", "deadbeef is only 8 hex"]);
+    expect(sealed.sections[0].finding).toBe(S);
+    expect(sealed.title).toBe("Day 4 notes");
+    expect(sealed.summary).toBe("All clear, nothing found.");
+    // Identifier fields are structure, not prose: pages and explorer links keep working.
+    expect(sealed).toMatchObject({ id: "run_1", txHash: run.txHash, outputHash: run.outputHash, owner: ALICE });
+    const text = JSON.stringify({ ...sealed, txHash: null, outputHash: null, owner: null });
+    expect(text).not.toMatch(/kites|harbours|9f86d0818/i);
+    expect(text).not.toContain(answer);
+    // Nothing is sealed before the start or after the deadline.
+    expect(sealHunt(run, { now: T0 - 1, config: s2 })).toEqual(run);
     expect(sealHunt(run, { now: s2.deadline + 1, config: s2 })).toEqual(run);
   });
 
@@ -199,13 +254,13 @@ describe("hunt season 2", () => {
     expect(nextStageAt(s2, T0 + HOUR)).toBe(T0 + 6 * HOUR);
     expect(releasedStages(s2, T0 + 6 * HOUR).map((s) => s.id)).toEqual(["1", "2"]);
     expect(nextStageAt(s2, T0 + 13 * HOUR)).toBeNull();
-    expect(releasedStages({ ...s2, phrase: null }, T0 + 13 * HOUR)).toEqual([]);
+    expect(releasedStages({ ...s2, phraseCommit: null }, T0 + 13 * HOUR)).toEqual([]);
 
     // The public API, end to end from the environment.
     const now = Date.now();
     const future = new Date(now + HOUR).toISOString();
     const env = {
-      HUNT_START: new Date(now - HOUR).toISOString(), HUNT_DEADLINE: new Date(now + 24 * HOUR).toISOString(), HUNT_PHRASE: PHRASE, HUNT_SEASON: "2", HUNT_SEASON_TITLE: "The Moonlet Vault",
+      HUNT_START: new Date(now - HOUR).toISOString(), HUNT_DEADLINE: new Date(now + 24 * HOUR).toISOString(), HUNT_PHRASE_COMMIT: phraseCommitment(SALT, PHRASE), HUNT_SEASON: "2", HUNT_SEASON_TITLE: "The Moonlet Vault",
       HUNT_SIGNER: "0x" + "5".repeat(40),
       HUNT_STAGES: JSON.stringify([
         { id: "2", title: "Second door", releaseAt: future, clue: "SECRET-FUTURE-CLUE-two" },
@@ -218,13 +273,12 @@ describe("hunt season 2", () => {
       const { GET } = await import("@/app/api/hunt/route");
       const text = await (await GET()).text();
       const j = JSON.parse(text) as { stages: Array<{ id: string }>; nextStageAt: number };
-      expect(j).toMatchObject({ phase: "live", season: "2", seasonTitle: "The Moonlet Vault", perPlayer: true, signer: env.HUNT_SIGNER, stagesTotal: 2, anchorLow: false });
+      expect(j).toMatchObject({ phase: "live", season: "2", seasonTitle: "The Moonlet Vault", perPlayer: true, phraseCommit: env.HUNT_PHRASE_COMMIT, signer: env.HUNT_SIGNER, stagesTotal: 2, anchorLow: false });
       expect(j.stages.map((s) => s.id)).toEqual(["1"]);
       expect(j.stages[0]).toMatchObject({ clue: "the first door", artifacts: [{ label: "the tx", tx: "0x" + "ab".repeat(32), url: null }] });
       expect(j.nextStageAt).toBe(Date.parse(future));
       expect(text).not.toContain("SECRET-FUTURE-CLUE");
       expect(text).not.toContain("Second door");
-      expect(text.toLowerCase()).not.toContain("tide keeps time");
     } finally {
       for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v;
     }
@@ -245,31 +299,91 @@ describe("hunt season 2", () => {
     expect(await stageSignedBy(stage("1", T0, clue), hunt.address)).toBeNull();
   });
 
-  it("results count only this season's entries, by each player's own answer; Season 1 stays stored", async () => {
+  it("records entries blind while live; judges after the reveal, per player, in block then position order; Season 1 stays stored", async () => {
     const live = { now: T0 + 2 * HOUR, fetch: chain, config: s2 };
-    const aliceAnswer = playerAnswer(PHRASE, ALICE);
+    const aliceAnswer = playerAnswer(PHRASE, huntId(ALICE));
+    const bobFull = createHash("sha256").update(`${normaliseAnswer(PHRASE)}:${huntId(BOB)}`).digest("hex");
     // Bob copies Alice's answer and anchors it first; it's wrong for him.
     expect(await submit(BOB, await runFor(BOB, "s2bobcopy", { body: `ANSWER: ${aliceAnswer}` }, { block: 400 }), live)).toMatchObject({ ok: true });
     // The phrase itself isn't an answer this season.
     expect(await submit(BOB, await runFor(BOB, "s2bobphrase", { body: `ANSWER: ${PHRASE}` }, { block: 410 }), live)).toMatchObject({ ok: false, error: expect.stringMatching(/16 hex/) });
-    expect(await submit(ALICE, await runFor(ALICE, "s2alice", { body: `ANSWER: ${aliceAnswer}` }, { block: 500 }), live)).toMatchObject({ ok: true, submission: { season: "2" } });
-    const bobFull = createHash("sha256").update(`${normaliseAnswer(PHRASE)}:${BOB}`).digest("hex");
-    expect(await submit(BOB, await runFor(BOB, "s2bobright", { body: `answer: 0x${bobFull}` }, { block: 600 }), live)).toMatchObject({ ok: true });
+    // Bob's own right answer lands in the same block as Alice's but at a later position; he enters it first by our clock.
+    expect(await submit(BOB, await runFor(BOB, "s2bobright", { body: `answer: 0x${bobFull}` }, { block: 500, txIndex: 7 }), { ...live, now: live.now - 60_000 })).toMatchObject({ ok: true, submission: { block: 500, txIndex: 7 } });
+    expect(await submit(ALICE, await runFor(ALICE, "s2alice", { body: `ANSWER: ${aliceAnswer}` }, { block: 500, txIndex: 2 }), live)).toMatchObject({ ok: true, submission: { season: "2", txIndex: 2 } });
 
-    const r = await results({ now: s2.deadline + 1, fetch: chain, config: s2 });
-    expect(r?.winner).toMatchObject({ owner: ALICE, runId: "s2alice", block: 500 });
-    expect(r!.entries.map((e) => e.runId).sort()).toEqual(["s2alice", "s2bobcopy", "s2bobright"]);
+    // Nothing is judged before the deadline, nor after it until the phrase is revealed and matches.
+    expect(await results(live)).toBeNull();
+    expect(await results({ now: s2.deadline + 1, fetch: chain, config: s2 })).toEqual({ winner: null, entries: [], error: "phrase not revealed yet" });
+    expect((await results({ now: s2.deadline + 1, fetch: chain, config: { ...revealed, phraseSalt: "nope" } }))?.error).toMatch(/commitment/);
+
+    const r = await results({ now: s2.deadline + 1, fetch: chain, config: revealed });
+    expect(r?.error).toBeUndefined();
+    expect(r?.winner).toMatchObject({ owner: ALICE, runId: "s2alice", block: 500, txIndex: 2 });
+    expect(r!.entries.map((e) => e.runId)).toEqual(["s2alice", "s2bobright", "s2bobcopy"]);
     const byRun = Object.fromEntries(r!.entries.map((e) => [e.runId, e]));
     expect(byRun.s2bobcopy).toMatchObject({ correct: false });
     expect(byRun.s2bobright).toMatchObject({ correct: true, anchorOk: true });
 
-    // Season 1 is history: still stored (the pre-season row reads as season 1), not judged in season 2.
+    // Season 1 is history: still stored (the pre-season row reads as season 1, position unknown), not judged in season 2.
     const one = await listSubmissions("1");
     expect(one.map((s) => s.runId)).toEqual(expect.arrayContaining(["rlegacy", "raliceok", "rbobforged"]));
     expect(one.every((s) => s.season === "1")).toBe(true);
-    expect((await listSubmissions("2")).map((s) => s.runId).sort()).toEqual(["s2alice", "s2bobcopy", "s2bobright"]);
+    expect(one.find((s) => s.runId === "rlegacy")?.txIndex).toBeNull();
+    expect((await listSubmissions("2")).map((s) => s.runId)).toEqual(["s2bobcopy", "s2alice", "s2bobright"]);
     expect((await listSubmissions()).length).toBe(one.length + 3);
     expect((await results({ now: config.deadline + 1, fetch: chain, config }))?.winner).toMatchObject({ runId: "raliceok" });
+  });
+
+  it("while live the public API lists only a shortened account and block per entry; details come with the results", async () => {
+    const now = Date.now();
+    const base = { HUNT_PHRASE_COMMIT: phraseCommitment(SALT, PHRASE), HUNT_SEASON: "2", HUNT_START: new Date(now - 2 * HOUR).toISOString() };
+    const keys = ["HUNT_PHRASE_COMMIT", "HUNT_SEASON", "HUNT_START", "HUNT_DEADLINE", "HUNT_PHRASE", "HUNT_PHRASE_SALT"];
+    const saved = Object.fromEntries(keys.map((k) => [k, process.env[k]]));
+    const restore = () => { for (const [k, v] of Object.entries(saved)) if (v === undefined) delete process.env[k]; else process.env[k] = v; };
+    const { GET } = await import("@/app/api/hunt/route");
+    try {
+      Object.assign(process.env, base, { HUNT_DEADLINE: new Date(now + HOUR).toISOString() });
+      const text = await (await GET()).text();
+      const j = JSON.parse(text) as { entryCount: number; entries: Array<Record<string, unknown>> };
+      expect(j.entryCount).toBe(3);
+      expect(j.entries.every((e) => Object.keys(e).sort().join() === "block,wallet")).toBe(true);
+      expect(text).not.toMatch(/s2alice|s2bob|m_s2|"txHash"/);
+      // Ended but not revealed: still nothing but account and block.
+      Object.assign(process.env, { HUNT_DEADLINE: new Date(now - HOUR).toISOString() });
+      const ended = JSON.parse(await (await GET()).text()) as { entries: Array<Record<string, unknown>>; results: { error: string } };
+      expect(ended.results.error).toBe("phrase not revealed yet");
+      expect(ended.entries.every((e) => !("runId" in e))).toBe(true);
+    } finally {
+      restore();
+    }
+  });
+});
+
+describe("anchor nonces", () => {
+  it("serialises sends so concurrent anchors never share a nonce, even when the RPC's pending count lags", async () => {
+    let confirmed = 0;
+    const used = new Set<number>();
+    const send = async (nonce: number) => {
+      await new Promise((ok) => setTimeout(ok, Math.random() * 5));
+      if (used.has(nonce) || nonce < confirmed) throw new Error("nonce too low");
+      used.add(nonce);
+      return `tx${nonce}`;
+    };
+    // A lagging RPC: always reports the nonce as of before this burst.
+    const q = nonceQueue(async () => confirmed);
+    const out = await Promise.all(Array.from({ length: 6 }, () => q(send)));
+    expect(out.sort()).toEqual(["tx0", "tx1", "tx2", "tx3", "tx4", "tx5"]);
+
+    // A transaction from elsewhere takes nonce 6: the next send collides and retries once with a later nonce.
+    used.add(6);
+    confirmed = 3;
+    const attempts: number[] = [];
+    expect(await q(async (n) => { attempts.push(n); return send(n); })).toBe("tx7");
+    expect(attempts).toEqual([6, 7]);
+
+    // Other failures pass through untouched, and don't wedge the queue.
+    await expect(q(async () => { throw new Error("insufficient funds for gas"); })).rejects.toThrow(/insufficient funds/);
+    expect(await q(send)).toBe("tx8");
   });
 });
 

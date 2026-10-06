@@ -1,4 +1,4 @@
-import { createHash, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { recoverMessageAddress, type Hex } from "viem";
 import { z } from "zod";
 import { decodeAnchor } from "./anchor";
@@ -20,9 +20,14 @@ import * as store from "./store";
  *
  *   HUNT_SEASON         the season entries count for ("1" when unset); older seasons' entries stay stored as history
  *   HUNT_SEASON_TITLE   optional name shown on the page, e.g. "The Moonlet Vault"
- *   HUNT_PHRASE         the secret phrase, server only (never sent to a browser or logged). When set, each player's answer
- *                       is their own: the first 16 hex characters of sha256(normalised phrase + ":" + owner id, lowercase),
- *                       so a copied answer is wrong for everyone else. Takes precedence over HUNT_ANSWER_SHA256.
+ *   HUNT_PHRASE_COMMIT  sha256 hex of HUNT_PHRASE_SALT + the normalised phrase, published at launch. Turns on per-player
+ *                       answers: each player's answer is the first 16 hex characters of sha256(normalised phrase + ":" +
+ *                       huntId), so a copied answer is wrong for everyone else. The server does NOT hold the phrase while
+ *                       live: entries are recorded unchecked, and nothing is judged until the reveal.
+ *   HUNT_PHRASE         set only after the deadline (the reveal), with HUNT_PHRASE_SALT. results() checks
+ *                       sha256(salt + normalised phrase) against the commitment before judging anything.
+ *   HUNT_SEAL_SHA256    in a per-player season, put sha256(normalised phrase) (and any shard or fragment shas) here so the
+ *                       phrase is still sealed on public pages while live without the server knowing it
  *   HUNT_STAGES         JSON array of stages: {id, title, releaseAt (ISO), clue, signature?, artifacts?: [{label, url | tx}]}.
  *                       A stage is public only once its releaseAt has passed; until then not even its title leaves the server.
  *   HUNT_SIGNER         the hunt address; each stage's signature is EIP-191 (personal_sign) by it over the clue text exactly
@@ -30,7 +35,7 @@ import * as store from "./store";
  * Submissions are recorded without saying whether they are right. After the deadline the results are computed in the
  * open: every submission whose answer is right (hashes to HUNT_ANSWER_SHA256, or equals that player's own answer) is
  * checked against its anchor transaction (the calldata must name that moonlet, that run and that output hash), and the
- * earliest block wins.
+ * earliest anchor wins: lowest block, then lowest position in that block.
  */
 
 export type HuntArtifact = { label: string; url: string | null; tx: string | null };
@@ -45,6 +50,8 @@ export type HuntConfig = {
   season?: string;
   seasonTitle?: string | null;
   phrase?: string | null;
+  phraseSalt?: string;
+  phraseCommit?: string | null;
   stages?: HuntStage[];
   signer?: string | null;
   voided?: string | null;
@@ -63,6 +70,8 @@ export function huntConfig(env: NodeJS.ProcessEnv = process.env): HuntConfig {
     season: env.HUNT_SEASON?.trim() || "1",
     seasonTitle: env.HUNT_SEASON_TITLE?.trim() || null,
     phrase: env.HUNT_PHRASE ? normaliseAnswer(env.HUNT_PHRASE) || null : null,
+    phraseSalt: env.HUNT_PHRASE_SALT ?? "",
+    phraseCommit: /^[0-9a-f]{64}$/.test(env.HUNT_PHRASE_COMMIT?.trim().toLowerCase() ?? "") ? env.HUNT_PHRASE_COMMIT!.trim().toLowerCase() : null,
     stages: parseStages(env.HUNT_STAGES),
     signer: /^0x[0-9a-fA-F]{40}$/.test(env.HUNT_SIGNER?.trim() ?? "") ? env.HUNT_SIGNER!.trim() : null,
   };
@@ -96,7 +105,7 @@ export function parseStages(raw: string | undefined): HuntStage[] {
 
 export function huntPhase(c: HuntConfig, now = Date.now()): HuntPhase {
   if (c.voided) return "void";
-  if (!c.start || !c.deadline || (!c.answerSha && !c.phrase)) return "off";
+  if (!c.start || !c.deadline || (!c.answerSha && !c.phraseCommit)) return "off";
   if (now < c.start) return "upcoming";
   if (now < c.deadline) return "live";
   return "ended";
@@ -108,9 +117,36 @@ export const normaliseAnswer = (s: string) =>
 
 export const answerSha = (s: string) => createHash("sha256").update(normaliseAnswer(s)).digest("hex");
 
-/** A player's own answer: the first 16 hex characters of sha256(normalised phrase + ":" + owner id, lowercase). */
-export const playerAnswer = (phrase: string, owner: string) =>
-  createHash("sha256").update(`${normaliseAnswer(phrase)}:${owner.trim().toLowerCase()}`).digest("hex").slice(0, 16);
+/** Per-player answers are on when the season publishes a commitment to its phrase. */
+export const perPlayer = (c: HuntConfig) => !!c.phraseCommit;
+
+/**
+ * An account's hunt id: the first 12 hex of HMAC-SHA256(SECRET_KEY, owner id lowercase). Opaque and fixed per account
+ * (wallet or email login alike), so players compute their answer from a value shown to them rather than a raw id whose
+ * case or format they might get wrong.
+ */
+export function huntId(owner: string, secret = process.env.SECRET_KEY): string {
+  if (!secret && process.env.NODE_ENV === "production") throw new Error("SECRET_KEY is required in production");
+  return createHmac("sha256", secret || "moonlet-dev-only-not-secret").update(owner.trim().toLowerCase()).digest("hex").slice(0, 12);
+}
+
+/** A player's own answer: the first 16 hex characters of sha256(normalised phrase + ":" + their hunt id). */
+export const playerAnswer = (phrase: string, id: string) => createHash("sha256").update(`${normaliseAnswer(phrase)}:${id.trim().toLowerCase()}`).digest("hex").slice(0, 16);
+
+/** The published commitment: sha256 of the salt followed by the normalised phrase. */
+export const phraseCommitment = (salt: string, phrase: string) => createHash("sha256").update(`${salt}${normaliseAnswer(phrase)}`).digest("hex");
+
+/**
+ * The phrase, once it may be used: after the deadline, set, and matching the commitment published at launch. Before
+ * then (or if the reveal doesn't match) it's an error and nothing is judged.
+ */
+export function revealedPhrase(c: HuntConfig, now = Date.now()): { ok: true; phrase: string } | { ok: false; error: string } {
+  if (!c.phraseCommit) return { ok: false, error: "this season has no phrase commitment" };
+  if (now < c.deadline) return { ok: false, error: "phrase not revealed yet" };
+  if (!c.phrase) return { ok: false, error: "phrase not revealed yet" };
+  if (!sameHex(phraseCommitment(c.phraseSalt ?? "", c.phrase), c.phraseCommit)) return { ok: false, error: "the revealed phrase doesn't match the published commitment" };
+  return { ok: true, phrase: c.phrase };
+}
 
 /** The 16-hex answer in what followed ANSWER: ("0x" and a longer pasted hash are fine: the first 16 characters count). */
 export const hexAnswer = (a: string) => /(?:^|[^0-9a-z])(?:0x)?([0-9a-f]{16})[0-9a-f]{0,48}(?![0-9a-z])/.exec(a.toLowerCase())?.[1] ?? null;
@@ -121,9 +157,12 @@ function sameHex(a: string, b: string) {
   return x.length === y.length && x.length > 0 && timingSafeEqual(x, y);
 }
 
-/** Whether a stored entry (sha of its normalised answer) is right for the player who entered it. */
-export function entryCorrect(c: HuntConfig, s: { owner: string; answerSha: string }): boolean {
-  if (c.phrase) return sameHex(s.answerSha, answerSha(playerAnswer(c.phrase, s.owner)));
+/**
+ * Whether a stored entry (sha of its normalised answer) is right for the player who entered it. Per-player seasons need
+ * the revealed phrase (see revealedPhrase); without it nothing is correct.
+ */
+export function entryCorrect(c: HuntConfig, s: { owner: string; answerSha: string }, phrase?: string | null): boolean {
+  if (perPlayer(c)) return !!phrase && sameHex(s.answerSha, answerSha(playerAnswer(phrase, huntId(s.owner))));
   return !!c.answerSha && sameHex(s.answerSha, c.answerSha);
 }
 
@@ -169,83 +208,105 @@ export function extractAnswer(r: RunText): string | null {
 
 export const SEALED = "sealed until the hunt closes";
 
-/** True when some run of 1–14 words in the line hashes to the answer or another sealed fragment. The server only knows hashes. */
-function lineHasSealed(line: string, shas: Set<string>) {
-  const words = line.split(/\s+/).filter(Boolean);
+/** True when some run of 1–14 words hashes to the answer or another sealed fragment. The server only knows hashes. */
+function wordsHaveSealed(words: string[], shas: Set<string>) {
   for (let i = 0; i < words.length; i++) {
     for (let k = 1; k <= 14 && i + k <= words.length; k++) if (shas.has(answerSha(words.slice(i, i + k).join(" ")))) return true;
   }
   return false;
 }
 
+/** Checked as written, and again with every non-alphanumeric (commas, hyphens, dots, slashes) read as a space. */
+function lineHasSealed(line: string, shas: Set<string>) {
+  if (!shas.size) return false;
+  if (wordsHaveSealed(line.split(/\s+/).filter(Boolean), shas)) return true;
+  return wordsHaveSealed(line.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean), shas);
+}
+
+/** An answer marker ("answer:" or "answer：", any case, anywhere in the line). */
+const ANSWER_MARK = /\banswer\s*[:：]/i;
+/** A run of 16 or more hex characters: an answer, a shard, a key, or a piece of one. */
+const HEX_RUN = /[0-9a-f]{16,}/i;
+
 /**
- * An ANSWER: line (the hunt's own marker, upper case) keeps its label; any other line holding a sealed fragment goes whole.
- * A per-player answer (16 hex characters after "answer:", any case) is sealed too, so nobody's entry shows while live.
+ * While live, a line goes whole (text before the marker included) when it holds an answer marker, a run of 16+ hex
+ * characters, or a sealed fragment written with any separators. Other lines are untouched.
  */
 function sealText(s: string, shas: Set<string>) {
   return s
     .split("\n")
-    .map((line) => {
-      const marked = line.replace(/(ANSWER\s*[:：]\s*)\S.*/g, `$1${SEALED}`).replace(/(answer\s*[:：]\s*)(?:0x)?[0-9a-f]{16}.*/gi, `$1${SEALED}`);
-      return marked !== line ? marked : line.length <= 4000 && lineHasSealed(line, shas) ? `[${SEALED}]` : line;
-    })
+    .map((line) => (ANSWER_MARK.test(line) || HEX_RUN.test(line) || (line.length <= 4000 && lineHasSealed(line, shas)) ? `[${SEALED}]` : line))
     .join("\n");
 }
 
-function sealAll<T>(v: T, shas: Set<string>): T {
+/** Identifier fields (ids, owners, hashes, links) are structure, not prose: they stay as they are so pages still work. */
+const ID_KEYS = new Set(["id", "moonletId", "runId", "owner", "txHash", "outputHash", "explorerUrl", "avatar", "template", "status", "model", "cadence", "signal"]);
+
+function sealAll<T>(v: T, shas: Set<string>, key?: string): T {
+  if (key && ID_KEYS.has(key)) return v;
   if (typeof v === "string") return sealText(v, shas) as T;
   if (Array.isArray(v)) return v.map((x) => sealAll(x, shas)) as T;
   if (v && typeof v === "object" && Object.getPrototypeOf(v) === Object.prototype) {
-    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sealAll(x, shas)])) as T;
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, sealAll(x, shas, k)])) as T;
   }
   return v;
 }
 
 /**
  * While the hunt is live, what strangers see of moonlets and reports hides anything that would give the answer away:
- * every ANSWER: line, and the phrase (or another sealed fragment) wherever it appears. The anchored hash still covers
- * the full report, the owner still sees everything, and it all shows again when the hunt closes so anyone can check
- * the winner.
+ * every answer line, hex that could be an answer or a shard, and the phrase (or another sealed fragment from
+ * HUNT_SEAL_SHA256) wherever it appears. The anchored hash still covers the full report, the owner still sees
+ * everything, and it all shows again when the hunt closes so anyone can check the winner.
  */
 export function sealHunt<T>(v: T, opts: { now?: number; config?: HuntConfig } = {}): T {
   const c = opts.config ?? huntConfig();
-  if (huntPhase(c, opts.now) !== "live" || (!c.answerSha && !c.phrase)) return v;
-  const shas = [c.answerSha, c.phrase ? answerSha(c.phrase) : null, ...(c.seal ?? [])].filter((x): x is string => !!x);
+  if (huntPhase(c, opts.now) !== "live") return v;
+  const shas = [c.answerSha, ...(c.seal ?? [])].filter((x): x is string => !!x);
   return sealAll(v, new Set(shas));
 }
 
 // ---- submissions -------------------------------------------------------------
 
-export type Submission = { owner: string; runId: string; moonletId: string; answerSha: string; txHash: string; block: number; submittedAt: number; season: string };
+export type Submission = { owner: string; runId: string; moonletId: string; answerSha: string; txHash: string; block: number; txIndex: number | null; submittedAt: number; season: string };
 
 let seasonColumn = false;
 async function ensureTable() {
   await store.migrate();
   await store.db().execute(
-    `CREATE TABLE IF NOT EXISTS hunt_submissions (owner TEXT NOT NULL, run_id TEXT NOT NULL PRIMARY KEY, moonlet_id TEXT NOT NULL, answer_sha TEXT NOT NULL, tx_hash TEXT NOT NULL, block INTEGER NOT NULL, submitted_at INTEGER NOT NULL, season TEXT NOT NULL DEFAULT '1')`,
+    `CREATE TABLE IF NOT EXISTS hunt_submissions (owner TEXT NOT NULL, run_id TEXT NOT NULL PRIMARY KEY, moonlet_id TEXT NOT NULL, answer_sha TEXT NOT NULL, tx_hash TEXT NOT NULL, block INTEGER NOT NULL, submitted_at INTEGER NOT NULL, season TEXT NOT NULL DEFAULT '1', tx_index INTEGER)`,
   );
   if (seasonColumn) return;
-  // Season 1's table had no season column; its rows become season '1' and stay readable as history.
+  // Season 1's table had no season column; its rows become season '1' and stay readable as history. Nor did it record
+  // the anchor's position in its block (NULL: those rows sort after any known position in the same block).
   await store.db().execute(`ALTER TABLE hunt_submissions ADD COLUMN season TEXT NOT NULL DEFAULT '1'`).catch(() => undefined);
+  await store.db().execute(`ALTER TABLE hunt_submissions ADD COLUMN tx_index INTEGER`).catch(() => undefined);
   seasonColumn = true;
 }
 
-/** Entries, earliest block first: one season's (pass the current one) or, with no season, every season's. */
+const ORDER = `ORDER BY block ASC, COALESCE(tx_index, 1000000000) ASC, submitted_at ASC`;
+
+/** Entries in chain order (block, then position in the block): one season's (pass the current one) or every season's. */
 export async function listSubmissions(season?: string): Promise<Submission[]> {
   await ensureTable();
   const r = season
-    ? await store.db().execute({ sql: `SELECT * FROM hunt_submissions WHERE season=? ORDER BY block ASC, submitted_at ASC`, args: [season] })
-    : await store.db().execute(`SELECT * FROM hunt_submissions ORDER BY block ASC, submitted_at ASC`);
-  return r.rows.map((x) => ({ owner: x.owner as string, runId: x.run_id as string, moonletId: x.moonlet_id as string, answerSha: x.answer_sha as string, txHash: x.tx_hash as string, block: Number(x.block), submittedAt: Number(x.submitted_at), season: String(x.season ?? "1") }));
+    ? await store.db().execute({ sql: `SELECT * FROM hunt_submissions WHERE season=? ${ORDER}`, args: [season] })
+    : await store.db().execute(`SELECT * FROM hunt_submissions ${ORDER}`);
+  return r.rows.map((x) => ({
+    owner: x.owner as string, runId: x.run_id as string, moonletId: x.moonlet_id as string, answerSha: x.answer_sha as string, txHash: x.tx_hash as string,
+    block: Number(x.block), txIndex: x.tx_index == null ? null : Number(x.tx_index), submittedAt: Number(x.submitted_at), season: String(x.season ?? "1"),
+  }));
 }
 
-/** The block an anchor transaction landed in, read from its receipt. Throws if the transaction failed or is unknown. */
-async function anchorBlock(txHash: string, fetchImpl: typeof fetch) {
-  const rc = await rhRpc<{ status: string; blockNumber: string } | null>("eth_getTransactionReceipt", [txHash], fetchImpl);
+/** Where an anchor transaction landed (block and index in it), read from its receipt. Throws if it failed or is unknown. */
+async function anchorPosition(txHash: string, fetchImpl: typeof fetch) {
+  const rc = await rhRpc<{ status: string; blockNumber: string; transactionIndex?: string } | null>("eth_getTransactionReceipt", [txHash], fetchImpl);
   if (!rc) throw new Error("anchor transaction not found on Robinhood Chain yet");
   if (rc.status !== "0x1") throw new Error("anchor transaction reverted");
-  return Number(BigInt(rc.blockNumber));
+  return { block: Number(BigInt(rc.blockNumber)), txIndex: rc.transactionIndex == null ? null : Number(BigInt(rc.transactionIndex)) };
 }
+
+/** Chain order: block, then position in the block (unknown last), then our clock as a last resort. */
+const chainOrder = (a: Submission, b: Submission) => a.block - b.block || (a.txIndex ?? 1e9) - (b.txIndex ?? 1e9) || a.submittedAt - b.submittedAt;
 
 export type SubmitResult = { ok: true; submission: Submission } | { ok: false; error: string };
 
@@ -265,16 +326,17 @@ export async function submit(owner: string, runId: string, opts: { now?: number;
   if (!run.txHash) return { ok: false, error: "that report isn't anchored on Robinhood Chain yet; wait a minute and try again" };
   const extracted = extractAnswer(run);
   if (!extracted) return { ok: false, error: "no ANSWER: line in that report" };
-  // Per-player seasons: the answer is 16 hex characters. Saying so reveals nothing about whether it's right.
-  const answer = c.phrase ? hexAnswer(extracted) : extracted;
-  if (!answer) return { ok: false, error: "your ANSWER: should be 16 hex characters: the start of sha256(phrase:your account id)" };
-  const block = await anchorBlock(run.txHash, opts.fetch ?? fetch).catch((e: Error) => e);
-  if (block instanceof Error) return { ok: false, error: block.message };
+  // Per-player seasons: the answer is 16 hex characters, recorded unchecked (the server doesn't know the phrase yet).
+  // Saying it must be hex reveals nothing about whether it's right.
+  const answer = perPlayer(c) ? hexAnswer(extracted) : extracted;
+  if (!answer) return { ok: false, error: "your ANSWER: should be 16 hex characters: the start of sha256(phrase:your hunt id)" };
+  const pos = await anchorPosition(run.txHash, opts.fetch ?? fetch).catch((e: Error) => e);
+  if (pos instanceof Error) return { ok: false, error: pos.message };
   await ensureTable();
-  const s: Submission = { owner: owner.toLowerCase(), runId, moonletId: run.moonletId, answerSha: answerSha(answer), txHash: run.txHash, block, submittedAt: opts.now ?? Date.now(), season: c.season ?? "1" };
+  const s: Submission = { owner: owner.toLowerCase(), runId, moonletId: run.moonletId, answerSha: answerSha(answer), txHash: run.txHash, block: pos.block, txIndex: pos.txIndex, submittedAt: opts.now ?? Date.now(), season: c.season ?? "1" };
   await store.db().execute({
-    sql: `INSERT OR IGNORE INTO hunt_submissions(owner,run_id,moonlet_id,answer_sha,tx_hash,block,submitted_at,season) VALUES(?,?,?,?,?,?,?,?)`,
-    args: [s.owner, s.runId, s.moonletId, s.answerSha, s.txHash, s.block, s.submittedAt, s.season],
+    sql: `INSERT OR IGNORE INTO hunt_submissions(owner,run_id,moonlet_id,answer_sha,tx_hash,block,tx_index,submitted_at,season) VALUES(?,?,?,?,?,?,?,?,?)`,
+    args: [s.owner, s.runId, s.moonletId, s.answerSha, s.txHash, s.block, s.txIndex, s.submittedAt, s.season],
   });
   return { ok: true, submission: s };
 }
@@ -298,20 +360,33 @@ async function anchorMatches(s: Submission, fetchImpl: typeof fetch): Promise<{ 
   }
 }
 
-/** After the deadline: every entry of the current season with its verdict, correct and verified first, earliest block first. Null before. */
-export async function results(opts: { now?: number; fetch?: typeof fetch; config?: HuntConfig } = {}): Promise<{ winner: Verdict | null; entries: Verdict[] } | null> {
+export type Results = { winner: Verdict | null; entries: Verdict[]; error?: string };
+
+/**
+ * After the deadline: every entry of the current season with its verdict, correct and verified first, then chain order
+ * (block, position in the block). Null before the deadline. A per-player season is judged only once the revealed phrase
+ * matches its commitment; until then the result is an error with no entries.
+ */
+export async function results(opts: { now?: number; fetch?: typeof fetch; config?: HuntConfig } = {}): Promise<Results | null> {
   const c = opts.config ?? huntConfig();
-  if (huntPhase(c, opts.now) !== "ended") return null;
+  const now = opts.now ?? Date.now();
+  if (huntPhase(c, now) !== "ended") return null;
+  let phrase: string | null = null;
+  if (perPlayer(c)) {
+    const r = revealedPhrase(c, now);
+    if (!r.ok) return { winner: null, entries: [], error: r.error };
+    phrase = r.phrase;
+  }
   const subs = await listSubmissions(c.season ?? "1");
   const entries: Verdict[] = [];
   for (const s of subs) {
-    const correct = entryCorrect(c, s);
+    const correct = entryCorrect(c, s, phrase);
     const anchor = correct ? await anchorMatches(s, opts.fetch ?? fetch) : { ok: true };
     // Entries after the deadline block don't count; the submission time is ours, the block is the chain's.
     const late = s.submittedAt > c.deadline;
     entries.push({ ...s, correct, anchorOk: anchor.ok && !late, reason: late ? "submitted after the deadline" : anchor.reason });
   }
-  entries.sort((a, b) => Number(b.correct && b.anchorOk) - Number(a.correct && a.anchorOk) || a.block - b.block || a.submittedAt - b.submittedAt);
+  entries.sort((a, b) => Number(b.correct && b.anchorOk) - Number(a.correct && a.anchorOk) || chainOrder(a, b));
   const winner = entries.find((e) => e.correct && e.anchorOk) ?? null;
   return { winner, entries };
 }

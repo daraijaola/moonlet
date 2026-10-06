@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useAuth } from "@/lib/auth";
 
 type MineRun = { runId: string; moonletId: string; moonlet: string; at: number; answer: string; anchored: boolean; txHash: string | null; entered: boolean };
-type Mine = { account?: string; runs: MineRun[]; grant: { status: string; txHash: string | null; amount: number } | null };
+type Mine = { huntId?: string; runs: MineRun[]; grant: { status: string; txHash: string | null; amount: number } | null };
 
 const TX = "https://robinhoodchain.blockscout.com/tx/";
 
@@ -132,11 +132,11 @@ export function HuntAnswers({ live, perPlayer }: { live: boolean; perPlayer?: bo
     <Card>
       <h3 className="text-[17px] font-medium tracking-[-0.015em] text-ink">Your answers</h3>
       <p className="mt-1 text-[13px] text-ink-soft">Reports from your moonlets with an <code className="font-mono text-ink">ANSWER:</code> line. Only anchored ones can be entered.</p>
-      {perPlayer && signedIn && mine?.account && (
+      {perPlayer && signedIn && mine?.huntId && (
         <p className="mt-3 rounded-xl bg-cream px-3 py-2 text-[12.5px] leading-[1.55] text-ink-soft">
-          Your account id: <code className="break-all font-mono text-ink">{mine.account}</code>
+          Your hunt id: <code className="break-all font-mono text-ink">{mine.huntId}</code>
           <br />
-          Your answer is the first 16 characters of sha256(phrase:this id).
+          Your answer is the first 16 characters of sha256(phrase:{mine.huntId}).
         </p>
       )}
       {!signedIn ? (

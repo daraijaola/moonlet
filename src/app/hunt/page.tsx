@@ -6,7 +6,7 @@ import { SiteFooter } from "@/components/site-footer";
 import { DitherField } from "@/components/dither-field";
 import { DitherMark } from "@/components/dither-mark";
 import { HuntAnswers, HuntCountdown } from "@/components/hunt-panel";
-import { huntConfig, huntPhase, listSubmissions, nextStageAt, releasedStages, results, stageSignedBy } from "@/moonlet/hunt";
+import { huntConfig, huntPhase, listSubmissions, nextStageAt, perPlayer as isPerPlayer, releasedStages, results, stageSignedBy } from "@/moonlet/hunt";
 import { anchorLow } from "@/moonlet/anchor-gas";
 import { grantConfig, treasuryHoldings } from "@/moonlet/hunt-grants";
 import { currentTrialUsd, trialOpen } from "@/moonlet/trial";
@@ -42,14 +42,14 @@ const FAQ = [
 ];
 
 /** The rule that makes copying useless, said the same way everywhere it appears. */
-const PER_PLAYER_RULE = "Your answer is unique to your account: it's the first 16 characters of sha256(phrase:your account id). Copying someone else's won't work.";
+const PER_PLAYER_RULE = "Your answer is unique to your account: it's the first 16 characters of sha256(phrase:your hunt id). Copying someone else's won't work.";
 
 /** Seasons with per-player answers and stages released over time say so in the steps and the questions. */
 function stepsFor(perPlayer: boolean, staged: boolean) {
   return STEPS.map((s) =>
     s.n === "02" && staged ? { ...s, body: "Give your moonlet the stages as they drop. It gets its own computer: a browser, a terminal and Robinhood Chain. Each stage is released on a schedule and signed by the hunt address." }
-    : s.n === "03" && perPlayer ? { ...s, body: "Once you have the phrase, work out your own answer: the first 16 characters of sha256(phrase:your account id). Launch a moonlet (Custom) whose report contains one line: ANSWER: followed by those 16 characters. That report is hashed and anchored on Robinhood Chain." }
-    : s.n === "05" && perPlayer ? { ...s, body: "At the deadline every entry is checked against its anchor transaction. The earliest block holding that player's correct answer wins." }
+    : s.n === "03" && perPlayer ? { ...s, body: "Once you have the phrase, work out your own answer: the first 16 characters of sha256(phrase:your hunt id), with the hunt id shown in Your answers. Launch a moonlet (Custom) whose report contains one line: ANSWER: followed by those 16 characters. That report is hashed and anchored on Robinhood Chain." }
+    : s.n === "05" && perPlayer ? { ...s, body: "After the deadline the phrase is revealed, and anyone can check it against the commitment published at launch. Only then is each entry judged against its player's own answer and its anchor transaction. The earliest anchor holding a correct answer wins: lowest block, then position in the block." }
     : s,
   );
 }
@@ -57,12 +57,12 @@ function stepsFor(perPlayer: boolean, staged: boolean) {
 function faqFor(perPlayer: boolean, staged: boolean) {
   const base = FAQ.map((f) =>
     f.q === "Do I submit each stage?" && staged ? { ...f, a: "No. Stages are released one at a time; each one helps with the next. Only the final answer counts, and that's the only thing to put after ANSWER:." }
-    : f.q === "Is the answer in the code?" && perPlayer ? { ...f, a: "No. Moonlet is open source, but the phrase lives only in the server's environment. It's never in the code, never sent to a browser and never logged." }
+    : f.q === "Is the answer in the code?" && perPlayer ? { ...f, a: "No. Not even the server knows the phrase while the hunt is live: it holds only a commitment, sha256(salt + phrase), published on this page. Entries are recorded unchecked; after the deadline the phrase and salt are revealed, anyone can check them against the commitment, and only then are entries judged." }
     : f,
   );
   if (!perPlayer) return base;
   return [
-    { q: "Why is my answer different from everyone else's?", a: `${PER_PLAYER_RULE} Your account id is shown in the Your answers panel once you sign in.` },
+    { q: "Why is my answer different from everyone else's?", a: `${PER_PLAYER_RULE} Your hunt id is shown in the Your answers panel once you sign in.` },
     ...base,
     ...(staged ? [{ q: "How do I know a stage is really from Moonlet?", a: "Every stage is signed by the hunt address with a standard Ethereum message signature (EIP-191, personal_sign) over the clue text exactly as shown. Check it with any wallet tool, e.g. cast wallet verify." }] : []),
   ];
@@ -78,7 +78,10 @@ export default async function HuntPage() {
   const freeOn = trialOpen() && freeUsd > 0;
   const status = phase === "live" ? "Live now" : phase === "upcoming" ? "Starting soon" : phase === "ended" ? "Finished" : phase === "void" ? "Round 1 closed" : "Coming soon";
   const clueShown = !!c.clue && (phase === "live" || phase === "ended" || phase === "void");
-  const perPlayer = !!c.phrase;
+  const perPlayer = isPerPlayer(c);
+  // Until entries are judged (or the round is void), the list shows an account and a block only: no anchor link, whose
+  // calldata would name the moonlet and run.
+  const judged = (!!res && !res.error) || phase === "void";
   const total = (c.stages ?? []).length;
   const staged = total > 0;
   // Only released stages reach the page; a future stage is known here only by its release time.
@@ -290,6 +293,13 @@ export default async function HuntPage() {
                   <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-ink-faint">The rule</p>
                   <p className="mt-1 text-ink">{PER_PLAYER_RULE}</p>
                   <p className="mt-2 font-mono text-[12.5px]">The line your report needs:<br /><span className="text-ink">ANSWER: your 16 characters</span></p>
+                  {c.phraseCommit && (
+                    <p className="mt-2 text-[12.5px]">
+                      Phrase commitment, sha256(salt + phrase):<br />
+                      <code className="break-all font-mono text-ink">{c.phraseCommit}</code>
+                      <br />The phrase and salt are revealed after the deadline so anyone can check them.
+                    </p>
+                  )}
                 </div>
               ) : (
                 <p className="rounded-xl bg-white/70 px-4 py-3 font-mono text-[12.5px] leading-[1.6] text-ink-soft">
@@ -305,7 +315,9 @@ export default async function HuntPage() {
           {res && (
             <div className="mb-6 rounded-2xl border border-moss/30 bg-white p-5 sm:p-6">
               <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-moss">Result</p>
-              {res.winner ? (
+              {res.error ? (
+                <p className="mt-2 text-[15px] text-ink-soft">Not judged yet: {res.error}. Entries are judged once the phrase is revealed and matches the published commitment.</p>
+              ) : res.winner ? (
                 <p className="mt-2 text-[16px] leading-[1.6] text-ink">
                   <b className="font-mono">{short(res.winner.owner)}</b> wins, anchored in block{" "}
                   <a href={`${EXPLORER}/tx/${res.winner.txHash}`} target="_blank" rel="noreferrer" className="font-mono underline decoration-ink/30 underline-offset-2">{fmt(res.winner.block)}</a> ·{" "}
@@ -323,12 +335,16 @@ export default async function HuntPage() {
           {subs.length ? (
             <ul className="mt-3 divide-y divide-ink/[0.07] rounded-2xl border border-ink/[0.08] bg-white">
               {subs.map((s, i) => {
-                const v = res?.entries.find((e) => e.runId === s.runId);
+                const v = judged ? res?.entries.find((e) => e.runId === s.runId) : undefined;
                 return (
-                  <li key={s.runId} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 px-4 py-3 text-[13.5px] sm:grid-cols-[36px_1fr_auto_auto]">
+                  <li key={i} className="grid grid-cols-[28px_1fr_auto] items-center gap-3 px-4 py-3 text-[13.5px] sm:grid-cols-[36px_1fr_auto_auto]">
                     <span className="font-mono text-[12px] text-ink-faint">{i + 1}</span>
                     <span className="font-mono text-ink">{short(s.owner)}</span>
-                    <a href={`${EXPLORER}/tx/${s.txHash}`} target="_blank" rel="noreferrer" className="font-mono text-ink-soft hover:text-ink">block {fmt(s.block)}</a>
+                    {judged ? (
+                      <a href={`${EXPLORER}/tx/${s.txHash}`} target="_blank" rel="noreferrer" className="font-mono text-ink-soft hover:text-ink">block {fmt(s.block)}</a>
+                    ) : (
+                      <span className="font-mono text-ink-soft">block {fmt(s.block)}</span>
+                    )}
                     <span className={`hidden text-[12px] font-medium sm:block ${v ? (v.correct && v.anchorOk ? "text-moss" : "text-ink-faint") : "text-ink-faint"}`}>{v ? (v.correct ? (v.anchorOk ? "correct · verified" : `correct · ${v.reason}`) : "wrong answer") : phase === "void" ? "void" : "sealed"}</span>
                   </li>
                 );

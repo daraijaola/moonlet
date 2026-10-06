@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { bad, ownerFrom } from "@/moonlet/http";
-import { extractAnswer, listSubmissions } from "@/moonlet/hunt";
+import { extractAnswer, huntId, listSubmissions } from "@/moonlet/hunt";
 import { grantOf } from "@/moonlet/hunt-grants";
 import * as store from "@/moonlet/store";
 
@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 /**
  * Your finished runs that carry an ANSWER line, newest first, with whether each is anchored and already entered (in any
- * season: a run is entered once), and your account id, which per-player answers are computed from.
+ * season: a run is entered once), and your hunt id, which per-player answers are computed from.
  */
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
@@ -25,5 +25,5 @@ export async function GET(req: Request) {
   }
   out.sort((a, b) => b.at - a.at);
   const grant = await grantOf(owner);
-  return NextResponse.json({ account: owner, runs: out.slice(0, 20), grant });
+  return NextResponse.json({ huntId: huntId(owner), runs: out.slice(0, 20), grant });
 }
