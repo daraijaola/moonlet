@@ -66,6 +66,13 @@ describe("hunt", () => {
     expect(sealHunt(run, { now: config.deadline + 1, config: sealCfg })).toEqual(run);
   });
 
+  it("a voided round is closed: no entries, no results", async () => {
+    const voided = { ...config, voided: "closed" };
+    expect(huntPhase(voided, T0 + 1)).toBe("void");
+    expect(await submit(ALICE, "anything", { now: T0 + 1, config: voided })).toEqual({ ok: false, error: "this round is closed" });
+    expect(await results({ now: config.deadline + 1, config: voided })).toBeNull();
+  });
+
   it("is off without an answer hash, and moves upcoming → live → ended on the clock", () => {
     expect(huntPhase({ ...config, answerSha: null }, T0)).toBe("off");
     expect(huntPhase(config, T0 - 1)).toBe("upcoming");

@@ -13,14 +13,15 @@ import * as store from "./store";
  *   HUNT_CLUE           the opening clue, shown from HUNT_START
  *   HUNT_PRIZE          what the winner gets (text)
  *   HUNT_SEAL_SHA256    optional, comma-separated sha256s of other fragments to hide while live (same normalising)
+ *   HUNT_VOID           optional: the round is closed without a winner; the text says why (shown on the page)
  *
  * Submissions are recorded without saying whether they are right. After the deadline the results are computed in the
  * open: every submission whose answer hashes to HUNT_ANSWER_SHA256 is checked against its anchor transaction (the
  * calldata must name that moonlet, that run and that output hash), and the earliest block wins.
  */
 
-export type HuntConfig = { start: number; deadline: number; clue: string | null; prize: string; answerSha: string | null; seal?: string[] };
-export type HuntPhase = "off" | "upcoming" | "live" | "ended";
+export type HuntConfig = { start: number; deadline: number; clue: string | null; prize: string; answerSha: string | null; seal?: string[]; voided?: string | null };
+export type HuntPhase = "off" | "upcoming" | "live" | "ended" | "void";
 
 export function huntConfig(env: NodeJS.ProcessEnv = process.env): HuntConfig {
   return {
@@ -29,11 +30,13 @@ export function huntConfig(env: NodeJS.ProcessEnv = process.env): HuntConfig {
     clue: env.HUNT_CLUE?.trim() || null,
     prize: env.HUNT_PRIZE?.trim() || "100 CREDIT",
     answerSha: env.HUNT_ANSWER_SHA256?.trim().toLowerCase() || null,
+    voided: env.HUNT_VOID?.trim() || null,
     seal: (env.HUNT_SEAL_SHA256 ?? "").split(",").map((x) => x.trim().toLowerCase()).filter((x) => /^[0-9a-f]{64}$/.test(x)),
   };
 }
 
 export function huntPhase(c: HuntConfig, now = Date.now()): HuntPhase {
+  if (c.voided) return "void";
   if (!c.start || !c.deadline || !c.answerSha) return "off";
   if (now < c.start) return "upcoming";
   if (now < c.deadline) return "live";
@@ -138,7 +141,7 @@ export type SubmitResult = { ok: true; submission: Submission } | { ok: false; e
 export async function submit(owner: string, runId: string, opts: { now?: number; fetch?: typeof fetch; config?: HuntConfig } = {}): Promise<SubmitResult> {
   const c = opts.config ?? huntConfig();
   const phase = huntPhase(c, opts.now);
-  if (phase !== "live") return { ok: false, error: phase === "ended" ? "the hunt is over" : "the hunt hasn't started" };
+  if (phase !== "live") return { ok: false, error: phase === "void" ? "this round is closed" : phase === "ended" ? "the hunt is over" : "the hunt hasn't started" };
   const run = await store.getRun(runId);
   if (!run) return { ok: false, error: "no such run" };
   const m = await store.getMoonlet(run.moonletId);

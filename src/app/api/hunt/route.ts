@@ -25,7 +25,8 @@ export async function GET() {
     treasury: g.treasury,
     held,
     grants: { total: g.count, left: Math.max(0, g.count - taken), credit: g.credit, minOrbio: g.minOrbio },
-    clue: phase === "live" || phase === "ended" ? c.clue : null,
+    clue: phase === "live" || phase === "ended" || phase === "void" ? c.clue : null,
+    voided: phase === "void" ? c.voided : null,
     entries: subs.map((s) => ({ wallet: short(s.owner), moonletId: s.moonletId, runId: s.runId, txHash: s.txHash, block: s.block, submittedAt: s.submittedAt })),
     results: res && {
       winner: res.winner && { wallet: short(res.winner.owner), moonletId: res.winner.moonletId, runId: res.winner.runId, txHash: res.winner.txHash, block: res.winner.block },

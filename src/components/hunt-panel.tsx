@@ -84,7 +84,7 @@ export function HuntClaim({ phase, credit, minOrbio, total, left }: { phase: str
       </p>
       <div className="mt-4">
         {phase !== "live" ? (
-          <p className="text-[13px] text-ink-faint">{phase === "ended" ? "The hunt is over." : "Opens when the hunt goes live."}</p>
+          <p className="text-[13px] text-ink-faint">{phase === "ended" || phase === "void" ? "The hunt is over." : "Opens when the hunt goes live."}</p>
         ) : !signedIn ? (
           <Link href="/sign-in?next=/hunt%23play" className="ui-btn ui-btn-gold">Sign in to claim</Link>
         ) : grant ? (

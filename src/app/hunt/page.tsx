@@ -47,8 +47,8 @@ export default async function HuntPage() {
   const [subs, res, held] = await Promise.all([listSubmissions(), phase === "ended" ? results({ config: c }) : null, treasuryHoldings(g.treasury)]);
   const freeUsd = currentTrialUsd();
   const freeOn = trialOpen() && freeUsd > 0;
-  const status = phase === "live" ? "Live now" : phase === "upcoming" ? "Starting soon" : phase === "ended" ? "Finished" : "Coming soon";
-  const clueShown = !!c.clue && (phase === "live" || phase === "ended");
+  const status = phase === "live" ? "Live now" : phase === "upcoming" ? "Starting soon" : phase === "ended" ? "Finished" : phase === "void" ? "Round 1 closed" : "Coming soon";
+  const clueShown = !!c.clue && (phase === "live" || phase === "ended" || phase === "void");
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-cream text-ink">
@@ -100,13 +100,24 @@ export default async function HuntPage() {
           </div>
         </section>
 
+        {phase === "void" && (
+          <section className="relative mx-auto mb-8 max-w-[1180px] px-5 sm:px-6">
+            <div className="rounded-2xl border border-gold/40 bg-white p-6 sm:p-8">
+              <p className="font-mono text-[11.5px] uppercase tracking-[0.14em] text-ink-soft">Round 1 · void</p>
+              <h2 className="mt-2 text-[1.9rem] font-medium leading-[1.1] tracking-[-0.03em] text-ink sm:text-[2.3rem]">Round 1 is closed without a winner.</h2>
+              <p className="mt-3 max-w-[46rem] whitespace-pre-line text-[15px] leading-[1.6] text-ink-soft">{c.voided}</p>
+              <p className="mt-4 text-[14px] font-medium text-ink">Season 2, The Moonlet Vault, is coming: several days, one stage at a time, no shortcuts.</p>
+            </div>
+          </section>
+        )}
+
         {/* Stats */}
         <section className="relative mx-auto max-w-[1180px] px-5 sm:px-6">
           <dl className="grid grid-cols-2 divide-ink/[0.08] rounded-2xl border border-ink/[0.08] bg-white/80 backdrop-blur sm:grid-cols-4 sm:divide-x">
             <Stat label="Prize" value={c.prize} hint={held && held.moonlet > 0 ? `${fmt(held.moonlet)} $MOONLET on chain` : "from the treasury"} />
             <Stat label="Free AI" value={freeOn ? `$${freeUsd} on us` : "—"} hint={freeOn ? "inference for new accounts, limited time" : "pay per run from about a cent"} />
-            <Stat label="Entries" value={`${subs.length}`} hint={phase === "ended" ? "checked against the chain" : "sealed until the deadline"} />
-            <Stat label={phase === "upcoming" ? "Starts" : "Closes"} value={c.deadline ? new Date(phase === "upcoming" ? c.start : c.deadline).toUTCString().slice(5, 11) : "TBA"} hint={c.deadline ? when(phase === "upcoming" ? c.start : c.deadline).slice(17) : "date announced soon"} />
+            <Stat label="Entries" value={`${subs.length}`} hint={phase === "ended" ? "checked against the chain" : phase === "void" ? "round closed" : "sealed until the deadline"} />
+            <Stat label={phase === "upcoming" ? "Starts" : phase === "void" ? "Status" : "Closes"} value={phase === "void" ? "Closed" : c.deadline ? new Date(phase === "upcoming" ? c.start : c.deadline).toUTCString().slice(5, 11) : "TBA"} hint={phase === "void" ? "Season 2 coming soon" : c.deadline ? when(phase === "upcoming" ? c.start : c.deadline).slice(17) : "date announced soon"} />
           </dl>
         </section>
 
@@ -192,7 +203,7 @@ export default async function HuntPage() {
           )}
           <div className="flex items-baseline justify-between">
             <h2 className="text-[17px] font-medium tracking-[-0.015em]">Entries</h2>
-            <span className="font-mono text-[12px] text-ink-faint">{subs.length} {phase === "ended" ? (subs.length === 1 ? "entry" : "entries") : "sealed"}</span>
+            <span className="font-mono text-[12px] text-ink-faint">{subs.length} {phase === "ended" || phase === "void" ? (subs.length === 1 ? "entry" : "entries") : "sealed"}</span>
           </div>
           {subs.length ? (
             <ul className="mt-3 divide-y divide-ink/[0.07] rounded-2xl border border-ink/[0.08] bg-white">
@@ -203,7 +214,7 @@ export default async function HuntPage() {
                     <span className="font-mono text-[12px] text-ink-faint">{i + 1}</span>
                     <span className="font-mono text-ink">{short(s.owner)}</span>
                     <a href={`${EXPLORER}/tx/${s.txHash}`} target="_blank" rel="noreferrer" className="font-mono text-ink-soft hover:text-ink">block {fmt(s.block)}</a>
-                    <span className={`hidden text-[12px] font-medium sm:block ${v ? (v.correct && v.anchorOk ? "text-moss" : "text-ink-faint") : "text-ink-faint"}`}>{v ? (v.correct ? (v.anchorOk ? "correct · verified" : `correct · ${v.reason}`) : "wrong answer") : "sealed"}</span>
+                    <span className={`hidden text-[12px] font-medium sm:block ${v ? (v.correct && v.anchorOk ? "text-moss" : "text-ink-faint") : "text-ink-faint"}`}>{v ? (v.correct ? (v.anchorOk ? "correct · verified" : `correct · ${v.reason}`) : "wrong answer") : phase === "void" ? "void" : "sealed"}</span>
                   </li>
                 );
               })}
