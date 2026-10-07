@@ -355,6 +355,21 @@ export async function runTurn(threadId: string) {
 
 const running = new Set<string>();
 
+export const INTERRUPTED_NOTE = "This task was interrupted when Moonlet restarted, so it stopped. Send your message again and I'll pick it up from here; your computer and files are still there.";
+
+/**
+ * A turn lives in this process. If the server restarts mid-turn, the thread still says "working" (or "stopping" after a
+ * Stop) but nothing is running it, and it would wait forever while new messages only queue. When a thread claims to be
+ * busy but no turn is running here, it is an orphan: settle it to idle and say why. The grace covers the instant between
+ * a route marking a thread working and starting its turn.
+ */
+export async function settleOrphan<T extends ts.ThreadRow>(t: T, now = Date.now(), graceMs = 20_000): Promise<T> {
+  if ((t.status !== "working" && t.status !== "stopping") || running.has(t.id) || now - t.updatedAt < graceMs) return t;
+  await ts.updateThread(t.id, { status: "idle" });
+  await ts.addMessage({ threadId: t.id, role: "moonlet", text: INTERRUPTED_NOTE });
+  return { ...t, status: "idle" };
+}
+
 /** Starts a turn in the background; the request that asked for it returns immediately and the UI polls. */
 export function startTurn(threadId: string) {
   if (running.has(threadId)) return;

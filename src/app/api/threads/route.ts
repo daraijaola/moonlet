@@ -2,13 +2,15 @@ import { NextResponse } from "next/server";
 import { bad, ownerFrom } from "@/moonlet/http";
 import * as ts from "@/moonlet/threads-store";
 import { pickSettings, saveUploads } from "@/moonlet/threads-http";
-import { startTurn } from "@/moonlet/thread-agent";
+import { settleOrphan, startTurn } from "@/moonlet/thread-agent";
 
 export async function GET(req: Request) {
   const owner = ownerFrom(req);
   if (!owner) return bad("sign in with your wallet first", 401);
   await ts.releaseStaleThreads(25 * 60_000);
-  return NextResponse.json({ threads: await ts.listThreads(owner) });
+  // A thread left "working" by a restart is settled here too, so the list never shows a ghost spinner.
+  const threads = await Promise.all((await ts.listThreads(owner)).map((t) => settleOrphan(t)));
+  return NextResponse.json({ threads });
 }
 
 /** A new thread from its first task: saved, then the moonlet starts working on it in the background. */

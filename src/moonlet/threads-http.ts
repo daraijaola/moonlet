@@ -1,5 +1,6 @@
 import { bad, ownerFrom } from "./http";
 import * as ts from "./threads-store";
+import { settleOrphan } from "./thread-agent";
 
 export const EFFORTS = ["low", "medium", "high", "xhigh", "max"] as const;
 import { THREAD_MODEL_IDS } from "./thread-models";
@@ -10,8 +11,9 @@ export const MACHINES = ["standard", "large"] as const;
 export async function ownThread(req: Request, id: string) {
   const owner = ownerFrom(req, { write: true });
   if (!owner) return { error: bad("sign in with your wallet first", 401) } as const;
-  const t = await ts.getThread(id);
-  if (!t || t.owner !== owner) return { error: bad("not found", 404) } as const;
+  const found = await ts.getThread(id);
+  if (!found || found.owner !== owner) return { error: bad("not found", 404) } as const;
+  const t = await settleOrphan(found);
   return { owner, t } as const;
 }
 
