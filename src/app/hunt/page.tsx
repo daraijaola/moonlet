@@ -42,6 +42,24 @@ const FAQ = [
 ];
 
 /** The rule that makes copying useless, said the same way everywhere it appears. */
+// Season 2 and later: the same rules in plain words. The technical detail lives in the FAQ for whoever wants it.
+const STEPS_VAULT = [
+  { n: "01", title: "A clue a day", body: "For three days, a new clue unlocks at 16:00 UTC. Each clue leads to one key. You need all three keys to open the vault." },
+  { n: "02", title: "Solve it with your moonlet", body: "The clues live on Robinhood Chain. Hand them to a moonlet in Threads: it gets its own computer to read the chain, write code and decode. Moonlet's code is open source, and knowing how Moonlet works helps." },
+  { n: "03", title: "Keep watch", body: "Some pieces land at random times. Put a moonlet on a schedule to watch for them, so you're first to know." },
+  { n: "04", title: "Open the vault", body: "With all three keys, open the vault and read the six secret words." },
+  { n: "05", title: "Make your answer and stamp it", body: "Your answer is unique to you: it mixes the six words with your hunt id, shown below once you sign in. Have a moonlet write ANSWER: followed by it in a report. The report is stamped on chain; enter it here." },
+  { n: "06", title: "Earliest stamp wins", body: "After the deadline we reveal the words and check every entry. The earliest correct stamp on chain wins." },
+];
+const FAQ_VAULT = [
+  { q: "Do I need to code?", a: "It helps, but your moonlet does the heavy lifting: it can read the chain, write and run code, and decode. Teams are welcome; each player still submits their own answer." },
+  { q: "Why is my answer different from everyone else's?", a: "So nobody can copy a winner. Your answer is the first 16 characters of sha256(\"six words\" + \":\" + your hunt id). The site shows your hunt id when you're signed in." },
+  { q: "How do I know a clue is real?", a: "Every clue is signed by the hunt address shown on this page (a standard Ethereum message signature). Only signed clues count. We never give hints in DMs." },
+  { q: "Can I finish early?", a: "No. Clues unlock on a schedule and some pieces arrive at random times, so everyone gets the same window." },
+  { q: "What happened to Round 1?", a: "It was solved through a shortcut we didn't intend, so we closed it without a winner and restored everyone's free AI credit. Season 2 was tested against strong AI agents and has no shortcuts." },
+  { q: "Is the free AI credit money I can sell?", a: "No. It's inference credit on Moonlet for your threads and moonlet runs. It can't be sold, sent or withdrawn." },
+];
+
 const PER_PLAYER_RULE = "Your answer is unique to your account: it's the first 16 characters of sha256(phrase:your hunt id). Copying someone else's won't work.";
 
 /** Seasons with per-player answers and stages released over time say so in the steps and the questions. */
@@ -88,8 +106,9 @@ export default async function HuntPage() {
   const stages = await Promise.all(releasedStages(c).map(async (s) => ({ ...s, valid: await stageSignedBy(s, c.signer) })));
   const next = nextStageAt(c);
   const seasonLabel = season !== "1" || c.seasonTitle ? `Season ${season}${c.seasonTitle ? ` · ${c.seasonTitle}` : ""}` : null;
-  const steps = stepsFor(perPlayer, staged);
-  const faq = faqFor(perPlayer, staged);
+  const vault = season !== "1";
+  const steps = vault ? STEPS_VAULT : stepsFor(perPlayer, staged);
+  const faq = vault ? FAQ_VAULT : faqFor(perPlayer, staged);
 
   return (
     <div className="flex min-h-full flex-1 flex-col bg-cream text-ink">
@@ -105,12 +124,12 @@ export default async function HuntPage() {
                 The Moonlet hunt · {seasonLabel ? `${seasonLabel} · ` : ""}{status}
               </p>
               <h1 className="mt-5 text-[3.1rem] font-medium leading-[1.02] tracking-[-0.035em] text-ink sm:text-[4.2rem] lg:text-[4.5rem]">
-                Find the phrase.
-                <br />
-                Let your moonlet prove it.
+                {vault ? <>Open the vault.<br />Win {c.prize}.</> : <>Find the phrase.<br />Let your moonlet prove it.</>}
               </h1>
               <p className="mt-6 max-w-[32rem] text-[17px] leading-[1.55] text-ink-soft">
-                {staged ? `${total} stages, released one at a time on Robinhood Chain and around Moonlet.` : "Three locked stages hidden on Robinhood Chain and around Moonlet."} Solving it isn&apos;t enough: the answer counts when one of your moonlets says it in a report anchored on chain. Earliest anchor wins {c.prize}.
+                {vault
+                  ? "Three days, three keys, six secret words. A new clue unlocks every day on Robinhood Chain. Solve them with your moonlet, open the vault, and be the first to stamp your answer on chain."
+                  : <>{staged ? `${total} stages, released one at a time on Robinhood Chain and around Moonlet.` : "Three locked stages hidden on Robinhood Chain and around Moonlet."} Solving it isn&apos;t enough: the answer counts when one of your moonlets says it in a report anchored on chain. Earliest anchor wins {c.prize}.</>}
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
                 <a href="#play" className="lp-btn lp-btn-primary lp-btn-block">
